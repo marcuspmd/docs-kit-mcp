@@ -1,0 +1,7 @@
+{
+  "name": "docs-agent",
+  "description": "Intelligent documentation agent via MCP",
+  "command": "node",
+  "args": ["dist/server.js"],
+  "env": { "NODE_ENV": "production" }
+}
