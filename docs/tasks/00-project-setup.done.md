@@ -1,6 +1,6 @@
 # Task 00 — Project Setup
 
-> **Status:** pending
+> **Status:** done
 > **Layer:** Infrastructure
 > **Priority:** MVP
 > **Depends on:** —

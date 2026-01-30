@@ -1,6 +1,6 @@
 # Task 01 — Symbol Types & Core Data Model
 
-> **Status:** pending
+> **Status:** done
 > **Layer:** Analysis
 > **Priority:** MVP
 > **Depends on:** 00
