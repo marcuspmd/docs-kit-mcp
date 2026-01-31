@@ -697,16 +697,7 @@ export function renderSymbolPage(
     const lines = sourceCode.split("\n");
     const start = Math.max(0, symbol.startLine - 1);
     const end = Math.min(lines.length, symbol.endLine);
-    const snippet = lines.slice(start, end);
-    const symbolLine = symbol.startLine - 1;
-    const numbered = snippet
-      .map((line, i) => {
-        const lineNum = start + i + 1;
-        const isSymbolLine = lineNum === symbolLine;
-        return `<span class="${isSymbolLine ? "bg-yellow-100 block w-full" : "block w-full"}"><span class="text-gray-400 select-none mr-4 w-8 inline-block text-right">${lineNum}</span>${escapeHtml(line)}</span>`;
-      })
-      .join("\n");
-    sourceSnippet = numbered;
+    sourceSnippet = lines.slice(start, end).join("\n");
   }
 
   const breadcrumb = [
@@ -808,9 +799,10 @@ export function renderSymbolPage(
       ? `<div class="mb-12">
             <h2 class="text-xl font-bold text-gray-900 mb-4">Source Code</h2>
             <div class="rounded-lg overflow-hidden border border-gray-200">
-              <pre class="bg-gray-50 p-4 overflow-x-auto text-sm font-mono leading-tight">${sourceSnippet}</pre>
+              <pre class="bg-gray-50 p-4 overflow-x-auto text-sm font-mono leading-tight"><code class="language-typescript">${escapeCodeBlocks(sourceSnippet)}</code></pre>
             </div>
-           </div>`
+           </div>
+           <script>hljs.highlightAll();</script>`
       : ""}
 
     ${children.length > 0
