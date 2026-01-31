@@ -1,6 +1,6 @@
 # Task 13 — Event Flow Analyzer
 
-> **Status:** pending
+> **Status:** done
 > **Layer:** Analysis
 > **Priority:** Release 1
 > **Depends on:** 02, 11, 12
