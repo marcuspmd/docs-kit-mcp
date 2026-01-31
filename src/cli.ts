@@ -188,6 +188,12 @@ async function runIndex(args: string[]) {
       const tree = parser.parse(source);
       trees.set(relPath, tree);
       sources.set(relPath, source);
+      // Populate lastModified and source for each symbol
+      const stat = fs.statSync(filePath);
+      for (const sym of symbols) {
+        sym.lastModified = stat.mtime;
+        sym.source = "human";
+      }
       allSymbols.push(...symbols);
     } catch {
       errorCount++;
@@ -203,6 +209,21 @@ async function runIndex(args: string[]) {
     sources,
   });
   done(`${relationships.length} relationships`);
+
+  // Populate references / referencedBy on symbols
+  const symbolById = new Map(allSymbols.map((s) => [s.id, s]));
+  for (const rel of relationships) {
+    const src = symbolById.get(rel.sourceId);
+    const tgt = symbolById.get(rel.targetId);
+    if (src) {
+      if (!src.references) src.references = [];
+      if (!src.references.includes(rel.targetId)) src.references.push(rel.targetId);
+    }
+    if (tgt) {
+      if (!tgt.referencedBy) tgt.referencedBy = [];
+      if (!tgt.referencedBy.includes(rel.sourceId)) tgt.referencedBy.push(rel.sourceId);
+    }
+  }
 
   // Phase 3: Collect metrics
   step("Computing metrics");

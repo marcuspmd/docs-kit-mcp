@@ -14,10 +14,10 @@ import { readFile } from "node:fs/promises";
 import {
   type CodeSymbol,
   type SymbolKind,
-  type Visibility,
   type Layer,
   generateSymbolId,
 } from "./symbol.types.js";
+import { getStrategy } from "./languages/index.js";
 
 /* ================== Types ================== */
 
@@ -79,53 +79,16 @@ const NODE_KIND_MAP: Record<string, SymbolKind> = {
 
 /* ================== Metadata extractors ================== */
 
-function extractVisibility(node: Parser.SyntaxNode): Visibility | undefined {
-  // Methods can have accessibility_modifier as a child
-  const modifier = node.children.find((c) => c.type === "accessibility_modifier");
-  if (modifier) {
-    const text = modifier.text as Visibility;
-    if (text === "public" || text === "private" || text === "protected") {
-      return text;
-    }
-  }
-  return undefined;
-}
-
 function isExported(node: Parser.SyntaxNode): boolean {
-  // The node's parent may be an export_statement
   const parent = node.parent;
   if (parent?.type === "export_statement") return true;
-  // Or the export_statement might wrap a default export
   if (parent?.type === "export_statement" && parent.children.some((c) => c.type === "export")) {
     return true;
   }
   return false;
 }
 
-function extractExtends(node: Parser.SyntaxNode): string | undefined {
-  const heritage = node.children.find((c) => c.type === "class_heritage");
-  if (!heritage) return undefined;
-  const extendsClause = heritage.children.find((c) => c.type === "extends_clause");
-  if (!extendsClause) return undefined;
-  const typeNode = extendsClause.children.find(
-    (c) => c.type === "identifier" || c.type === "type_identifier",
-  );
-  return typeNode?.text;
-}
-
-function extractImplements(node: Parser.SyntaxNode): string[] | undefined {
-  const heritage = node.children.find((c) => c.type === "class_heritage");
-  if (!heritage) return undefined;
-  const implClause = heritage.children.find((c) => c.type === "implements_clause");
-  if (!implClause) return undefined;
-  const types = implClause.children
-    .filter((c) => c.type === "type_identifier" || c.type === "identifier")
-    .map((c) => c.text);
-  return types.length > 0 ? types : undefined;
-}
-
 function extractInterfaceExtends(node: Parser.SyntaxNode): string | undefined {
-  // interface Foo extends Bar { ... }
   const extendsClause = node.children.find((c) => c.type === "extends_type_clause");
   if (!extendsClause) return undefined;
   const typeNode = extendsClause.children.find(
@@ -135,17 +98,14 @@ function extractInterfaceExtends(node: Parser.SyntaxNode): string | undefined {
 }
 
 function extractJsDoc(node: Parser.SyntaxNode): { summary?: string; tags?: string[] } {
-  // Look for a comment node immediately before this node (or before export_statement parent)
   const targetNode = node.parent?.type === "export_statement" ? node.parent : node;
   const prev = targetNode.previousNamedSibling;
 
   if (!prev || prev.type !== "comment") return {};
   const text = prev.text;
 
-  // Only handle JSDoc-style comments
   if (!text.startsWith("/**")) return {};
 
-  // Strip comment markers
   const cleaned = text
     .replace(/^\/\*\*\s*/, "")
     .replace(/\s*\*\/$/, "")
@@ -154,7 +114,6 @@ function extractJsDoc(node: Parser.SyntaxNode): { summary?: string; tags?: strin
     .join("\n")
     .trim();
 
-  // Extract @tags
   const tags: string[] = [];
   const summaryLines: string[] = [];
 
@@ -171,7 +130,7 @@ function extractJsDoc(node: Parser.SyntaxNode): { summary?: string; tags?: strin
   return { summary, tags: tags.length > 0 ? tags : undefined };
 }
 
-function detectLanguage(file: string): CodeSymbol["language"] {
+export function detectLanguage(file: string): CodeSymbol["language"] {
   if (file.endsWith(".ts") || file.endsWith(".tsx")) return "ts";
   if (file.endsWith(".js") || file.endsWith(".jsx")) return "js";
   if (file.endsWith(".py")) return "python";
@@ -186,9 +145,6 @@ function languageForFile(file: string) {
   if (file.endsWith(".py")) return Python;
   if (file.endsWith(".go")) return GoLang;
   if (file.endsWith(".php")) return PHP;
-  // Skip dart parsing if the dart grammar/binding isn't present to avoid
-  // test-time native binding errors. If you need Dart support, ensure the
-  // tree-sitter-dart package is installed and its native bindings are built.
   if (file.endsWith(".dart")) return undefined;
   if (file.endsWith(".rb")) return Ruby;
   if (file.endsWith(".cs")) return CSharp;
@@ -214,17 +170,6 @@ function detectLayer(file: string, name: string): Layer | undefined {
   return undefined;
 }
 
-function detectDeprecated(node: Parser.SyntaxNode): boolean {
-  const targetNode = node.parent?.type === "export_statement" ? node.parent : node;
-  const prev = targetNode.previousNamedSibling;
-  if (prev?.type === "comment" && prev.text.includes("@deprecated")) return true;
-  // Check decorators (if present)
-  for (const child of node.children) {
-    if (child.type === "decorator" && child.text.includes("Deprecated")) return true;
-  }
-  return false;
-}
-
 /* ================== AST Walker ================== */
 
 function walkNode(
@@ -232,23 +177,21 @@ function walkNode(
   file: string,
   parent?: string,
   parentName?: string,
+  namespace?: string,
 ): CodeSymbol[] {
   const symbols: CodeSymbol[] = [];
   if (!node) return symbols;
   const kind = NODE_KIND_MAP[node.type];
 
   function getNodeName(n: Parser.SyntaxNode): string {
-    // Try common field names
     const byField = n.childForFieldName("name") ?? n.childForFieldName("identifier");
     if (byField) return byField.text;
 
-    // Search for first identifier-like child
     const idChild = n.children.find((c) =>
       /identifier|name|type_identifier|field_identifier/.test(c.type),
     );
     if (idChild) return idChild.text;
 
-    // fallback to node's own text (trimmed)
     const t = n.text?.trim();
     if (t && t.length > 0) return t.split(/\s|\(|\{/)[0];
     return "anonymous";
@@ -257,7 +200,6 @@ function walkNode(
   function getParametersText(n: Parser.SyntaxNode): string | undefined {
     const params = n.childForFieldName("parameters") ?? n.childForFieldName("parameter_list");
     if (params) return params.text;
-    // fallback: find first child that looks like parameter list
     const p = n.children.find((c) => /parameter|argument_list|formal_parameters/.test(c.type));
     if (p) return p.text;
     return undefined;
@@ -265,13 +207,13 @@ function walkNode(
 
   if (kind) {
     const name = getNodeName(node) ?? "anonymous";
-    const id = generateSymbolId(file, name, kind);
+    const language = detectLanguage(file);
+    const strategy = getStrategy(language);
 
     // Signature
     let signature: string | undefined;
     if (kind === "function" || kind === "method") {
       const paramsText = getParametersText(node) ?? "()";
-      // try common return type fields
       const returnType = node.childForFieldName("return_type") ?? node.childForFieldName("type");
       const returnText = returnType ? `: ${returnType.text}` : "";
       signature = `${name}${paramsText}${returnText}`;
@@ -284,41 +226,47 @@ function walkNode(
     }
 
     // Visibility
-    const visibility = extractVisibility(node);
+    const visibility = strategy.extractVisibility(node);
 
     // Exported
     const exported = isExported(node);
 
-    // Language
-    const language = detectLanguage(file);
-
-    // Extends / Implements
+    // Extends / Implements / Traits
     let extendsName: string | undefined;
     let implementsNames: string[] | undefined;
+    let usesTraits: string[] | undefined;
     if (kind === "class" || kind === "abstract_class") {
-      extendsName = extractExtends(node);
-      implementsNames = extractImplements(node);
+      extendsName = strategy.extractExtends(node);
+      implementsNames = strategy.extractImplements(node);
+      usesTraits = strategy.extractTraits(node);
     } else if (kind === "interface") {
-      extendsName = extractInterfaceExtends(node);
+      // Interface extends uses different AST nodes in TS vs PHP
+      extendsName = language === "php" ? strategy.extractExtends(node) : extractInterfaceExtends(node);
     }
 
-    // JSDoc
+    // Refine kind
+    const finalKind = strategy.refineKind(kind, name, extendsName, implementsNames);
+
+    // JSDoc / PHPDoc
     const { summary, tags } = extractJsDoc(node);
 
     // Layer
     const layer = detectLayer(file, name);
 
     // Deprecated
-    const deprecated = detectDeprecated(node) || undefined;
+    const deprecated = strategy.detectDeprecated(node) || undefined;
 
     // Qualified name
-    const qualifiedName = parentName ? `${parentName}.${name}` : name;
+    const qualifiedName = strategy.buildQualifiedName(name, parentName, namespace);
+
+    // Generate ID
+    const id = generateSymbolId(file, name, finalKind);
 
     symbols.push({
       id,
       name,
       qualifiedName,
-      kind,
+      kind: finalKind,
       file,
       startLine: node.startPosition.row + 1,
       endLine: node.endPosition.row + 1,
@@ -328,6 +276,7 @@ function walkNode(
       language,
       extends: extendsName,
       implements: implementsNames,
+      usesTraits,
       summary,
       tags,
       layer,
@@ -336,11 +285,11 @@ function walkNode(
     });
 
     for (const child of node.children) {
-      symbols.push(...walkNode(child, file, id, name));
+      symbols.push(...walkNode(child, file, id, name, namespace));
     }
   } else {
     for (const child of node.children) {
-      symbols.push(...walkNode(child, file, parent, parentName));
+      symbols.push(...walkNode(child, file, parent, parentName, namespace));
     }
   }
 
@@ -358,7 +307,9 @@ export function indexFile(filePath: string, source: string, parser: Parser): Cod
     // ignore setLanguage errors
   }
   const tree = parser.parse(source);
-  return walkNode(tree.rootNode, filePath);
+  const strategy = getStrategy(detectLanguage(filePath));
+  const namespace = strategy.extractNamespace(tree.rootNode);
+  return walkNode(tree.rootNode, filePath, undefined, undefined, namespace);
 }
 
 /* ================== Project indexer ================== */
