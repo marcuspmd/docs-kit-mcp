@@ -11,6 +11,9 @@ import {
   renderFilesPage,
   renderRelationshipsPage,
   renderPatternsPage,
+  renderDeprecatedPage,
+  renderDocsPage,
+  renderGovernancePage,
   renderMarkdownWrapper,
   buildSearchIndex,
   fileSlug,
@@ -50,6 +53,11 @@ interface SymbolRow {
   last_modified: string | null;
   layer: string | null;
   deprecated: number | null;
+  violations: string | null;
+}
+
+function parseJsonArray(value: string | null): string[] | undefined {
+  return value ? JSON.parse(value) : undefined;
 }
 
 function rowToSymbol(row: SymbolRow): CodeSymbol {
@@ -73,6 +81,7 @@ function rowToSymbol(row: SymbolRow): CodeSymbol {
     lastModified: row.last_modified ? new Date(row.last_modified) : undefined,
     layer: (row.layer as CodeSymbol["layer"]) ?? undefined,
     deprecated: row.deprecated !== null ? row.deprecated === 1 : undefined,
+    violations: parseJsonArray(row.violations),
   };
 }
 
@@ -112,8 +121,34 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
       violations: row.violations ? (JSON.parse(row.violations) as string[]) : [],
     }));
   } catch (e) {
-    // Patterns table doesn't exist, use empty array
     patterns = [];
+  }
+
+  // Load arch_violations and reaper_findings if tables exist
+  interface ArchViolationRow {
+    rule: string;
+    file: string;
+    symbol_id: string | null;
+    message: string;
+    severity: string;
+  }
+  interface ReaperFindingRow {
+    type: string;
+    target: string;
+    reason: string;
+    suggested_action: string;
+  }
+  let archViolations: ArchViolationRow[] = [];
+  let reaperFindings: ReaperFindingRow[] = [];
+  try {
+    archViolations = db.prepare("SELECT rule, file, symbol_id, message, severity FROM arch_violations").all() as ArchViolationRow[];
+  } catch {
+    archViolations = [];
+  }
+  try {
+    reaperFindings = db.prepare("SELECT type, target, reason, suggested_action FROM reaper_findings").all() as ReaperFindingRow[];
+  } catch {
+    reaperFindings = [];
   }
 
   db.close();
@@ -167,7 +202,7 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   // Generate index.html
   fs.writeFileSync(
     path.join(outDir, "index.html"),
-    renderDashboard({ symbols, relationships, patterns, files }),
+    renderDashboard({ symbols, relationships, patterns, files, archViolations, reaperFindings }),
   );
 
   // Copy markdown docs referenced by symbols into the site output so links work
@@ -281,6 +316,18 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   // Generate patterns page
   fs.writeFileSync(path.join(outDir, "patterns.html"), renderPatternsPage(patterns, symbols));
 
+  // Generate governance page
+  fs.writeFileSync(
+    path.join(outDir, "governance.html"),
+    renderGovernancePage(archViolations, reaperFindings, symbols),
+  );
+
+  // Generate deprecated page
+  fs.writeFileSync(path.join(outDir, "deprecated.html"), renderDeprecatedPage(symbols));
+
+  // Generate docs index page
+  fs.writeFileSync(path.join(outDir, "docs.html"), renderDocsPage(Array.from(docRefs)));
+
   // Generate search index
   // Historically tests expect search.json to be an array of items.
   // Write the items array for compatibility, but keep generator using buildSearchIndex.
@@ -290,6 +337,6 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   return {
     symbolPages: symbols.length,
     filePages: files.length,
-    totalFiles: symbols.length + files.length + 4 + docRefs.size, // index + relationships + patterns + search.json + docs
+    totalFiles: symbols.length + files.length + 7 + docRefs.size, // index + relationships + patterns + governance + deprecated + docs + search.json + doc copies
   };
 }

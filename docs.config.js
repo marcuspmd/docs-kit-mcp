@@ -1,5 +1,5 @@
 /** @type {import('docs-kit').Config} */
-module.exports = {
+export default {
   include: [
     "**/*.ts",
     "**/*.tsx",

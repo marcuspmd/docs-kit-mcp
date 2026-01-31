@@ -72,6 +72,16 @@ function statusBadges(symbol: CodeSymbol): string {
   return badges.join("");
 }
 
+function violationsBadges(symbol: CodeSymbol, governanceHref = "governance.html"): string {
+  if (!symbol.violations?.length) return "";
+  return symbol.violations
+    .map(
+      (v) =>
+        `<a href="${governanceHref}#reaper" class="px-2 py-0.5 rounded text-xs font-medium border bg-amber-50 text-amber-800 border-amber-200 ml-2 hover:bg-amber-100">${escapeHtml(v)}</a>`,
+    )
+    .join("");
+}
+
 function layout(
   title: string,
   currentPage: string,
@@ -96,9 +106,14 @@ function layout(
     })
     .join("");
 
-  const rightSidebar = facetsHtml
-    ? `<aside class="w-64 bg-white border-l border-gray-200 p-6 overflow-y-auto hidden xl:block flex-shrink-0">${facetsHtml}</aside>`
-    : "";
+  const rightSidebar = `
+    <aside class="w-64 bg-white border-l border-gray-200 p-6 overflow-y-auto hidden xl:block flex-shrink-0">
+      ${facetsHtml ? `<div class="mb-8">${facetsHtml}</div>` : ""}
+      <div id="on-this-page-wrap">
+        <h3 class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">On this page</h3>
+        <nav id="on-this-page" class="space-y-1 text-sm" aria-label="On this page"></nav>
+      </div>
+    </aside>`;
 
   return `<!DOCTYPE html>
 <html lang="en" class="h-full bg-gray-50">
@@ -133,10 +148,11 @@ function layout(
           </div>
         </div>
         <div class="flex-1 flex items-center justify-center px-2 lg:ml-6 lg:justify-end">
-          <div class="max-w-lg w-full lg:max-w-xs">
+          <div class="max-w-lg w-full lg:max-w-xs relative" id="global-search-wrap">
             <label for="global-search" class="sr-only">Search</label>
             <div class="relative">
-              <input id="global-search" class="block w-full pl-3 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="Search symbols..." type="search">
+              <input id="global-search" class="block w-full pl-3 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="Search symbols..." type="search" autocomplete="off" aria-expanded="false" aria-haspopup="listbox" aria-controls="global-search-results">
+              <div id="global-search-results" role="listbox" class="absolute left-0 right-0 mt-1 bg-white border border-gray-200 rounded-md shadow-lg max-h-80 overflow-auto z-50 hidden" aria-label="Search results"></div>
             </div>
           </div>
         </div>
@@ -152,6 +168,18 @@ function layout(
           ${sidebarNav}
         </nav>
         
+        <h3 class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mt-8 mb-2">Documentation</h3>
+        <nav class="space-y-1">
+          <a href="${prefix}docs.html" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900">Docs</a>
+        </nav>
+
+        <h3 class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mt-8 mb-2">Health</h3>
+        <nav class="space-y-1">
+          <a href="${prefix}deprecated.html" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900">Deprecated</a>
+          <a href="${prefix}governance.html" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900">Violations</a>
+          <a href="${prefix}index.html#high-impact-symbols" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900">High impact</a>
+        </nav>
+
         <h3 class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mt-8 mb-2">Quick Links</h3>
         <nav class="space-y-1">
           <a href="${prefix}index.html#architecture-layers" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900">Layers</a>
@@ -169,6 +197,28 @@ function layout(
 
     ${rightSidebar}
   </div>
+
+  <script>
+    (function() {
+      function slugify(text) {
+        return text.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
+      }
+      var main = document.getElementById('content');
+      var nav = document.getElementById('on-this-page');
+      var wrap = document.getElementById('on-this-page-wrap');
+      if (!main || !nav || !wrap) return;
+      var headings = main.querySelectorAll('h2, h3');
+      if (headings.length === 0) { wrap.style.display = 'none'; return; }
+      var html = '';
+      headings.forEach(function(h) {
+        var id = h.id || slugify(h.textContent || '');
+        if (!h.id) h.id = id;
+        var indent = h.tagName === 'H3' ? ' pl-3' : '';
+        html += '<a href="#' + id + '" class="block px-3 py-1 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900' + indent + '">' + (h.textContent || '').replace(/</g, '&lt;') + '</a>';
+      });
+      nav.innerHTML = html;
+    })();
+  </script>
 
   <footer class="bg-white border-t border-gray-200 py-4 px-6 text-center text-sm text-gray-500">
     Generated by docs-kit
@@ -193,15 +243,85 @@ function layout(
         } catch (e) { console.warn('Fuse init failed', e); FUSE = null; }
       });
 
-    // Global search functionality
-    document.getElementById('global-search').addEventListener('input', function(e) {
-      const q = e.target.value.trim();
-      if (!q || !FUSE) return;
+    // Global search dropdown
+    (function() {
+      var input = document.getElementById('global-search');
+      var panel = document.getElementById('global-search-results');
+      var selectedIdx = -1;
 
-      const results = FUSE.search(q).slice(0, 5);
-      console.log('Search results:', results);
-      // TODO: Implement dropdown
-    });
+      function hide() {
+        panel.classList.add('hidden');
+        panel.innerHTML = '';
+        selectedIdx = -1;
+        input.setAttribute('aria-expanded', 'false');
+      }
+
+      function show(items) {
+        if (!items || items.length === 0) { hide(); return; }
+        var html = '';
+        items.slice(0, 10).forEach(function(it, i) {
+          var href = it.id ? ('symbols/' + it.id + '.html') : '#';
+          html += '<a role="option" id="search-opt-' + i + '" class="block px-4 py-2 text-sm text-left hover:bg-blue-50 focus:bg-blue-50 focus:outline-none border-b border-gray-100 last:border-0" href="' + href + '" tabindex="-1">' +
+            '<span class="font-medium text-blue-600">' + (it.name || '').replace(/</g, '&lt;') + '</span>' +
+            (it.kind ? ' <span class="text-gray-500 text-xs">' + it.kind + '</span>' : '') +
+            (it.file ? '<br><span class="text-gray-400 text-xs">' + it.file + '</span>' : '') +
+            '</a>';
+        });
+        panel.innerHTML = html;
+        panel.classList.remove('hidden');
+        input.setAttribute('aria-expanded', 'true');
+        selectedIdx = 0;
+        var first = document.getElementById('search-opt-0');
+        if (first) first.classList.add('bg-blue-50');
+      }
+
+      function getResults() {
+        var q = input.value.trim();
+        if (!q || !FUSE) return [];
+        return FUSE.search(q).map(function(r) { return r.item; });
+      }
+
+      function navigate(step) {
+        var opts = panel.querySelectorAll('[role="option"]');
+        if (opts.length === 0) return;
+        opts[selectedIdx].classList.remove('bg-blue-50');
+        selectedIdx = selectedIdx + step;
+        if (selectedIdx < 0) selectedIdx = opts.length - 1;
+        if (selectedIdx >= opts.length) selectedIdx = 0;
+        opts[selectedIdx].classList.add('bg-blue-50');
+        opts[selectedIdx].focus();
+      }
+
+      input.addEventListener('input', function() {
+        var items = getResults();
+        show(items);
+      });
+
+      input.addEventListener('focus', function() {
+        if (panel.innerHTML) panel.classList.remove('hidden');
+      });
+
+      input.addEventListener('keydown', function(e) {
+        if (e.key === 'Escape') { hide(); e.preventDefault(); return; }
+        if (!panel.classList.contains('hidden') && panel.children.length) {
+          if (e.key === 'ArrowDown') { navigate(1); e.preventDefault(); return; }
+          if (e.key === 'ArrowUp') { navigate(-1); e.preventDefault(); return; }
+          if (e.key === 'Enter' && selectedIdx >= 0) {
+            var opt = document.getElementById('search-opt-' + selectedIdx);
+            if (opt) { opt.click(); e.preventDefault(); }
+          }
+        }
+      });
+
+      document.addEventListener('click', function(e) {
+        var wrap = document.getElementById('global-search-wrap');
+        if (wrap && !wrap.contains(e.target)) hide();
+      });
+
+      panel.addEventListener('mousedown', function(e) {
+        e.preventDefault();
+      });
+    })();
   </script>
 </body>
 </html>`;
@@ -216,11 +336,28 @@ function formatDate(d?: Date): string | undefined {
   }
 }
 
+export interface ArchViolationRow {
+  rule: string;
+  file: string;
+  symbol_id: string | null;
+  message: string;
+  severity: string;
+}
+
+export interface ReaperFindingRow {
+  type: string;
+  target: string;
+  reason: string;
+  suggested_action: string;
+}
+
 export interface SiteData {
   symbols: CodeSymbol[];
   relationships: RelationshipRow[];
   patterns: DetectedPattern[];
   files: string[];
+  archViolations?: ArchViolationRow[];
+  reaperFindings?: ReaperFindingRow[];
 }
 
 export function renderMarkdownWrapper(title: string, mdFilename: string): string {
@@ -261,7 +398,7 @@ export function renderMarkdownWrapper(title: string, mdFilename: string): string
 }
 
 export function renderDashboard(data: SiteData): string {
-  const { symbols, relationships, patterns, files } = data;
+  const { symbols, relationships, patterns, files, archViolations = [], reaperFindings = [] } = data;
 
   const kindCounts: Record<string, number> = {};
   for (const s of symbols) {
@@ -298,6 +435,19 @@ export function renderDashboard(data: SiteData): string {
 
   const topLevel = symbols.filter((s) => !s.parent);
 
+  // Deprecated symbols (top-level only for clarity)
+  const deprecatedSymbols = topLevel.filter((s) => s.deprecated);
+
+  // High-impact: symbols with most incoming relationships (top 10)
+  const incomingCount = new Map<string, number>();
+  for (const r of relationships) {
+    incomingCount.set(r.target_id, (incomingCount.get(r.target_id) ?? 0) + 1);
+  }
+  const highImpactSymbols = symbols
+    .filter((s) => (incomingCount.get(s.id) ?? 0) > 0)
+    .sort((a, b) => (incomingCount.get(b.id) ?? 0) - (incomingCount.get(a.id) ?? 0))
+    .slice(0, 10);
+
   const body = `
     <h1 class="text-3xl font-bold text-gray-900 mb-8 pb-4 border-b border-gray-200">docs-kit Documentation</h1>
 
@@ -327,6 +477,134 @@ export function renderDashboard(data: SiteData): string {
         </div>
       </div>
     </div>
+
+    ${deprecatedSymbols.length > 0
+      ? `
+    <div id="deprecated-symbols" class="mb-12">
+      <h2 class="text-2xl font-bold text-gray-900 mb-6">Deprecated Symbols</h2>
+      <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kind</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            ${deprecatedSymbols
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map(
+                (s) => `<tr>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600"><a href="symbols/${s.id}.html" class="hover:underline">${escapeHtml(s.name)}</a></td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm"><span class="${badgeClass(s.kind)}">${s.kind}</span></td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><a href="files/${fileSlug(s.file)}.html" class="hover:text-blue-600 hover:underline">${escapeHtml(s.file)}</a></td>
+              </tr>`,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+      <p class="mt-2 text-sm text-gray-500"><a href="deprecated.html" class="text-blue-600 hover:underline">View all deprecated</a></p>
+    </div>`
+      : ""}
+
+    ${highImpactSymbols.length > 0
+      ? `
+    <div id="high-impact-symbols" class="mb-12">
+      <h2 class="text-2xl font-bold text-gray-900 mb-6">High-Impact Symbols</h2>
+      <p class="text-sm text-gray-600 mb-4">Symbols with the most dependents. Changing these may affect many callers.</p>
+      <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Dependents</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            ${highImpactSymbols
+              .map((s) => {
+                const count = incomingCount.get(s.id) ?? 0;
+                return `<tr>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600"><a href="symbols/${s.id}.html" class="hover:underline">${escapeHtml(s.name)}</a></td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><a href="files/${fileSlug(s.file)}.html" class="hover:text-blue-600 hover:underline">${escapeHtml(s.file)}</a></td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-semibold text-gray-900">${count}</td>
+              </tr>`;
+              })
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>`
+      : ""}
+
+    ${archViolations.length > 0
+      ? `
+    <div id="arch-violations" class="mb-12">
+      <h2 class="text-2xl font-bold text-gray-900 mb-6">Architecture Violations</h2>
+      <p class="text-sm text-gray-600 mb-4"><a href="governance.html#arch" class="text-blue-600 hover:underline">View all</a></p>
+      <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rule</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Severity</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Message</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            ${archViolations
+              .slice(0, 10)
+              .map(
+                (v) => `<tr>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${escapeHtml(v.rule)}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHtml(v.file)}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm"><span class="px-2 py-0.5 rounded text-xs font-medium ${v.severity === "error" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"}">${escapeHtml(v.severity)}</span></td>
+                <td class="px-6 py-4 text-sm text-gray-600">${escapeHtml(v.message)}</td>
+              </tr>`,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>`
+      : ""}
+
+    ${reaperFindings.length > 0
+      ? `
+    <div id="reaper-findings" class="mb-12">
+      <h2 class="text-2xl font-bold text-gray-900 mb-6">Code Quality (Reaper)</h2>
+      <p class="text-sm text-gray-600 mb-4"><a href="governance.html#reaper" class="text-blue-600 hover:underline">View all</a></p>
+      <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Target</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Action</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            ${reaperFindings
+              .slice(0, 10)
+              .map(
+                (f) => `<tr>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${escapeHtml(f.type)}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-blue-600"><a href="symbols/${escapeHtml(f.target)}.html" class="hover:underline">${escapeHtml(f.target)}</a></td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHtml(f.suggested_action)}</td>
+                <td class="px-6 py-4 text-sm text-gray-600">${escapeHtml(f.reason)}</td>
+              </tr>`,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>`
+      : ""}
 
     <div id="architecture-layers" class="mb-12">
       <h2 class="text-2xl font-bold text-gray-900 mb-6">Architecture Layers</h2>
@@ -419,7 +697,7 @@ export function renderDashboard(data: SiteData): string {
               .map(
                 (s) => `<tr>
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600"><a href="symbols/${s.id}.html" class="hover:underline">${escapeHtml(s.name)}</a></td>
-                <td class="px-6 py-4 whitespace-nowrap text-sm"><span class="${badgeClass(s.kind)}">${s.kind}</span></td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm"><span class="${badgeClass(s.kind)}">${s.kind}</span>${s.deprecated ? ' <span class="px-2 py-0.5 rounded text-xs font-medium border bg-red-50 text-red-700 border-red-200 ml-1 line-through">deprecated</span>' : ""}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><a href="files/${fileSlug(s.file)}.html" class="hover:text-blue-600 hover:underline">${escapeHtml(s.file)}</a></td>
               </tr>`,
               )
@@ -737,6 +1015,7 @@ export function renderSymbolPage(
            ${visibilityBadge(symbol.visibility)}
            ${layerBadge(symbol.layer)}
            ${statusBadges(symbol)}
+           ${violationsBadges(symbol, "../governance.html")}
         </h1>
         <div class="text-sm text-gray-500">
           Last updated: ${escapeHtml(formatDate(symbol.lastModified) ?? "Unknown")}
@@ -785,6 +1064,17 @@ export function renderSymbolPage(
            <p>${escapeHtml(symbol.summary)}</p>
         </div>` : ""}
 
+        ${symbol.violations?.length
+    ? `
+        <div>
+          <h3 class="text-sm font-medium text-gray-500 mb-2">Code quality</h3>
+          <p class="text-sm text-gray-600 mb-2">This symbol has governance findings. <a href="../governance.html#reaper" class="text-blue-600 hover:underline">View all</a>.</p>
+          <div class="flex flex-wrap gap-2">
+            ${symbol.violations.map((v) => `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">${escapeHtml(v)}</span>`).join("")}
+          </div>
+        </div>`
+    : ""}
+
         ${symbol.tags ? `
         <div>
           <h3 class="text-sm font-medium text-gray-500 mb-2">Tags</h3>
@@ -815,6 +1105,7 @@ export function renderSymbolPage(
                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kind</th>
                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Visibility</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
                     <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Signature</th>
                   </tr>
                 </thead>
@@ -825,6 +1116,7 @@ export function renderSymbolPage(
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600"><a href="${c.id}.html" class="hover:underline">${escapeHtml(c.name)}</a></td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm"><span class="${badgeClass(c.kind)}">${c.kind}</span></td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm">${visibilityBadge(c.visibility)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">${statusBadges(c)}${violationsBadges(c, "../governance.html") || "-"}</td>
                     <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 text-xs">${c.signature ? escapeHtml(c.signature) : "-"}</td>
                   </tr>`,
                     )
@@ -1033,6 +1325,7 @@ export function renderFilePage(
               <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
               <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kind</th>
               <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Visibility</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
               <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lines</th>
               <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Signature</th>
             </tr>
@@ -1046,6 +1339,7 @@ export function renderFilePage(
               <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600"><a href="../symbols/${s.id}.html" class="hover:underline">${escapeHtml(s.name)}</a></td>
               <td class="px-6 py-4 whitespace-nowrap text-sm"><span class="${badgeClass(s.kind)}">${s.kind}</span></td>
               <td class="px-6 py-4 whitespace-nowrap text-sm">${visibilityBadge(s.visibility)}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm">${statusBadges(s)}${violationsBadges(s, "../governance.html") || "-"}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${s.startLine}-${s.endLine}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 text-xs">${s.signature ? `<code>${escapeHtml(s.signature)}</code>` : "-"}</td>
             </tr>
@@ -1055,6 +1349,7 @@ export function renderFilePage(
               <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600 pl-12 border-l-4 border-gray-100"><a href="../symbols/${c.id}.html" class="hover:underline">${escapeHtml(c.name)}</a></td>
               <td class="px-6 py-4 whitespace-nowrap text-sm"><span class="${badgeClass(c.kind)}">${c.kind}</span></td>
               <td class="px-6 py-4 whitespace-nowrap text-sm">${visibilityBadge(c.visibility)}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm">${statusBadges(c)}${violationsBadges(c, "../governance.html") || "-"}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${c.startLine}-${c.endLine}</td>
               <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 text-xs">${c.signature ? `<code>${escapeHtml(c.signature)}</code>` : "-"}</td>
             </tr>`,
@@ -1241,6 +1536,161 @@ export function renderPatternsPage(patterns: DetectedPattern[], symbols: CodeSym
   `;
 
   return layout("Patterns", "patterns.html", body);
+}
+
+export function renderDocsPage(docRefs: string[]): string {
+  const sorted = [...docRefs].sort();
+  const body = `
+    <h1 class="text-3xl font-bold text-gray-900 mb-8 pb-4 border-b border-gray-200">Documentation</h1>
+    <p class="text-gray-600 mb-6">Markdown docs referenced by symbols. Open the HTML version to read in the site.</p>
+    ${sorted.length === 0
+      ? "<div class='text-center py-12 text-gray-500'>No doc references yet. Add doc_ref to symbols or link docs in frontmatter.</div>"
+      : `
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+      <ul class="divide-y divide-gray-200">
+        ${sorted
+          .map(
+            (ref) => {
+              const htmlRef = ref.replace(/\.md$/i, ".html");
+              const name = ref.split("/").pop() || ref;
+              return `<li class="px-6 py-4"><a href="${escapeHtml(htmlRef)}" class="text-blue-600 hover:underline font-medium">${escapeHtml(name)}</a><span class="text-gray-400 text-sm ml-2">${escapeHtml(ref)}</span></li>`;
+            },
+          )
+          .join("")}
+      </ul>
+    </div>`}
+  `;
+
+  return layout("Docs", "docs.html", body);
+}
+
+export function renderDeprecatedPage(symbols: CodeSymbol[]): string {
+  const deprecated = symbols.filter((s) => s.deprecated).sort((a, b) => a.name.localeCompare(b.name));
+
+  const body = `
+    <h1 class="text-3xl font-bold text-gray-900 mb-8 pb-4 border-b border-gray-200">Deprecated Symbols</h1>
+    <p class="text-gray-600 mb-6">Symbols marked as deprecated. Consider migrating callers before removal.</p>
+    ${deprecated.length === 0
+      ? "<div class='text-center py-12 text-gray-500'>No deprecated symbols.</div>"
+      : `
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+      <table class="min-w-full divide-y divide-gray-200">
+        <thead class="bg-gray-50">
+          <tr>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kind</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File</th>
+            <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Signature</th>
+          </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+          ${deprecated
+            .map(
+              (s) => `<tr>
+            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600"><a href="symbols/${s.id}.html" class="hover:underline">${escapeHtml(s.name)}</a></td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm"><span class="${badgeClass(s.kind)}">${s.kind}</span></td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><a href="files/${fileSlug(s.file)}.html" class="hover:text-blue-600 hover:underline">${escapeHtml(s.file)}</a></td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 text-xs">${s.signature ? escapeHtml(s.signature) : "-"}</td>
+          </tr>`,
+            )
+            .join("")}
+        </tbody>
+      </table>
+    </div>`}
+  `;
+
+  return layout("Deprecated", "deprecated.html", body);
+}
+
+export function renderGovernancePage(
+  archViolations: ArchViolationRow[],
+  reaperFindings: ReaperFindingRow[],
+  symbols: CodeSymbol[],
+): string {
+  const symbolMap = new Map(symbols.map((s) => [s.id, s]));
+
+  const body = `
+    <h1 class="text-3xl font-bold text-gray-900 mb-8 pb-4 border-b border-gray-200">Governance</h1>
+    <p class="text-gray-600 mb-8">Architecture violations and code quality findings (Reaper).</p>
+
+    <div id="arch" class="mb-12">
+      <h2 class="text-2xl font-bold text-gray-900 mb-6">Architecture Violations</h2>
+      ${archViolations.length === 0
+        ? "<p class='text-gray-500'>No architecture violations.</p>"
+        : `
+      <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Rule</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Symbol</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Severity</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Message</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            ${archViolations
+              .map(
+                (v) => {
+                  const sym = v.symbol_id ? symbolMap.get(v.symbol_id) : undefined;
+                  const symbolCell = sym
+                    ? `<a href="symbols/${v.symbol_id}.html" class="text-blue-600 hover:underline">${escapeHtml(sym.name)}</a>`
+                    : (v.symbol_id ? escapeHtml(v.symbol_id) : "-");
+                  return `<tr>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${escapeHtml(v.rule)}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHtml(v.file)}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm">${symbolCell}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm"><span class="px-2 py-0.5 rounded text-xs font-medium ${v.severity === "error" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"}">${escapeHtml(v.severity)}</span></td>
+                <td class="px-6 py-4 text-sm text-gray-600">${escapeHtml(v.message)}</td>
+              </tr>`;
+                },
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </div>`}
+    </div>
+
+    <div id="reaper" class="mb-12">
+      <h2 class="text-2xl font-bold text-gray-900 mb-6">Code Quality (Reaper)</h2>
+      ${reaperFindings.length === 0
+        ? "<p class='text-gray-500'>No Reaper findings.</p>"
+        : `
+      <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Target</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Suggested action</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Reason</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            ${reaperFindings
+              .map(
+                (f) => {
+                  const sym = symbolMap.get(f.target);
+                  const targetCell = sym
+                    ? `<a href="symbols/${f.target}.html" class="text-blue-600 hover:underline">${escapeHtml(sym.name)}</a>`
+                    : escapeHtml(f.target);
+                  return `<tr>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${escapeHtml(f.type)}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm">${targetCell}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHtml(f.suggested_action)}</td>
+                <td class="px-6 py-4 text-sm text-gray-600">${escapeHtml(f.reason)}</td>
+              </tr>`;
+                },
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </div>`}
+    </div>
+  `;
+
+  return layout("Governance", "governance.html", body);
 }
 
 export function buildSearchIndex(symbols: CodeSymbol[]): {

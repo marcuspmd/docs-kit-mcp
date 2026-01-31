@@ -12,6 +12,7 @@ CREATE TABLE IF NOT EXISTS symbols (
   language          TEXT,
   doc_ref           TEXT,
   summary           TEXT,
+  doc_comment       TEXT,
   tags              TEXT,       -- JSON array
   domain            TEXT,
   bounded_context   TEXT,
@@ -46,6 +47,28 @@ CREATE TABLE IF NOT EXISTS doc_mappings (
   section     TEXT,
   updated_at  TEXT DEFAULT (datetime('now')),
   PRIMARY KEY (symbol_name, doc_path)
+);
+
+CREATE TABLE IF NOT EXISTS patterns (
+  kind        TEXT NOT NULL,
+  symbols     TEXT NOT NULL,
+  confidence  REAL NOT NULL,
+  violations  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS arch_violations (
+  rule      TEXT NOT NULL,
+  file      TEXT NOT NULL,
+  symbol_id TEXT,
+  message   TEXT NOT NULL,
+  severity  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reaper_findings (
+  type             TEXT NOT NULL,
+  target           TEXT NOT NULL,
+  reason           TEXT NOT NULL,
+  suggested_action TEXT NOT NULL
 );
 
 CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file);

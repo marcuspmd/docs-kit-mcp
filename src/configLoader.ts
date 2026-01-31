@@ -6,7 +6,7 @@ import { pathToFileURL } from "node:url";
 const CONFIG_FILENAMES = ["docs.config.js", "docs.config.mjs", "docs.config.cjs"];
 
 const DEFAULT_CONFIG_CONTENT = `/** @type {import('docs-kit').Config} */
-module.exports = {
+export default {
   include: [
     "**/*.ts",
     "**/*.tsx",

@@ -14,6 +14,9 @@ import {
   createSymbolRepository,
   createRelationshipRepository,
   createFileHashRepository,
+  replaceAllPatterns,
+  replaceAllArchViolations,
+  replaceAllReaperFindings,
 } from "./storage/db.js";
 import { loadConfig, configExists, createDefaultConfig } from "./configLoader.js";
 import fg from "fast-glob";
@@ -375,6 +378,8 @@ async function runIndex(args: string[]) {
     }
   });
   upsertRels();
+
+  replaceAllPatterns(db, patterns.map((p) => ({ kind: p.kind, symbols: p.symbols, confidence: p.confidence, violations: p.violations })));
   done(dbPath);
 
   // Phase 6: Scan docs and populate doc_mappings
@@ -397,6 +402,52 @@ async function runIndex(args: string[]) {
       }
     })();
     done(`${docMappingsCount} mappings`);
+  }
+
+  // Phase 6.5: Governance (arch violations + reaper findings) for site
+  {
+    step("Governance (arch + reaper)");
+    const graph = createKnowledgeGraph(db);
+    const symRelationships: SymbolRelationship[] = relationships.map((r) => ({
+      sourceId: r.sourceId,
+      targetId: r.targetId,
+      type: r.type,
+      location: r.location,
+    }));
+    const archGuard = createArchGuard();
+    const archRulesPath = path.join(rootDir, "arch-guard.json");
+    if (fs.existsSync(archRulesPath)) {
+      try {
+        await archGuard.loadRules(archRulesPath);
+      } catch {
+        // ignore load errors
+      }
+    }
+    const archViolations = archGuard.analyze(allSymbols, symRelationships);
+    replaceAllArchViolations(
+      db,
+      archViolations.map((v) => ({
+        rule: v.rule,
+        file: v.file,
+        symbol_id: v.symbolId ?? null,
+        message: v.message,
+        severity: v.severity,
+      })),
+    );
+
+    const docMappingsForReaper = (db.prepare("SELECT symbol_name, doc_path FROM doc_mappings").all() as Array<{ symbol_name: string; doc_path: string }>).map((m) => ({ symbolName: m.symbol_name, docPath: m.doc_path }));
+    const reaper = createReaper();
+    const reaperFindings = reaper.scan(allSymbols, graph, docMappingsForReaper);
+    replaceAllReaperFindings(
+      db,
+      reaperFindings.map((f) => ({
+        type: f.type,
+        target: f.target,
+        reason: f.reason,
+        suggested_action: f.suggestedAction,
+      })),
+    );
+    done(`${archViolations.length} arch, ${reaperFindings.length} reaper`);
   }
 
   // Phase 7: Auto-populate RAG index

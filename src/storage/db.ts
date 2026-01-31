@@ -83,6 +83,28 @@ CREATE TABLE IF NOT EXISTS file_hashes (
   last_indexed_at TEXT DEFAULT (datetime('now'))
 );
 
+CREATE TABLE IF NOT EXISTS patterns (
+  kind        TEXT NOT NULL,
+  symbols     TEXT NOT NULL,
+  confidence  REAL NOT NULL,
+  violations  TEXT
+);
+
+CREATE TABLE IF NOT EXISTS arch_violations (
+  rule      TEXT NOT NULL,
+  file      TEXT NOT NULL,
+  symbol_id TEXT,
+  message   TEXT NOT NULL,
+  severity  TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS reaper_findings (
+  type            TEXT NOT NULL,
+  target          TEXT NOT NULL,
+  reason          TEXT NOT NULL,
+  suggested_action TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file);
 CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind);
 CREATE INDEX IF NOT EXISTS idx_doc_mappings_path ON doc_mappings(doc_path);
@@ -90,6 +112,15 @@ CREATE INDEX IF NOT EXISTS idx_doc_mappings_path ON doc_mappings(doc_path);
 
 export function initializeSchema(db: Database.Database): void {
   db.exec(SCHEMA_SQL);
+  // Migrate existing DBs: add doc_comment to symbols if missing
+  try {
+    const info = db.prepare("PRAGMA table_info(symbols)").all() as Array<{ name: string }>;
+    if (!info.some((r) => r.name === "doc_comment")) {
+      db.prepare("ALTER TABLE symbols ADD COLUMN doc_comment TEXT").run();
+    }
+  } catch {
+    // Table may not exist yet (fresh DB)
+  }
 }
 
 /* ================== SymbolRepository ================== */
@@ -386,4 +417,73 @@ export function createRelationshipRepository(db: Database.Database): Relationshi
       deleteBySourceStmt.run(sourceId);
     },
   };
+}
+
+/* ================== Patterns (replace-all for site generator) ================== */
+
+export interface PatternRowForInsert {
+  kind: string;
+  symbols: string[];
+  confidence: number;
+  violations: string[];
+}
+
+export function replaceAllPatterns(db: Database.Database, patterns: PatternRowForInsert[]): void {
+  db.prepare("DELETE FROM patterns").run();
+  const insertStmt = db.prepare(
+    "INSERT INTO patterns (kind, symbols, confidence, violations) VALUES (?, ?, ?, ?)",
+  );
+  for (const p of patterns) {
+    insertStmt.run(
+      p.kind,
+      JSON.stringify(p.symbols),
+      p.confidence,
+      p.violations.length > 0 ? JSON.stringify(p.violations) : null,
+    );
+  }
+}
+
+/* ================== Arch violations (replace-all for site) ================== */
+
+export interface ArchViolationRow {
+  rule: string;
+  file: string;
+  symbol_id: string | null;
+  message: string;
+  severity: string;
+}
+
+export function replaceAllArchViolations(
+  db: Database.Database,
+  violations: ArchViolationRow[],
+): void {
+  db.prepare("DELETE FROM arch_violations").run();
+  const insertStmt = db.prepare(
+    "INSERT INTO arch_violations (rule, file, symbol_id, message, severity) VALUES (?, ?, ?, ?, ?)",
+  );
+  for (const v of violations) {
+    insertStmt.run(v.rule, v.file, v.symbol_id ?? null, v.message, v.severity);
+  }
+}
+
+/* ================== Reaper findings (replace-all for site) ================== */
+
+export interface ReaperFindingRow {
+  type: string;
+  target: string;
+  reason: string;
+  suggested_action: string;
+}
+
+export function replaceAllReaperFindings(
+  db: Database.Database,
+  findings: ReaperFindingRow[],
+): void {
+  db.prepare("DELETE FROM reaper_findings").run();
+  const insertStmt = db.prepare(
+    "INSERT INTO reaper_findings (type, target, reason, suggested_action) VALUES (?, ?, ?, ?)",
+  );
+  for (const f of findings) {
+    insertStmt.run(f.type, f.target, f.reason, f.suggested_action);
+  }
 }
