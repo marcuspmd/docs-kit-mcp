@@ -9,34 +9,40 @@ describe("MCP server tool registration", () => {
     });
 
     expect(() => {
-      server.tool(
+      server.registerTool(
         "generateDocs",
-        "Update docs for symbols affected by recent changes",
         {
-          base: z.string().default("main"),
-          head: z.string().optional(),
-          dryRun: z.boolean().default(false),
-          docsDir: z.string().default("docs"),
+          description: "Update docs for symbols affected by recent changes",
+          inputSchema: {
+            base: z.string().default("main"),
+            head: z.string().optional(),
+            dryRun: z.boolean().default(false),
+            docsDir: z.string().default("docs"),
+          },
         },
         async () => ({ content: [{ type: "text" as const, text: "ok" }] }),
       );
 
-      server.tool(
+      server.registerTool(
         "explainSymbol",
-        "Explain a code symbol combining code analysis and existing docs",
         {
-          symbol: z.string(),
-          docsDir: z.string().default("docs"),
+          description: "Explain a code symbol combining code analysis and existing docs",
+          inputSchema: {
+            symbol: z.string(),
+            docsDir: z.string().default("docs"),
+          },
         },
         async () => ({ content: [{ type: "text" as const, text: "ok" }] }),
       );
 
-      server.tool(
+      server.registerTool(
         "generateMermaid",
-        "Generate Mermaid diagram for given symbols",
         {
-          symbols: z.string(),
-          type: z.enum(["classDiagram", "sequenceDiagram", "flowchart"]).default("classDiagram"),
+          description: "Generate Mermaid diagram for given symbols",
+          inputSchema: {
+            symbols: z.string(),
+            type: z.enum(["classDiagram", "sequenceDiagram", "flowchart"]).default("classDiagram"),
+          },
         },
         async () => ({ content: [{ type: "text" as const, text: "ok" }] }),
       );
@@ -46,12 +52,12 @@ describe("MCP server tool registration", () => {
   test("duplicate tool name throws", () => {
     const server = new McpServer({ name: "test", version: "1.0.0" });
 
-    server.tool("myTool", "desc", { x: z.string() }, async () => ({
+    server.registerTool("myTool", { description: "desc", inputSchema: { x: z.string() } }, async () => ({
       content: [{ type: "text" as const, text: "ok" }],
     }));
 
     expect(() => {
-      server.tool("myTool", "desc", { x: z.string() }, async () => ({
+      server.registerTool("myTool", { description: "desc", inputSchema: { x: z.string() } }, async () => ({
         content: [{ type: "text" as const, text: "ok" }],
       }));
     }).toThrow();

@@ -90,14 +90,16 @@ const server = new McpServer({
   version: "1.0.0",
 });
 
-server.tool(
+server.registerTool(
   "generateDocs",
-  "Update docs for symbols affected by recent changes",
   {
-    base: z.string().default("main").describe("Base ref (e.g. main)"),
-    head: z.string().optional().describe("Head ref"),
-    dryRun: z.boolean().default(false).describe("Preview without writing"),
-    docsDir: z.string().default("docs").describe("Docs directory"),
+    description: "Update docs for symbols affected by recent changes",
+    inputSchema: {
+      base: z.string().default("main").describe("Base ref (e.g. main)"),
+      head: z.string().optional().describe("Head ref"),
+      dryRun: z.boolean().default(false).describe("Preview without writing"),
+      docsDir: z.string().default("docs").describe("Docs directory"),
+    },
   },
   async ({ base, head, dryRun, docsDir }) => {
     try {
@@ -132,12 +134,14 @@ server.tool(
   },
 );
 
-server.tool(
+server.registerTool(
   "explainSymbol",
-  "Explain a code symbol combining code analysis and existing docs",
   {
-    symbol: z.string().describe("Symbol name (e.g. OrderService.createOrder)"),
-    docsDir: z.string().default("docs").describe("Docs directory"),
+    description: "Explain a code symbol combining code analysis and existing docs",
+    inputSchema: {
+      symbol: z.string().describe("Symbol name (e.g. OrderService.createOrder)"),
+      docsDir: z.string().default("docs").describe("Docs directory"),
+    },
   },
   async ({ symbol: symbolName, docsDir }) => {
     try {
@@ -171,15 +175,17 @@ server.tool(
   },
 );
 
-server.tool(
+server.registerTool(
   "generateMermaid",
-  "Generate Mermaid diagram for given symbols",
   {
-    symbols: z.string().describe("Comma-separated symbol names"),
-    type: z
-      .enum(["classDiagram", "sequenceDiagram", "flowchart"])
-      .default("classDiagram")
-      .describe("Diagram type"),
+    description: "Generate Mermaid diagram for given symbols",
+    inputSchema: {
+      symbols: z.string().describe("Comma-separated symbol names"),
+      type: z
+        .enum(["classDiagram", "sequenceDiagram", "flowchart"])
+        .default("classDiagram")
+        .describe("Diagram type"),
+    },
   },
   async ({ symbols: symbolsStr, type: diagramType }) => {
     try {
@@ -213,16 +219,18 @@ server.tool(
   },
 );
 
-server.tool(
+server.registerTool(
   "scanFile",
-  "Scan a TypeScript file and generate documentation for any undocumented symbols",
   {
-    filePath: z.string().describe("Path to the TypeScript file to scan"),
-    docsDir: z.string().default("docs").describe("Directory containing documentation files"),
-    dbPath: z
-      .string()
-      .default(".doc-kit/registry.db")
-      .describe("Path to the documentation registry database"),
+    description: "Scan a TypeScript file and generate documentation for any undocumented symbols",
+    inputSchema: {
+      filePath: z.string().describe("Path to the TypeScript file to scan"),
+      docsDir: z.string().default("docs").describe("Directory containing documentation files"),
+      dbPath: z
+        .string()
+        .default(".doc-kit/registry.db")
+        .describe("Path to the documentation registry database"),
+    },
   },
   async ({ filePath: filePathParam, docsDir, dbPath }) => {
     try {
@@ -276,12 +284,14 @@ server.tool(
   },
 );
 
-server.tool(
+server.registerTool(
   "impactAnalysis",
-  "Analyze what breaks if a symbol changes, using the Knowledge Graph",
   {
-    symbol: z.string().describe("Symbol name (e.g. OrderService.createOrder)"),
-    maxDepth: z.number().default(3).describe("Maximum depth to traverse dependencies"),
+    description: "Analyze what breaks if a symbol changes, using the Knowledge Graph",
+    inputSchema: {
+      symbol: z.string().describe("Symbol name (e.g. OrderService.createOrder)"),
+      maxDepth: z.number().default(3).describe("Maximum depth to traverse dependencies"),
+    },
   },
   async ({ symbol, maxDepth }) => {
     try {
@@ -324,10 +334,11 @@ server.tool(
   },
 );
 
-server.tool(
+server.registerTool(
   "analyzePatterns",
-  "Detect patterns and violations (SOLID, etc.), generate reports",
-  {},
+  {
+    description: "Detect patterns and violations (SOLID, etc.), generate reports",
+  },
   async () => {
     try {
       const allSymbols = symbolRepo.findAll();
@@ -361,7 +372,7 @@ server.tool(
   },
 );
 
-server.tool("generateEventFlow", "Simulate event flows and listeners", {}, async () => {
+server.registerTool("generateEventFlow", { description: "Simulate event flows and listeners" }, async () => {
   try {
     const allSymbols = symbolRepo.findAll();
     const allRels = relationshipRowsToSymbolRelationships(relRepo.findAll());
@@ -384,12 +395,14 @@ server.tool("generateEventFlow", "Simulate event flows and listeners", {}, async
   }
 });
 
-server.tool(
+server.registerTool(
   "createOnboarding",
-  "Generate learning paths using RAG",
   {
-    topic: z.string().describe("Topic to generate learning path for"),
-    docsDir: z.string().default("docs").describe("Docs directory"),
+    description: "Generate learning paths using RAG",
+    inputSchema: {
+      topic: z.string().describe("Topic to generate learning path for"),
+      docsDir: z.string().default("docs").describe("Docs directory"),
+    },
   },
   async ({ topic, docsDir }) => {
     try {
@@ -422,12 +435,14 @@ server.tool(
   },
 );
 
-server.tool(
+server.registerTool(
   "askKnowledgeBase",
-  "Conversational Q&A on code + docs",
   {
-    question: z.string().describe("Question to ask the knowledge base"),
-    docsDir: z.string().default("docs").describe("Docs directory"),
+    description: "Conversational Q&A on code + docs",
+    inputSchema: {
+      question: z.string().describe("Question to ask the knowledge base"),
+      docsDir: z.string().default("docs").describe("Docs directory"),
+    },
   },
   async ({ question, docsDir }) => {
     try {
@@ -458,10 +473,11 @@ server.tool(
   },
 );
 
-server.tool(
+server.registerTool(
   "analyzeArchitecture",
-  "Analyze code for architecture violations and naming conventions",
-  {},
+  {
+    description: "Analyze code for architecture violations and naming conventions",
+  },
   async () => {
     try {
       const allSymbols = symbolRepo.findAll();
@@ -489,11 +505,13 @@ server.tool(
   },
 );
 
-server.tool(
+server.registerTool(
   "scanForDeadCode",
-  "Scan for dead code, orphan docs, and broken links",
   {
-    docsDir: z.string().default("docs").describe("Docs directory"),
+    description: "Scan for dead code, orphan docs, and broken links",
+    inputSchema: {
+      docsDir: z.string().default("docs").describe("Docs directory"),
+    },
   },
   async ({ docsDir }) => {
     try {
@@ -526,11 +544,13 @@ server.tool(
   },
 );
 
-server.tool(
+server.registerTool(
   "buildTraceabilityMatrix",
-  "Build Requirements Traceability Matrix from commits and comments",
   {
-    docsDir: z.string().default("docs").describe("Docs directory"),
+    description: "Build Requirements Traceability Matrix from commits and comments",
+    inputSchema: {
+      docsDir: z.string().default("docs").describe("Docs directory"),
+    },
   },
   async ({ docsDir }) => {
     try {
@@ -564,12 +584,14 @@ server.tool(
   },
 );
 
-server.tool(
+server.registerTool(
   "describeInBusinessTerms",
-  "Describe a code symbol in business terms (rules, if/else, outcomes) for product/compliance",
   {
-    symbol: z.string().describe("Symbol name (e.g. OrderService.createOrder)"),
-    docsDir: z.string().default("docs").describe("Docs directory for existing doc context"),
+    description: "Describe a code symbol in business terms (rules, if/else, outcomes) for product/compliance",
+    inputSchema: {
+      symbol: z.string().describe("Symbol name (e.g. OrderService.createOrder)"),
+      docsDir: z.string().default("docs").describe("Docs directory for existing doc context"),
+    },
   },
   async ({ symbol: symbolName, docsDir }) => {
     try {
@@ -620,12 +642,14 @@ server.tool(
   },
 );
 
-server.tool(
+server.registerTool(
   "validateExamples",
-  "Validate code examples in documentation against real code",
   {
-    docsDir: z.string().default("docs").describe("Docs directory"),
-    docPath: z.string().optional().describe("Specific doc file to validate (optional)"),
+    description: "Validate code examples in documentation against real code",
+    inputSchema: {
+      docsDir: z.string().default("docs").describe("Docs directory"),
+      docPath: z.string().optional().describe("Specific doc file to validate (optional)"),
+    },
   },
   async ({ docsDir, docPath }) => {
     try {
@@ -663,12 +687,14 @@ server.tool(
   },
 );
 
-server.tool(
+server.registerTool(
   "smartCodeReview",
-  "Perform comprehensive code review combining architecture analysis, pattern detection, dead code scanning, and documentation validation",
   {
-    docsDir: z.string().default("docs").describe("Docs directory"),
-    includeExamples: z.boolean().default(true).describe("Include code example validation"),
+    description: "Perform comprehensive code review combining architecture analysis, pattern detection, dead code scanning, and documentation validation",
+    inputSchema: {
+      docsDir: z.string().default("docs").describe("Docs directory"),
+      includeExamples: z.boolean().default(true).describe("Include code example validation"),
+    },
   },
   async ({ docsDir, includeExamples }) => {
     try {
@@ -708,11 +734,13 @@ server.tool(
   },
 );
 
-server.tool(
+server.registerTool(
   "projectStatus",
-  "Generate comprehensive project status report with documentation coverage, patterns, and metrics",
   {
-    docsDir: z.string().default("docs").describe("Docs directory"),
+    description: "Generate comprehensive project status report with documentation coverage, patterns, and metrics",
+    inputSchema: {
+      docsDir: z.string().default("docs").describe("Docs directory"),
+    },
   },
   async ({ docsDir }) => {
     try {
@@ -751,13 +779,15 @@ server.tool(
   },
 );
 
-server.tool(
+server.registerTool(
   "getRelevantContext",
-  "Get comprehensive context for understanding or modifying a symbol or file — combines index, graph, docs, and source code",
   {
-    symbol: z.string().optional().describe("Symbol name to get context for"),
-    file: z.string().optional().describe("File path to get context for"),
-    docsDir: z.string().default("docs").describe("Docs directory"),
+    description: "Get comprehensive context for understanding or modifying a symbol or file — combines index, graph, docs, and source code",
+    inputSchema: {
+      symbol: z.string().optional().describe("Symbol name to get context for"),
+      file: z.string().optional().describe("File path to get context for"),
+      docsDir: z.string().default("docs").describe("Docs directory"),
+    },
   },
   async ({ symbol: symbolName, file: filePath, docsDir }) => {
     try {
