@@ -1,5 +1,5 @@
 {
-  "name": "docs-agent",
+  "name": "docs-kit",
   "description": "Intelligent documentation agent via MCP",
   "command": "node",
   "args": ["dist/server.js"],

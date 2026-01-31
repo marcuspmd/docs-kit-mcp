@@ -1,4 +1,4 @@
-/** @type {import('doc-kit').Config} */
+/** @type {import('docs-kit').Config} */
 module.exports = {
   include: [
     "**/*.ts",

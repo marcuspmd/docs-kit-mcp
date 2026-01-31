@@ -46,7 +46,7 @@ MCP config file:
 
 ```json
 {
-  "name": "docs-agent",
+  "name": "docs-kit",
   "description": "Intelligent documentation agent via MCP",
   "command": "node",
   "args": ["dist/server.js"],
@@ -272,7 +272,7 @@ A PHP + TypeScript monorepo where each language needs different documentation st
 
 ```bash
 # Clone and setup
-git clone <repo> && cd docs-agent
+git clone <repo> && cd docs-kit
 npm install
 npm run build
 npm test

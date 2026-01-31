@@ -4,7 +4,7 @@ import { z } from "zod";
 describe("MCP server tool registration", () => {
   test("server registers all three tools without error", () => {
     const server = new McpServer({
-      name: "docs-agent",
+      name: "docs-kit",
       version: "1.0.0",
     });
 

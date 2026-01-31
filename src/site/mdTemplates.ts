@@ -38,7 +38,7 @@ export function renderDashboardMd(data: MdSiteData): string {
     )
     .join("\n");
 
-  return `# doc-kit Documentation
+  return `# docs-kit Documentation
 
 | Metric | Count |
 |--------|-------|

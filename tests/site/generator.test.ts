@@ -67,7 +67,7 @@ describe("generateSite", () => {
   let outDir: string;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "doc-kit-site-test-"));
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "docs-kit-site-test-"));
     dbPath = path.join(tmpDir, "index.db");
     outDir = path.join(tmpDir, "site");
     createTestDb(dbPath);
@@ -80,7 +80,7 @@ describe("generateSite", () => {
   it("generates index.html", () => {
     generateSite({ dbPath, outDir });
     const indexHtml = fs.readFileSync(path.join(outDir, "index.html"), "utf-8");
-    expect(indexHtml).toContain("doc-kit Documentation");
+    expect(indexHtml).toContain("docs-kit Documentation");
     expect(indexHtml).toContain("UserService");
     expect(indexHtml).toContain("User");
   });

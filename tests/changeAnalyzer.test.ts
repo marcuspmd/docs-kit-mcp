@@ -284,7 +284,7 @@ describe("default dependencies", () => {
     const deps = createDefaultDeps();
     // Test with a valid ref and existing file
     const result = await deps.getFileAtRef(".", "package.json", "HEAD");
-    expect(result).toContain('"name": "doc-kit"');
+    expect(result).toContain('"name": "docs-kit"');
     expect(typeof result).toBe("string");
   });
 

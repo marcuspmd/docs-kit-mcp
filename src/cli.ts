@@ -92,22 +92,22 @@ async function main() {
 }
 
 function printHelp() {
-  console.log(`doc-kit - Intelligent documentation agent
+  console.log(`docs-kit - Intelligent documentation agent
 
 Usage:
-  doc-kit init [dir]                                    Create docs.config.js with defaults
-  doc-kit index [dir] [--db path] [--docs dir] [--full]
+  docs-kit init [dir]                                    Create docs.config.js with defaults
+  docs-kit index [dir] [--db path] [--docs dir] [--full]
                                                         Index repository (incremental by default)
-  doc-kit build-site [--out dir] [--db path] [--root dir]
+  docs-kit build-site [--out dir] [--db path] [--root dir]
                                                         Generate static HTML site
-  doc-kit build-docs [--out dir] [--db path] [--root dir]
+  docs-kit build-docs [--out dir] [--db path] [--root dir]
                                                         Generate Markdown documentation
-  doc-kit generate-repo-docs [repo-dir] [docs-dir]     Generate markdown docs
-  doc-kit project-status [--db path] [--docs dir]      Generate project status report
-  doc-kit smart-code-review [--db path] [--docs dir] [--no-examples]
+  docs-kit generate-repo-docs [repo-dir] [docs-dir]     Generate markdown docs
+  docs-kit project-status [--db path] [--docs dir]      Generate project status report
+  docs-kit smart-code-review [--db path] [--docs dir] [--no-examples]
                                                         Perform comprehensive code review
-  doc-kit dead-code [--db path] [--docs dir]            Scan and mark dead code in database
-  doc-kit --help                                        Show this help
+  docs-kit dead-code [--db path] [--docs dir]            Scan and mark dead code in database
+  docs-kit --help                                        Show this help
 
 Commands:
   init               Create docs.config.js with default settings
@@ -467,7 +467,7 @@ function runBuildSite(args: string[]) {
 
   if (!fs.existsSync(dbPath)) {
     console.error(`Error: Database not found at ${dbPath}`);
-    console.error(`Run "doc-kit index" first to create the index.`);
+    console.error(`Run "docs-kit index" first to create the index.`);
     process.exit(1);
   }
 
@@ -506,7 +506,7 @@ function runBuildDocs(args: string[]) {
 
   if (!fs.existsSync(dbPath)) {
     console.error(`Error: Database not found at ${dbPath}`);
-    console.error(`Run "doc-kit index" first to create the index.`);
+    console.error(`Run "docs-kit index" first to create the index.`);
     process.exit(1);
   }
 
@@ -710,7 +710,7 @@ async function runProjectStatus(args: string[]) {
 
   if (!fs.existsSync(dbPath)) {
     console.error(`Error: Database not found at ${dbPath}`);
-    console.error(`Run "doc-kit index" first to create the index.`);
+    console.error(`Run "docs-kit index" first to create the index.`);
     process.exit(1);
   }
 
@@ -759,7 +759,7 @@ async function runSmartCodeReview(args: string[]) {
 
   if (!fs.existsSync(dbPath)) {
     console.error(`Error: Database not found at ${dbPath}`);
-    console.error(`Run "doc-kit index" first to create the index.`);
+    console.error(`Run "docs-kit index" first to create the index.`);
     process.exit(1);
   }
 
@@ -809,7 +809,7 @@ async function runDeadCodeScan(args: string[]) {
 
   if (!fs.existsSync(dbPath)) {
     console.error(`Error: Database not found at ${dbPath}`);
-    console.error(`Run "doc-kit index" first to create the index.`);
+    console.error(`Run "docs-kit index" first to create the index.`);
     process.exit(1);
   }
 

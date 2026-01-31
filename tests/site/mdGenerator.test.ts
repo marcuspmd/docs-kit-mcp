@@ -63,7 +63,7 @@ describe("generateDocs (Markdown)", () => {
   let outDir: string;
 
   beforeEach(() => {
-    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "doc-kit-md-test-"));
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), "docs-kit-md-test-"));
     dbPath = path.join(tmpDir, "index.db");
     outDir = path.join(tmpDir, "docs-output");
     createTestDb(dbPath);
@@ -76,7 +76,7 @@ describe("generateDocs (Markdown)", () => {
   it("generates README.md with stats and links", () => {
     generateDocs({ dbPath, outDir });
     const readme = fs.readFileSync(path.join(outDir, "README.md"), "utf-8");
-    expect(readme).toContain("# doc-kit Documentation");
+    expect(readme).toContain("# docs-kit Documentation");
     expect(readme).toContain("UserService");
     expect(readme).toContain("User");
     expect(readme).toContain("symbols/");

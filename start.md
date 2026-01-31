@@ -103,7 +103,7 @@ O **Documentation Agent MCP** é um sistema que transforma documentação em uma
 ### 4.1 Estrutura de projeto
 
 ```txt
-docs-agent/
+docs-kit/
 ├── package.json
 ├── mcp.json
 ├── tsconfig.json
@@ -173,7 +173,7 @@ Config MCP:
 
 ```json
 {
-  "name": "docs-agent",
+  "name": "docs-kit",
   "description": "Agente MCP para documentação inteligente baseada em mudanças reais",
   "command": "node",
   "args": ["dist/server.js"],
@@ -260,16 +260,16 @@ CREATE TABLE relationships (
 
 ### 6.1 VS Code / Copilot (MCP)
 
-- `@docs-agent generateDocs`
+- `@docs-kit generateDocs`
 Atualiza automaticamente docs ligadas a símbolos afetados no último diff.
-- `@docs-agent explainSymbol symbol=RecalcularMovimentacoesStep.convertOpMovements`
+- `@docs-kit explainSymbol symbol=RecalcularMovimentacoesStep.convertOpMovements`
 Gera explicação em português combinando código + doc existente.
-- `@docs-agent generateMermaid symbols=ClassA,ClassB type=classDiagram`
+- `@docs-kit generateMermaid symbols=ClassA,ClassB type=classDiagram`
 Cria diagrama para ilustrar relações chave.
 - Futuro:
-    - `@docs-agent impactAnalysis symbol=ProductService` (quem quebra se eu mudar X?).
-    - `@docs-agent createOnboarding --focus="Estoque"`.
-    - `@docs-agent askKnowledgeBase "como é calculada a taxa de juros?"`.
+    - `@docs-kit impactAnalysis symbol=ProductService` (quem quebra se eu mudar X?).
+    - `@docs-kit createOnboarding --focus="Estoque"`.
+    - `@docs-kit askKnowledgeBase "como é calculada a taxa de juros?"`.
 
 
 ### 6.2 CI/CD (prevenção de problemas)

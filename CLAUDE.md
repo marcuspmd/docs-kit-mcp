@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-**doc-kit** is an intelligent documentation agent built on MCP (Model Context Protocol). It performs semantic change detection via AST analysis (tree-sitter) combined with Git diffs to automatically update documentation when code changes. The full specification is in `start.md` (written in Portuguese).
+**docs-kit** is an intelligent documentation agent built on MCP (Model Context Protocol). It performs semantic change detection via AST analysis (tree-sitter) combined with Git diffs to automatically update documentation when code changes. The full specification is in `start.md` (written in Portuguese).
 
 ## Tech Stack (Planned)
 

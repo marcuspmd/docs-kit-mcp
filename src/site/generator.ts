@@ -225,7 +225,7 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
         lines.push("---\n");
         lines.push(`# ${title}\n`);
         lines.push(
-          `This page was generated automatically by doc-kit as a placeholder for ${linked.length} symbol(s).`,
+          `This page was generated automatically by docs-kit as a placeholder for ${linked.length} symbol(s).`,
         );
         lines.push("");
         for (const s of linked) {

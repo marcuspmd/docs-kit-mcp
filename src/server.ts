@@ -74,7 +74,7 @@ const reaper = createReaper();
 const contextMapper = createContextMapper();
 const codeExampleValidator = createCodeExampleValidator();
 const server = new McpServer({
-  name: "docs-agent",
+  name: "docs-kit",
   version: "1.0.0",
 });
 

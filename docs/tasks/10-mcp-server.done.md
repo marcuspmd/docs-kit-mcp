@@ -20,7 +20,7 @@ Implement an MCP server that exposes the core tools: `generateDocs`, `explainSym
 import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 
 const server = new McpServer({
-  name: "docs-agent",
+  name: "docs-kit",
   version: "1.0.0",
 });
 
@@ -68,7 +68,7 @@ Server configuration from `mcp.json`:
 
 ```json
 {
-  "name": "docs-agent",
+  "name": "docs-kit",
   "description": "Intelligent documentation agent via MCP",
   "command": "node",
   "args": ["dist/server.js"],
@@ -95,13 +95,13 @@ Server configuration from `mcp.json`:
 
 ```
 # VS Code / Copilot usage
-@docs-agent generateDocs --base main
+@docs-kit generateDocs --base main
 → "Updated 3 doc sections across 2 files"
 
-@docs-agent explainSymbol symbol=OrderService.createOrder
+@docs-kit explainSymbol symbol=OrderService.createOrder
 → "OrderService.createOrder creates a new order... [combined from code + docs]"
 
-@docs-agent generateMermaid symbols=OrderService,PaymentService type=classDiagram
+@docs-kit generateMermaid symbols=OrderService,PaymentService type=classDiagram
 → ```mermaid
    classDiagram
      OrderService --> PaymentService : uses

@@ -1,10 +1,10 @@
-# Configuração MCP para IA - Doc Kit
+# Configuração MCP para IA - docs-kit
 
-Este documento explica como configurar uma IA (como Claude, GitHub Copilot, ou outros clientes MCP) para usar o sistema Doc Kit via Model Context Protocol (MCP).
+Este documento explica como configurar uma IA (como Claude, GitHub Copilot, ou outros clientes MCP) para usar o sistema docs-kit via Model Context Protocol (MCP).
 
 ## 🚀 Visão Geral
 
-O Doc Kit fornece um servidor MCP que permite que IAs analisem código TypeScript e gerem documentação inteligente usando ferramentas especializadas.
+O docs-kit fornece um servidor MCP que permite que IAs analisem código TypeScript e gerem documentação inteligente usando ferramentas especializadas.
 
 ## 🛠️ Ferramentas MCP Disponíveis
 
@@ -33,9 +33,9 @@ Adicione ao `claude_desktop_config.json`:
 ```json
 {
   "mcpServers": {
-    "doc-kit": {
+    "docs-kit": {
       "command": "node",
-      "args": ["/caminho/para/doc-kit/dist/server.js"],
+      "args": ["/caminho/para/docs-kit/dist/server.js"],
       "env": {
         "NODE_ENV": "production"
       }
@@ -52,7 +52,7 @@ Adicione ao `claude_desktop_config.json`:
 ```json
 {
   "mcp.servers": {
-    "doc-kit": {
+    "docs-kit": {
       "command": "node",
       "args": ["${workspaceFolder}/dist/server.js"],
       "cwd": "${workspaceFolder}"
@@ -67,7 +67,7 @@ Para qualquer cliente MCP compatível:
 
 ```json
 {
-  "name": "doc-kit",
+  "name": "docs-kit",
   "command": "node",
   "args": ["caminho/para/dist/server.js"],
   "env": {

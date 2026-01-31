@@ -1,6 +1,6 @@
-# doc-kit 🚀
+# docs-kit 🚀
 
-**doc-kit** é um agente inteligente de documentação (via MCP) para repositórios de código. Ele analisa mudanças no código, mapeia símbolos para documentos Markdown, gera diagramas (Mermaid), mantém um registro de documentação e fornece uma CLI (`doc-guard`) para validar que PRs atualizam a documentação quando necessário.
+**docs-kit** é um agente inteligente de documentação (via MCP) para repositórios de código. Ele analisa mudanças no código, mapeia símbolos para documentos Markdown, gera diagramas (Mermaid), mantém um registro de documentação e fornece uma CLI (`doc-guard`) para validar que PRs atualizam a documentação quando necessário.
 
 ---
 
@@ -188,16 +188,16 @@ node dist/server.js &
 No VS Code (via extensão MCP ou Copilot):
 
 ```
-@docs-agent generateDocs --base main
+@docs-kit generateDocs --base main
 # → "Updated 3 doc sections across 2 files"
 
-@docs-agent explainSymbol symbol=OrderService.createOrder
+@docs-kit explainSymbol symbol=OrderService.createOrder
 # → "OrderService.createOrder cria um novo pedido... [resumo do código + doc]"
 
-@docs-agent generateMermaid symbols=OrderService,PaymentService type=classDiagram
+@docs-kit generateMermaid symbols=OrderService,PaymentService type=classDiagram
 # → (retorna diagrama Mermaid)
 
-@docs-agent projectStatus
+@docs-kit projectStatus
 # → Comprehensive project status report with coverage, patterns, violations, etc.
 ```
 
@@ -239,11 +239,11 @@ npx doc-guard --base origin/main
 4. Formate com `npm run format` e submeta um pull request
 
   CLI usage:
-  doc-kit index [dir] [--exclude dirs] [--db path]
-  doc-kit build-site [--out dir] [--db path]
-  doc-kit generate-repo-docs [repo-dir] [docs-dir]
-  doc-kit build-docs [--out dir] [--db path] [--root dir]
-  doc-kit project-status [--db path] [--docs dir]
+  docs-kit index [dir] [--exclude dirs] [--db path]
+  docs-kit build-site [--out dir] [--db path]
+  docs-kit generate-repo-docs [repo-dir] [docs-dir]
+  docs-kit build-docs [--out dir] [--db path] [--root dir]
+  docs-kit project-status [--db path] [--docs dir]
 ---
 
 ## Licença

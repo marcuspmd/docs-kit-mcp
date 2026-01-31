@@ -13,7 +13,7 @@ Este comando gera um relatório abrangente do status do projeto, incluindo:
 
 ```bash
 # No VS Code/Copilot
-@docs-agent projectStatus
+@docs-kit projectStatus
 
 # Ou via CLI MCP
 echo '{"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "projectStatus", "arguments": {}}}' | node dist/server.js
