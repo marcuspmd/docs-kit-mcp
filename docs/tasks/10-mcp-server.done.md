@@ -1,6 +1,6 @@
 # Task 10 — MCP Server
 
-> **Status:** pending
+> **Status:** done
 > **Layer:** Interface
 > **Priority:** MVP
 > **Depends on:** 05, 08, 09
