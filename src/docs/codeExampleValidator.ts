@@ -9,6 +9,9 @@ import {
   PHPValidator,
   DartValidator,
   FlutterValidator,
+  PythonValidator,
+  GoValidator,
+  RustValidator,
   DefaultValidator,
 } from "./strategies/index.js";
 
@@ -79,6 +82,9 @@ export function createCodeExampleValidator(): CodeExampleValidator {
     new PHPValidator(),
     new DartValidator(),
     new FlutterValidator(),
+    new PythonValidator(),
+    new GoValidator(),
+    new RustValidator(),
     new DefaultValidator(),
   ];
 

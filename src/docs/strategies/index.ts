@@ -5,4 +5,7 @@ export { BashValidator } from "./BashValidator.js";
 export { PHPValidator } from "./PHPValidator.js";
 export { DartValidator } from "./DartValidator.js";
 export { FlutterValidator } from "./FlutterValidator.js";
+export { PythonValidator } from "./PythonValidator.js";
+export { GoValidator } from "./GoValidator.js";
+export { RustValidator } from "./RustValidator.js";
 export { DefaultValidator } from "./DefaultValidator.js";

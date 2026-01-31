@@ -712,5 +712,53 @@ echo "Hello World"
       expect(result.valid).toBe(true);
       expect(result.example).toBe(example);
     });
+
+    it("validates Python code", async () => {
+      const validator = createCodeExampleValidator();
+
+      const example = {
+        language: "python",
+        code: "print('Hello World')",
+        lineStart: 1,
+        lineEnd: 1,
+      };
+
+      const result = await validator.validateExample(example);
+
+      expect(result.valid).toBe(true);
+      expect(result.example).toBe(example);
+    });
+
+    it("validates Go code", async () => {
+      const validator = createCodeExampleValidator();
+
+      const example = {
+        language: "go",
+        code: 'package main\n\nimport "fmt"\n\nfunc main() {\n\tfmt.Println("Hello World")\n}',
+        lineStart: 1,
+        lineEnd: 1,
+      };
+
+      const result = await validator.validateExample(example);
+
+      expect(result.valid).toBe(true);
+      expect(result.example).toBe(example);
+    });
+
+    it("validates Rust code", async () => {
+      const validator = createCodeExampleValidator();
+
+      const example = {
+        language: "rust",
+        code: 'fn main() {\n    println!("Hello World");\n}',
+        lineStart: 1,
+        lineEnd: 1,
+      };
+
+      const result = await validator.validateExample(example);
+
+      expect(result.valid).toBe(true);
+      expect(result.example).toBe(example);
+    });
   });
 });
