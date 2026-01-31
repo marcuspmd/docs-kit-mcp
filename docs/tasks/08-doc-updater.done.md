@@ -1,6 +1,6 @@
 # Task 08 — Doc Updater
 
-> **Status:** pending
+> **Status:** done
 > **Layer:** Documentation
 > **Priority:** MVP
 > **Depends on:** 05, 07

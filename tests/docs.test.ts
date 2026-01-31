@@ -5,7 +5,14 @@ import {
 } from "../src/docs/frontmatter.js";
 import Database from "better-sqlite3";
 import { createDocRegistry } from "../src/docs/docRegistry.js";
-import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
+import {
+  createDocUpdater,
+  parseSections,
+  removeSection,
+  updateSection,
+} from "../src/docs/docUpdater.js";
+import { ChangeImpact } from "../src/indexer/symbol.types.js";
+import { mkdtemp, writeFile, mkdir, rm, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 
@@ -245,5 +252,214 @@ symbols:
     const registry = createDocRegistry(db);
     const docs = await registry.findDocBySymbol("NonExistent");
     expect(docs).toEqual([]);
+  });
+});
+
+/* ====================== parseSections ====================== */
+
+describe("parseSections", () => {
+  test("parses headings at different levels", () => {
+    const md = `# Title\n\nIntro text.\n\n## Section A\n\nContent A.\n\n## Section B\n\nContent B.\n\n### Sub B1\n\nSub content.`;
+    const sections = parseSections(md);
+    expect(sections).toHaveLength(4);
+    expect(sections[0].heading).toBe("Title");
+    expect(sections[0].level).toBe(1);
+    expect(sections[1].heading).toBe("Section A");
+    expect(sections[1].level).toBe(2);
+    expect(sections[3].heading).toBe("Sub B1");
+    expect(sections[3].level).toBe(3);
+  });
+
+  test("section endLine covers until next heading", () => {
+    const md = `## A\n\nline1\nline2\n\n## B\n\nline3`;
+    const sections = parseSections(md);
+    expect(sections[0].startLine).toBe(0);
+    expect(sections[0].endLine).toBe(4);
+    expect(sections[1].startLine).toBe(5);
+  });
+
+  test("returns empty array for markdown without headings", () => {
+    expect(parseSections("just text\nno headings")).toEqual([]);
+  });
+});
+
+/* ====================== removeSection ====================== */
+
+describe("removeSection", () => {
+  const md = `# Orders\n\n## createOrder\n\nCreates an order.\n\n## cancelOrder\n\nCancels an order.\n`;
+
+  test("removes the matching section", () => {
+    const sections = parseSections(md);
+    const { result } = removeSection(md, sections, "createOrder");
+    expect(result).toContain("# Orders");
+    expect(result).toContain("## cancelOrder");
+    expect(result).not.toContain("createOrder");
+  });
+
+  test("returns unchanged markdown when section not found", () => {
+    const sections = parseSections(md);
+    const { result } = removeSection(md, sections, "nonExistent");
+    expect(result).toBe(md);
+  });
+});
+
+/* ====================== updateSection ====================== */
+
+describe("updateSection", () => {
+  const md = `# Orders\n\n## createOrder\n\nCreates an order.\n\n## cancelOrder\n\nCancels an order.\n`;
+
+  const impact = {
+    symbol: { id: "x", name: "createOrder", kind: "function", file: "f.ts", startLine: 0, endLine: 5 },
+    changeType: "modified",
+    diff: "",
+    docUpdateRequired: true,
+  } as unknown as ChangeImpact;
+
+  test("updates existing section content", () => {
+    const sections = parseSections(md);
+    const { result, heading } = updateSection(md, sections, "createOrder", impact);
+    expect(result).toContain("## createOrder");
+    expect(result).toContain("was modified");
+    expect(result).toContain("## cancelOrder");
+    expect(heading).toBe("createOrder");
+  });
+
+  test("appends new section when not found", () => {
+    const sections = parseSections(md);
+    const newImpact = { ...impact, symbol: { ...impact.symbol, name: "processOrder" }, changeType: "added" } as unknown as ChangeImpact;
+    const { result } = updateSection(md, sections, "processOrder", newImpact);
+    expect(result).toContain("## processOrder");
+    expect(result).toContain("TODO: Document");
+  });
+});
+
+/* ====================== docUpdater integration ====================== */
+
+describe("docUpdater", () => {
+  let db: Database.Database;
+  let tmpDir: string;
+
+  const ordersDoc = `---
+title: Order Service
+symbols:
+  - OrderService
+  - createOrder
+  - legacyMethod
+---
+
+# Order Service
+
+## createOrder
+
+Creates a new order in the system.
+
+## legacyMethod
+
+Old deprecated method.
+`;
+
+  beforeEach(async () => {
+    db = new Database(":memory:");
+    tmpDir = await mkdtemp(join(tmpdir(), "dockit-updater-"));
+    await mkdir(join(tmpDir, "domain"), { recursive: true });
+    await writeFile(join(tmpDir, "domain", "orders.md"), ordersDoc);
+  });
+
+  afterEach(async () => {
+    db.close();
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  function makeImpact(name: string, changeType: string): ChangeImpact {
+    return {
+      symbol: { id: "t", name, kind: "function", file: "src/test.ts", startLine: 0, endLine: 5 },
+      changeType,
+      diff: "some diff",
+      docUpdateRequired: true,
+    } as unknown as ChangeImpact;
+  }
+
+  test("updates correct section for modified symbol", async () => {
+    const registry = createDocRegistry(db);
+    await registry.rebuild(tmpDir);
+    const updater = createDocUpdater();
+    const results = await updater.applyChanges([makeImpact("createOrder", "modified")], registry, tmpDir);
+
+    expect(results).toHaveLength(1);
+    expect(results[0].action).toBe("updated");
+    expect(results[0].symbolName).toBe("createOrder");
+    expect(results[0].sectionHeading).toBe("## createOrder");
+
+    const content = await readFile(join(tmpDir, "domain", "orders.md"), "utf-8");
+    expect(content).toContain("was modified");
+    expect(content).toContain("## legacyMethod");
+  });
+
+  test("removes correct section for deleted symbol", async () => {
+    const registry = createDocRegistry(db);
+    await registry.rebuild(tmpDir);
+    const updater = createDocUpdater();
+    const results = await updater.applyChanges([makeImpact("legacyMethod", "removed")], registry, tmpDir);
+
+    expect(results).toHaveLength(1);
+    expect(results[0].action).toBe("removed");
+
+    const content = await readFile(join(tmpDir, "domain", "orders.md"), "utf-8");
+    expect(content).not.toContain("## legacyMethod");
+    expect(content).not.toContain("Old deprecated method.");
+    expect(content).toContain("## createOrder");
+  });
+
+  test("never creates new files", async () => {
+    const registry = createDocRegistry(db);
+    const updater = createDocUpdater();
+    // Symbol with no mapping — should skip, not create
+    const results = await updater.applyChanges([makeImpact("BrandNew", "added")], registry, tmpDir);
+    expect(results).toHaveLength(1);
+    expect(results[0].action).toBe("skipped");
+  });
+
+  test("does not modify unrelated sections", async () => {
+    const registry = createDocRegistry(db);
+    await registry.rebuild(tmpDir);
+    const updater = createDocUpdater();
+    await updater.applyChanges([makeImpact("createOrder", "modified")], registry, tmpDir);
+
+    const content = await readFile(join(tmpDir, "domain", "orders.md"), "utf-8");
+    expect(content).toContain("## legacyMethod");
+    expect(content).toContain("Old deprecated method.");
+  });
+
+  test("dryRun returns diff without writing", async () => {
+    const registry = createDocRegistry(db);
+    await registry.rebuild(tmpDir);
+    const updater = createDocUpdater({ dryRun: true });
+    const results = await updater.applyChanges([makeImpact("createOrder", "modified")], registry, tmpDir);
+
+    expect(results[0].diff).toBeDefined();
+    expect(results[0].diff!.length).toBeGreaterThan(0);
+
+    // File should be unchanged
+    const content = await readFile(join(tmpDir, "domain", "orders.md"), "utf-8");
+    expect(content).toBe(ordersDoc);
+  });
+
+  test("skips impacts where docUpdateRequired is false", async () => {
+    const registry = createDocRegistry(db);
+    await registry.rebuild(tmpDir);
+    const updater = createDocUpdater();
+    const impact = makeImpact("createOrder", "modified");
+    impact.docUpdateRequired = false;
+    const results = await updater.applyChanges([impact], registry, tmpDir);
+    expect(results).toHaveLength(0);
+  });
+
+  test("returns skipped for symbol with no doc mapping", async () => {
+    const registry = createDocRegistry(db);
+    await registry.rebuild(tmpDir);
+    const updater = createDocUpdater();
+    const results = await updater.applyChanges([makeImpact("UnknownSymbol", "modified")], registry, tmpDir);
+    expect(results).toHaveLength(1);
+    expect(results[0].action).toBe("skipped");
   });
 });
