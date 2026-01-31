@@ -36,9 +36,145 @@ body {
   background: var(--bg);
   color: var(--fg);
   line-height: 1.6;
+  display: flex;
+  flex-direction: column;
+  min-height: 100vh;
+}
+
+.header {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  background: var(--card-bg);
+  border-bottom: 1px solid var(--border);
+  padding: 0.75rem 1rem;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  z-index: 1000;
+  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+}
+
+.header .logo {
+  font-size: 1.25rem;
+  font-weight: bold;
+  color: var(--accent);
+}
+
+.header .search-container {
+  flex: 1;
+  max-width: 400px;
+  margin: 0 2rem;
+}
+
+.header .search-box {
+  width: 100%;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 1rem;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+.main-layout {
+  display: flex;
+  flex: 1;
+  margin-top: 70px; /* height of header */
+}
+
+.sidebar {
+  width: 250px;
+  background: var(--sidebar-bg);
+  border-right: 1px solid var(--border);
+  padding: 1rem;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.sidebar h3 {
+  font-size: 1rem;
+  margin-bottom: 0.5rem;
+  color: var(--muted);
+  text-transform: uppercase;
+  font-weight: 600;
+}
+
+.sidebar nav {
+  margin: 0;
+  padding: 0;
+  border: none;
+}
+
+.sidebar nav a {
+  display: block;
+  padding: 0.5rem 0;
+  color: var(--fg);
+  text-decoration: none;
+  border-radius: var(--radius);
+  margin-bottom: 0.25rem;
+}
+
+.sidebar nav a:hover,
+.sidebar nav a.active {
+  background: var(--accent-light);
+  color: var(--accent);
+}
+
+.content {
+  flex: 1;
+  padding: 2rem;
   max-width: 1200px;
   margin: 0 auto;
-  padding: 2rem;
+  width: 100%;
+}
+
+.right-sidebar {
+  width: 300px;
+  background: var(--sidebar-bg);
+  border-left: 1px solid var(--border);
+  padding: 1rem;
+  overflow-y: auto;
+  flex-shrink: 0;
+}
+
+.right-sidebar .facets {
+  margin-bottom: 1rem;
+}
+
+.right-sidebar .facet {
+  margin-bottom: 1rem;
+}
+
+.right-sidebar .facet strong {
+  display: block;
+  margin-bottom: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+
+.right-sidebar .facet-list {
+  list-style: none;
+  padding: 0;
+}
+
+.right-sidebar .facet-list div {
+  margin-bottom: 0.25rem;
+}
+
+.right-sidebar .facet-list input[type="checkbox"] {
+  margin-right: 0.5rem;
+}
+
+footer {
+  margin-top: auto;
+  padding: 1rem 2rem;
+  border-top: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 0.85rem;
+  background: var(--card-bg);
 }
 
 a { color: var(--accent); text-decoration: none; }
