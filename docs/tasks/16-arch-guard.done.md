@@ -1,6 +1,6 @@
 # Task 16 — Arch Guard
 
-> **Status:** pending
+> **Status:** done
 > **Layer:** Governance
 > **Priority:** Release 1
 > **Depends on:** 02, 12, 15
