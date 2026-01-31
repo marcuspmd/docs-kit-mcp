@@ -519,6 +519,10 @@ async function runIndex(args: string[]) {
       } catch {
         // ignore load errors
       }
+    } else {
+      // No arch-guard.json: use default rules so violations are computed and shown on the site
+      const { buildArchGuardBaseRules } = await import("./governance/archGuardBase.js");
+      archGuard.setRules(buildArchGuardBaseRules({ languages: ["ts", "js"], metricRules: true }));
     }
     const archViolations = archGuard.analyze(allSymbols, symRelationships);
     replaceAllArchViolations(
@@ -545,6 +549,18 @@ async function runIndex(args: string[]) {
       })),
     );
     done(`${archViolations.length} arch, ${reaperFindings.length} reaper`);
+
+    if (archViolations.length > 0) {
+      console.log("\n  Arch Guard violations:");
+      const maxShow = 15;
+      for (let i = 0; i < Math.min(archViolations.length, maxShow); i++) {
+        const v = archViolations[i];
+        console.log(`    [${v.severity}] ${v.rule}: ${v.message} (${v.file})`);
+      }
+      if (archViolations.length > maxShow) {
+        console.log(`    ... and ${archViolations.length - maxShow} more`);
+      }
+    }
   }
 
   // Phase 7: Auto-populate RAG index

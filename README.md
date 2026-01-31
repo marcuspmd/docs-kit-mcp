@@ -261,6 +261,13 @@ npx doc-guard --base origin/main
 
 Para lista completa de comandos CLI, veja a seção [Comandos CLI](#-comandos-cli-docs-kit) acima.
 
+
+   docs-kit init-arch-guard --lang ts --out arch-guard.json
+   # editar arch-guard.json se quiser
+   docs-kit index
+   docs-kit build-site
+
+
 ---
 
 ## Licença

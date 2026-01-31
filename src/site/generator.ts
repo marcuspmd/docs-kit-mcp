@@ -296,9 +296,10 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   // Generate symbol pages
   for (const symbol of symbols) {
     const source = getSource(symbol.file);
+    const symbolViolations = archViolations.filter((v) => v.symbol_id === symbol.id);
     fs.writeFileSync(
       path.join(outDir, "symbols", `${symbol.id}.html`),
-      renderSymbolPage(symbol, symbols, relationships, source),
+      renderSymbolPage(symbol, symbols, relationships, source, symbolViolations),
     );
   }
 
@@ -306,9 +307,10 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   for (const file of files) {
     const fileSymbols = symbols.filter((s) => s.file === file);
     const source = getSource(file);
+    const fileViolations = archViolations.filter((v) => v.file === file);
     fs.writeFileSync(
       path.join(outDir, "files", `${fileSlug(file)}.html`),
-      renderFilePage(file, fileSymbols, source),
+      renderFilePage(file, fileSymbols, source, relationships, symbols, fileViolations),
     );
   }
 

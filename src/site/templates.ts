@@ -535,7 +535,7 @@ export function renderDashboard(data: SiteData): string {
       ? `
     <div id="deprecated-symbols" class="mb-12">
       <h2 class="text-2xl font-bold text-gray-900 mb-6">Deprecated Symbols</h2>
-      <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+      <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
@@ -567,7 +567,7 @@ export function renderDashboard(data: SiteData): string {
     <div id="high-impact-symbols" class="mb-12">
       <h2 class="text-2xl font-bold text-gray-900 mb-6">High-Impact Symbols</h2>
       <p class="text-sm text-gray-600 mb-4">Symbols with the most dependents. Changing these may affect many callers.</p>
-      <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+      <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
@@ -598,7 +598,7 @@ export function renderDashboard(data: SiteData): string {
     <div id="arch-violations" class="mb-12">
       <h2 class="text-2xl font-bold text-gray-900 mb-6">Architecture Violations</h2>
       <p class="text-sm text-gray-600 mb-4"><a href="governance.html#arch" class="text-blue-600 hover:underline">View all</a></p>
-      <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+      <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
@@ -631,7 +631,7 @@ export function renderDashboard(data: SiteData): string {
     <div id="reaper-findings" class="mb-12">
       <h2 class="text-2xl font-bold text-gray-900 mb-6">Code Quality (Reaper)</h2>
       <p class="text-sm text-gray-600 mb-4"><a href="governance.html#reaper" class="text-blue-600 hover:underline">View all</a></p>
-      <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+      <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
@@ -756,7 +756,7 @@ export function renderDashboard(data: SiteData): string {
 
     <div id="top-complex-symbols" class="mb-12">
       <h2 class="text-2xl font-bold text-gray-900 mb-6">Top Complex Symbols</h2>
-      <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+      <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
@@ -820,7 +820,7 @@ export function renderDashboard(data: SiteData): string {
 
     <div class="mb-12">
       <h2 class="text-2xl font-bold text-gray-900 mb-6">Top-Level Symbols</h2>
-      <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+      <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
@@ -1141,11 +1141,20 @@ export function renderFilesPage(files: string[], symbols: CodeSymbol[]): string 
   return layout("Files", "files.html", body);
 }
 
+export interface ArchViolationRow {
+  rule: string;
+  file: string;
+  symbol_id: string | null;
+  message: string;
+  severity: string;
+}
+
 export function renderSymbolPage(
   symbol: CodeSymbol,
   allSymbols: CodeSymbol[],
   relationships: RelationshipRow[],
   sourceCode?: string,
+  archViolationsForSymbol: ArchViolationRow[] = [],
 ): string {
   const children = allSymbols.filter((s) => s.parent === symbol.id);
   const outgoing = relationships.filter((r) => r.source_id === symbol.id);
@@ -1256,6 +1265,17 @@ export function renderSymbolPage(
         </div>`
     : ""}
 
+        ${archViolationsForSymbol.length > 0
+    ? `
+        <div>
+          <h3 class="text-sm font-medium text-gray-500 mb-2">Architecture violations</h3>
+          <p class="text-sm text-gray-600 mb-2"><a href="../governance.html#arch" class="text-blue-600 hover:underline">View all</a></p>
+          <ul class="list-disc list-inside space-y-1 text-sm text-gray-700">
+            ${archViolationsForSymbol.map((v) => `<li><span class="font-medium ${v.severity === "error" ? "text-red-600" : "text-amber-700"}">[${escapeHtml(v.severity)}]</span> ${escapeHtml(v.rule)}: ${escapeHtml(v.message)}</li>`).join("")}
+          </ul>
+        </div>`
+    : ""}
+
         ${symbol.tags ? `
         <div>
           <h3 class="text-sm font-medium text-gray-500 mb-2">Tags</h3>
@@ -1279,7 +1299,7 @@ export function renderSymbolPage(
     ${children.length > 0
       ? `<div class="mb-12">
             <h2 class="text-xl font-bold text-gray-900 mb-4">Members</h2>
-            <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+            <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
               <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                   <tr>
@@ -1313,7 +1333,7 @@ export function renderSymbolPage(
       if (symbol.kind === "event" && listeners.length > 0) {
         return `<div class="mb-12">
             <h2 class="text-xl font-bold text-gray-900 mb-4">Listeners</h2>
-            <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+            <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
               <table class="min-w-full divide-y divide-gray-200">
                 <thead class="bg-gray-50">
                   <tr>
@@ -1351,7 +1371,7 @@ export function renderSymbolPage(
             : ""}
           
           ${outgoing.length > 0
-            ? `<div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200 mb-8">
+            ? `<div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200 mb-8">
                 <table class="min-w-full divide-y divide-gray-200">
                   <thead class="bg-gray-50">
                     <tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Target</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th></tr>
@@ -1383,7 +1403,7 @@ export function renderSymbolPage(
             : ""}
           
           ${incoming.length > 0
-            ? `<div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200 mb-8">
+            ? `<div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200 mb-8">
                 <table class="min-w-full divide-y divide-gray-200">
                   <thead class="bg-gray-50">
                     <tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th></tr>
@@ -1412,24 +1432,30 @@ export function renderSymbolPage(
   return layout(symbol.name, "", body, 1);
 }
 
+const GHOST_SYMBOL_NAMES = new Set(["class", "interface", "enum", "trait", "function", "type", "struct", "abstract"]);
+
 export function renderFilePage(
   filePath: string,
   symbols: CodeSymbol[],
   sourceCode?: string,
   relationships?: RelationshipRow[],
   allSymbols?: CodeSymbol[],
+  archViolationsForFile: ArchViolationRow[] = [],
 ): string {
-  const topLevel = symbols.filter((s) => !s.parent);
+  const displaySymbols = symbols.filter((s) => !GHOST_SYMBOL_NAMES.has(s.name));
+  const topLevel = displaySymbols.filter((s) => !s.parent);
 
-  const totalSymbols = symbols.length;
+  const totalSymbols = displaySymbols.length;
   const totalLOC = sourceCode ? sourceCode.split("\n").length : 0;
   const avgComplexity =
-    symbols
-      .filter((s) => s.metrics?.cyclomaticComplexity)
-      .reduce((sum, s) => sum + (s.metrics!.cyclomaticComplexity || 0), 0) / symbols.length || 0;
+    displaySymbols.length > 0
+      ? displaySymbols
+          .filter((s) => s.metrics?.cyclomaticComplexity)
+          .reduce((sum, s) => sum + (s.metrics!.cyclomaticComplexity || 0), 0) / displaySymbols.length
+      : 0;
 
   const kindCounts: Record<string, number> = {};
-  for (const s of symbols) {
+  for (const s of displaySymbols) {
     kindCounts[s.kind] = (kindCounts[s.kind] ?? 0) + 1;
   }
 
@@ -1481,6 +1507,17 @@ export function renderFilePage(
     </div>`
       : ""}
 
+    ${archViolationsForFile.length > 0
+      ? `
+    <div class="mb-12">
+      <h2 class="text-xl font-bold text-gray-900 mb-4">Architecture violations</h2>
+      <p class="text-sm text-gray-600 mb-4"><a href="../governance.html#arch" class="text-blue-600 hover:underline">View all</a></p>
+      <ul class="list-disc list-inside space-y-1 text-sm text-gray-700">
+        ${archViolationsForFile.map((v) => `<li><span class="font-medium ${v.severity === "error" ? "text-red-600" : "text-amber-700"}">[${escapeHtml(v.severity)}]</span> ${escapeHtml(v.rule)}: ${escapeHtml(v.message)}</li>`).join("")}
+      </ul>
+    </div>`
+      : ""}
+
     <div class="mb-12">
       <h2 class="text-xl font-bold text-gray-900 mb-4">Symbols by Kind</h2>
       <div class="flex flex-wrap gap-4">
@@ -1499,7 +1536,7 @@ export function renderFilePage(
 
     <div class="mb-12">
       <h2 class="text-xl font-bold text-gray-900 mb-4">All Symbols</h2>
-      <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+      <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
@@ -1515,7 +1552,7 @@ export function renderFilePage(
             ${topLevel
               .sort((a, b) => a.startLine - b.startLine)
               .map((s) => {
-                const children = symbols.filter((c) => c.parent === s.id);
+                const children = displaySymbols.filter((c) => c.parent === s.id);
                 return `<tr>
               <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600"><a href="../symbols/${s.id}.html" class="hover:underline">${escapeHtml(s.name)}</a></td>
               <td class="px-6 py-4 whitespace-nowrap text-sm"><span class="${badgeClass(s.kind)}">${s.kind}</span></td>
@@ -1609,7 +1646,7 @@ export function renderRelationshipsPage(
       <input type="text" id="relationship-filter" class="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md p-2" placeholder="Type to filter by source, target or type...">
     </div>
 
-    <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+    <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
       <table class="min-w-full divide-y divide-gray-200" id="relationships-table">
         <thead class="bg-gray-50">
           <tr>
@@ -1727,7 +1764,7 @@ export function renderDocsPage(docRefs: string[]): string {
     ${sorted.length === 0
       ? "<div class='text-center py-12 text-gray-500'>No doc references yet. Add doc_ref to symbols or link docs in frontmatter.</div>"
       : `
-    <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+    <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
       <ul class="divide-y divide-gray-200">
         ${sorted
           .map(
@@ -1754,7 +1791,7 @@ export function renderDeprecatedPage(symbols: CodeSymbol[]): string {
     ${deprecated.length === 0
       ? "<div class='text-center py-12 text-gray-500'>No deprecated symbols.</div>"
       : `
-    <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+    <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
       <table class="min-w-full divide-y divide-gray-200">
         <thead class="bg-gray-50">
           <tr>
@@ -1799,7 +1836,7 @@ export function renderGovernancePage(
       ${archViolations.length === 0
         ? "<p class='text-gray-500'>No architecture violations.</p>"
         : `
-      <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+      <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>
@@ -1838,7 +1875,7 @@ export function renderGovernancePage(
       ${reaperFindings.length === 0
         ? "<p class='text-gray-500'>No Reaper findings.</p>"
         : `
-      <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+      <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
             <tr>

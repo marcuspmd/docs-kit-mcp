@@ -18,6 +18,33 @@ O Arch-Guard aplica regras de arquitetura e qualidade sobre o índice de símbol
 
 ---
 
+## Opção comum: `ignore`
+
+Em **qualquer regra** você pode definir `ignore` no `config` para não aplicar a regra a certos arquivos ou paths.
+
+| Campo | Tipo | Descrição |
+|-------|------|------------|
+| `ignore` | string[] | Globs (ex.: `**/tests/**`, `0.Presentation/auth/tests/**`) ou regex (ex.: `/.*\/tests\/.*/`). Arquivos cujo path bater com algum item são ignorados por essa regra. |
+
+- **Glob:** mesmo padrão do resto do Arch-Guard (ex.: `**/tests/**`, `0.Presentation/**/TestCase.php`).
+- **Regex:** string entre barras, ex.: `/.*\/tests\/.*/` para qualquer path contendo `/tests/`.
+
+**Exemplo:** não exigir PascalCase em classes de testes (TestCase, etc.):
+
+```json
+{
+  "name": "class-pascal-case",
+  "type": "naming_convention",
+  "config": {
+    "kind": "class",
+    "pattern": "^[A-Z][a-zA-Z0-9]*$",
+    "ignore": ["**/tests/**", "**/TestCase.php", "0.Presentation/auth/tests/**"]
+  }
+}
+```
+
+---
+
 ## 1. `layer_boundary`
 
 **Objetivo:** Garantir que uma camada (por glob de arquivo) não dependa de outra.
@@ -28,6 +55,7 @@ O Arch-Guard aplica regras de arquitetura e qualidade sobre o índice de símbol
 |-------|------|-------------|-----------|
 | `source` | string | sim | Glob dos arquivos da camada que não pode importar (ex.: `src/domain/**`) |
 | `forbidden` | string[] | sim | Globs dos arquivos/camadas proibidos como dependência |
+| `ignore` | string[] | não | Globs ou regex de paths a ignorar (não aplicar a regra) |
 
 **Exemplo:**
 
@@ -56,6 +84,7 @@ O Arch-Guard aplica regras de arquitetura e qualidade sobre o índice de símbol
 |------|------|-------------|-----------|
 | `forbidden` | string[] | sim | Globs de path ou nome (ex.: `node_modules/lodash/**`, `console*`) |
 | `scope` | string | não | Se definido, só símbolos nesses arquivos são checados (glob) |
+| `ignore` | string[] | não | Globs ou regex de paths a ignorar |
 
 **Exemplo:**
 
@@ -94,6 +123,7 @@ O Arch-Guard aplica regras de arquitetura e qualidade sobre o índice de símbol
 | `file` | string | não | Glob: regra só vale nesses arquivos |
 | `allowNames` | string[] | não | Nomes permitidos mesmo fora do padrão (ex.: `__construct`, `constructor`) |
 | `excludeNames` | string[] | não | Mesmo efeito que `allowNames`; ambos são somados para exceções |
+| `ignore` | string[] | não | Globs ou regex de paths a ignorar (ex.: `**/tests/**`, `**/TestCase.php`) |
 
 **Exemplo (classes PascalCase, métodos camelCase com exceções para PHP):**
 

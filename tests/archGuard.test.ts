@@ -263,6 +263,63 @@ describe("ArchGuard", () => {
       expect(violations).toHaveLength(1);
       expect(violations[0].symbolId).toBe("m3");
     });
+
+    it("checks PascalCase on short name for qualified names (e.g. PHP 2.Domain\\Cte\\src\\Installment)", () => {
+      const guard = createArchGuard();
+      guard.setRules([
+        {
+          name: "class-pascal-case",
+          type: "naming_convention",
+          config: { kind: "class", pattern: "^[A-Z][a-zA-Z0-9]*$" },
+        },
+      ]);
+
+      const symbols = [
+        sym({
+          id: "c1",
+          name: "Installment",
+          qualifiedName: "2.Domain\\Cte\\src\\Installment",
+          kind: "class",
+          file: "2.Domain/Cte/src/Installment.php",
+        }),
+        sym({
+          id: "c2",
+          name: "badClass",
+          qualifiedName: "2.Domain\\Cte\\src\\badClass",
+          kind: "class",
+          file: "2.Domain/Cte/src/badClass.php",
+        }),
+      ];
+
+      const violations = guard.analyze(symbols, []);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].symbolId).toBe("c2");
+    });
+
+    it("ignores files matching ignore globs (e.g. tests, TestCase.php)", () => {
+      const guard = createArchGuard();
+      guard.setRules([
+        {
+          name: "class-pascal-case",
+          type: "naming_convention",
+          config: {
+            kind: "class",
+            pattern: "^[A-Z][a-zA-Z0-9]*$",
+            ignore: ["**/tests/**", "**/TestCase.php", "0.Presentation/auth/tests/**"],
+          },
+        },
+      ]);
+
+      const symbols = [
+        sym({ id: "a", name: "badClass", kind: "class", file: "src/domain/Foo.php" }),
+        sym({ id: "b", name: "TestCase", kind: "class", file: "0.Presentation/auth/tests/TestCase.php" }),
+        sym({ id: "c", name: "OtherTest", kind: "class", file: "tests/unit/OtherTest.php" }),
+      ];
+
+      const violations = guard.analyze(symbols, []);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].symbolId).toBe("a");
+    });
   });
 
   describe("max_complexity", () => {

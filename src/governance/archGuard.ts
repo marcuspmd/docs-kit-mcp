@@ -45,6 +45,24 @@ function matchAnyGlob(patterns: string[], value: string): boolean {
   return patterns.some((p) => matchGlob(p, value));
 }
 
+/** Ignore patterns: globs or regex (string in /slashes/). Returns true if filePath should be ignored. */
+function isIgnored(filePath: string, ignore: string[] | undefined): boolean {
+  if (!ignore?.length) return false;
+  for (const p of ignore) {
+    const s = p.trim();
+    if (!s) continue;
+    if (s.length >= 2 && s.startsWith("/") && s.endsWith("/")) {
+      try {
+        if (new RegExp(s.slice(1, -1)).test(filePath)) return true;
+      } catch {
+        /* treat as literal glob below */
+      }
+    }
+    if (matchGlob(s, filePath)) return true;
+  }
+  return false;
+}
+
 function checkLayerBoundary(
   rule: ArchRule,
   symbols: CodeSymbol[],
@@ -53,10 +71,13 @@ function checkLayerBoundary(
 ): ArchViolation[] {
   const source = rule.config.source as string;
   const forbidden = rule.config.forbidden as string[];
+  const ignore = (rule.config.ignore as string[] | undefined) ?? [];
   const severity = rule.severity ?? "error";
   const violations: ArchViolation[] = [];
 
-  const sourceSymbols = symbols.filter((s) => matchGlob(source, s.file));
+  const sourceSymbols = symbols.filter(
+    (s) => matchGlob(source, s.file) && !isIgnored(s.file, ignore),
+  );
   const sourceIds = new Set(sourceSymbols.map((s) => s.id));
 
   for (const rel of relationships) {
@@ -65,6 +86,7 @@ function checkLayerBoundary(
     if (!target) continue;
     if (matchAnyGlob(forbidden, target.file)) {
       const src = byId.get(rel.sourceId)!;
+      if (isIgnored(src.file, ignore)) continue;
       violations.push({
         rule: rule.name,
         file: src.file,
@@ -86,11 +108,14 @@ function checkForbiddenImport(
 ): ArchViolation[] {
   const forbidden = rule.config.forbidden as string[];
   const scope = rule.config.scope as string | undefined;
+  const ignore = (rule.config.ignore as string[] | undefined) ?? [];
   const severity = rule.severity ?? "error";
   const violations: ArchViolation[] = [];
 
   const scopedSymbols = scope ? symbols.filter((s) => matchGlob(scope, s.file)) : symbols;
-  const scopedIds = new Set(scopedSymbols.map((s) => s.id));
+  const scopedIds = new Set(
+    scopedSymbols.filter((s) => !isIgnored(s.file, ignore)).map((s) => s.id),
+  );
 
   for (const rel of relationships) {
     if (!scopedIds.has(rel.sourceId)) continue;
@@ -98,6 +123,7 @@ function checkForbiddenImport(
     if (!target) continue;
     if (matchAnyGlob(forbidden, target.file) || matchAnyGlob(forbidden, target.name)) {
       const src = byId.get(rel.sourceId)!;
+      if (isIgnored(src.file, ignore)) continue;
       violations.push({
         rule: rule.name,
         file: src.file,
@@ -111,10 +137,23 @@ function checkForbiddenImport(
   return violations;
 }
 
+const FILE_EXT_REGEX = /\.(php|ts|tsx|js|jsx|go|py|rs|java)$/i;
+
+/** Name used for pattern check: short name (last segment) for qualified/path-like names, so PHP \Namespace\Class is checked as "Class". Strips file extension when present. */
+function nameForNamingCheck(symbol: CodeSymbol): string {
+  const name = symbol.qualifiedName ?? symbol.name;
+  let segment = name;
+  if (name.includes("\\") || name.includes("/")) {
+    segment = name.split(/[\\/]/).pop() ?? name;
+  }
+  return segment.replace(FILE_EXT_REGEX, "") || segment;
+}
+
 function checkNamingConvention(rule: ArchRule, symbols: CodeSymbol[]): ArchViolation[] {
   const pattern = new RegExp(rule.config.pattern as string);
   const kind = rule.config.kind as string | undefined;
   const fileGlob = rule.config.file as string | undefined;
+  const ignore = (rule.config.ignore as string[] | undefined) ?? [];
   const allowNames = (rule.config.allowNames as string[] | undefined) ?? [];
   const excludeNames = (rule.config.excludeNames as string[] | undefined) ?? [];
   const severity = rule.severity ?? "warning";
@@ -122,10 +161,12 @@ function checkNamingConvention(rule: ArchRule, symbols: CodeSymbol[]): ArchViola
   const allowedSet = new Set([...allowNames, ...excludeNames].map((n) => n.toLowerCase()));
 
   for (const sym of symbols) {
+    if (isIgnored(sym.file, ignore)) continue;
     if (kind && sym.kind !== kind) continue;
     if (fileGlob && !matchGlob(fileGlob, sym.file)) continue;
-    if (allowedSet.has(sym.name.toLowerCase())) continue;
-    if (!pattern.test(sym.name)) {
+    const nameToCheck = nameForNamingCheck(sym);
+    if (allowedSet.has(nameToCheck.toLowerCase()) || allowedSet.has(sym.name.toLowerCase())) continue;
+    if (!pattern.test(nameToCheck)) {
       violations.push({
         rule: rule.name,
         file: sym.file,
@@ -143,10 +184,12 @@ function checkMaxComplexity(rule: ArchRule, symbols: CodeSymbol[]): ArchViolatio
   const max = (rule.config.max as number) ?? 10;
   const kind = rule.config.kind as string | undefined;
   const fileGlob = rule.config.file as string | undefined;
+  const ignore = (rule.config.ignore as string[] | undefined) ?? [];
   const severity = rule.severity ?? "warning";
   const violations: ArchViolation[] = [];
 
   for (const sym of symbols) {
+    if (isIgnored(sym.file, ignore)) continue;
     if (kind && sym.kind !== kind) continue;
     if (fileGlob && !matchGlob(fileGlob, sym.file)) continue;
     const complexity = sym.metrics?.cyclomaticComplexity;
@@ -169,10 +212,12 @@ function checkMaxParameters(rule: ArchRule, symbols: CodeSymbol[]): ArchViolatio
   const max = (rule.config.max as number) ?? 5;
   const kind = rule.config.kind as string | undefined;
   const fileGlob = rule.config.file as string | undefined;
+  const ignore = (rule.config.ignore as string[] | undefined) ?? [];
   const severity = rule.severity ?? "warning";
   const violations: ArchViolation[] = [];
 
   for (const sym of symbols) {
+    if (isIgnored(sym.file, ignore)) continue;
     if (kind && sym.kind !== kind) continue;
     if (fileGlob && !matchGlob(fileGlob, sym.file)) continue;
     const count = sym.metrics?.parameterCount;
@@ -195,10 +240,12 @@ function checkMaxLines(rule: ArchRule, symbols: CodeSymbol[]): ArchViolation[] {
   const max = (rule.config.max as number) ?? 80;
   const kind = rule.config.kind as string | undefined;
   const fileGlob = rule.config.file as string | undefined;
+  const ignore = (rule.config.ignore as string[] | undefined) ?? [];
   const severity = rule.severity ?? "warning";
   const violations: ArchViolation[] = [];
 
   for (const sym of symbols) {
+    if (isIgnored(sym.file, ignore)) continue;
     if (kind && sym.kind !== kind) continue;
     if (fileGlob && !matchGlob(fileGlob, sym.file)) continue;
     const loc = sym.metrics?.linesOfCode ?? sym.endLine - sym.startLine + 1;
@@ -229,10 +276,12 @@ function checkMissingReturnType(rule: ArchRule, symbols: CodeSymbol[]): ArchViol
   const scope = (rule.config.scope as string | undefined) ?? "all";
   const kind = rule.config.kind as string | undefined;
   const fileGlob = rule.config.file as string | undefined;
+  const ignore = (rule.config.ignore as string[] | undefined) ?? [];
   const severity = rule.severity ?? "warning";
   const violations: ArchViolation[] = [];
 
   for (const sym of symbols) {
+    if (isIgnored(sym.file, ignore)) continue;
     const isMethodOrFunction =
       sym.kind === "method" || sym.kind === "function" || sym.kind === "constructor";
     if (!isMethodOrFunction) continue;

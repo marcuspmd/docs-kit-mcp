@@ -237,6 +237,17 @@ function walkNode(
   if (!node) return symbols;
   const kind = NODE_KIND_MAP[node.type];
 
+  const RESERVED_DECLARATION_KEYWORDS = new Set([
+    "class",
+    "interface",
+    "enum",
+    "trait",
+    "function",
+    "abstract",
+    "type",
+    "struct",
+  ]);
+
   function getNodeName(n: Parser.SyntaxNode): string {
     const byField = n.childForFieldName("name") ?? n.childForFieldName("identifier");
     if (byField) return byField.text;
@@ -247,7 +258,18 @@ function walkNode(
     if (idChild) return idChild.text;
 
     const t = n.text?.trim();
-    if (t && t.length > 0) return t.split(/\s|\(|\{/)[0];
+    if (t && t.length > 0) {
+      const tokens = t.split(/\s|\(|\{/).filter(Boolean);
+      if (tokens.length >= 2 && RESERVED_DECLARATION_KEYWORDS.has(tokens[0])) {
+        return tokens[1];
+      }
+      if (tokens.length >= 1 && !RESERVED_DECLARATION_KEYWORDS.has(tokens[0])) {
+        return tokens[0];
+      }
+      if (tokens.length >= 1 && RESERVED_DECLARATION_KEYWORDS.has(tokens[0])) {
+        return "anonymous";
+      }
+    }
     return "anonymous";
   }
 
@@ -261,6 +283,12 @@ function walkNode(
 
   if (kind) {
     const name = getNodeName(node) ?? "anonymous";
+    if (name === "anonymous" || RESERVED_DECLARATION_KEYWORDS.has(name)) {
+      for (const child of node.children) {
+        symbols.push(...walkNode(child, file, parent, parentName, namespace));
+      }
+      return symbols;
+    }
     const language = detectLanguage(file);
     const strategy = getStrategy(language);
 
