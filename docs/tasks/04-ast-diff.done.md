@@ -1,6 +1,6 @@
 # Task 04 — AST Diff
 
-> **Status:** pending
+> **Status:** done
 > **Layer:** Analysis
 > **Priority:** MVP
 > **Depends on:** 01, 02
