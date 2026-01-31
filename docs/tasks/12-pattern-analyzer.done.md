@@ -1,6 +1,6 @@
 # Task 12 — Pattern Analyzer
 
-> **Status:** pending
+> **Status:** done
 > **Layer:** Governance
 > **Priority:** Release 1
 > **Depends on:** 02, 11
