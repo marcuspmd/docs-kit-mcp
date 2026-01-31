@@ -1,6 +1,6 @@
 # Task 02 — AST Indexer (tree-sitter)
 
-> **Status:** pending
+> **Status:** done
 > **Layer:** Analysis
 > **Priority:** MVP
 > **Depends on:** 01
