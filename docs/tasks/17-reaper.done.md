@@ -1,6 +1,6 @@
 # Task 17 — Reaper (Dead Code & Orphan Doc Detector)
 
-> **Status:** pending
+> **Status:** done
 > **Layer:** Governance
 > **Priority:** Release 2
 > **Depends on:** 02, 07, 15
