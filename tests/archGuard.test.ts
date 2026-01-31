@@ -264,6 +264,77 @@ describe("ArchGuard", () => {
       expect(violations[0].symbolId).toBe("m3");
     });
 
+    it("checks method-camel-case on short name when qualifiedName is ClassName.methodName", () => {
+      const guard = createArchGuard();
+      guard.setRules([
+        {
+          name: "method-camel-case",
+          type: "naming_convention",
+          config: { kind: "method", pattern: "^[a-z][a-zA-Z0-9]*$" },
+        },
+      ]);
+
+      const symbols = [
+        sym({
+          id: "m1",
+          name: "getCode",
+          qualifiedName: "MyClass.getCode",
+          kind: "method",
+          file: "src/entity.ts",
+        }),
+        sym({
+          id: "m2",
+          name: "setName",
+          qualifiedName: "MyClass.setName",
+          kind: "method",
+          file: "src/entity.ts",
+        }),
+        sym({
+          id: "m3",
+          name: "Bad_Method",
+          qualifiedName: "MyClass.Bad_Method",
+          kind: "method",
+          file: "src/entity.ts",
+        }),
+      ];
+
+      const violations = guard.analyze(symbols, []);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].symbolId).toBe("m3");
+    });
+
+    it("checks function-camel-case on short name when qualifiedName has dot (e.g. module.myFunc)", () => {
+      const guard = createArchGuard();
+      guard.setRules([
+        {
+          name: "function-camel-case",
+          type: "naming_convention",
+          config: { kind: "function", pattern: "^[a-z][a-zA-Z0-9]*$" },
+        },
+      ]);
+
+      const symbols = [
+        sym({
+          id: "f1",
+          name: "formatDate",
+          qualifiedName: "utils.formatDate",
+          kind: "function",
+          file: "src/utils.ts",
+        }),
+        sym({
+          id: "f2",
+          name: "Bad_Function",
+          qualifiedName: "utils.Bad_Function",
+          kind: "function",
+          file: "src/utils.ts",
+        }),
+      ];
+
+      const violations = guard.analyze(symbols, []);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].symbolId).toBe("f2");
+    });
+
     it("checks PascalCase on short name for qualified names (e.g. PHP 2.Domain\\Cte\\src\\Installment)", () => {
       const guard = createArchGuard();
       guard.setRules([
@@ -288,6 +359,38 @@ describe("ArchGuard", () => {
           qualifiedName: "2.Domain\\Cte\\src\\badClass",
           kind: "class",
           file: "2.Domain/Cte/src/badClass.php",
+        }),
+      ];
+
+      const violations = guard.analyze(symbols, []);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].symbolId).toBe("c2");
+    });
+
+    it("checks class-pascal-case on short name when qualifiedName is module.ClassName (e.g. TS)", () => {
+      const guard = createArchGuard();
+      guard.setRules([
+        {
+          name: "class-pascal-case",
+          type: "naming_convention",
+          config: { kind: "class", pattern: "^[A-Z][a-zA-Z0-9]*$" },
+        },
+      ]);
+
+      const symbols = [
+        sym({
+          id: "c1",
+          name: "OrderService",
+          qualifiedName: "domain.OrderService",
+          kind: "class",
+          file: "src/domain/order.ts",
+        }),
+        sym({
+          id: "c2",
+          name: "badClass",
+          qualifiedName: "domain.badClass",
+          kind: "class",
+          file: "src/domain/other.ts",
         }),
       ];
 

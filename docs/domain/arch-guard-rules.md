@@ -152,6 +152,8 @@ Em **qualquer regra** você pode definir `ignore` no `config` para não aplicar 
 }
 ```
 
+**Como o nome é avaliado:** O padrão é aplicado ao **nome curto** do símbolo em todas as regras de naming (class-pascal-case, method-camel-case, function-camel-case). Se o índice tiver `qualifiedName`, só o último segmento é comparado ao padrão: `\Namespace\Classe` ou `module.Classe` → `Classe` (para classes); `Classe.metodo` ou `Classe::metodo` → `metodo` (para métodos); `module.funcao` → `funcao` (para funções). Assim getters/setters como `getCode`, `setName` passam na regra camelCase.
+
 **Nomes reservados por linguagem:** O comando `init-arch-guard --lang php` já gera regras com `allowNames` preenchido com os métodos mágicos de PHP. Para outras linguagens, use `--lang ts`, `js`, `python` ou `go`; a base inclui os nomes especiais (ex.: Python `__init__`, TS/JS `constructor`).
 
 ---

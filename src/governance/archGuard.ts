@@ -139,12 +139,19 @@ function checkForbiddenImport(
 
 const FILE_EXT_REGEX = /\.(php|ts|tsx|js|jsx|go|py|rs|java)$/i;
 
-/** Name used for pattern check: short name (last segment) for qualified/path-like names, so PHP \Namespace\Class is checked as "Class". Strips file extension when present. */
+/** Name used for pattern check: short name (last segment) for qualified/path-like names.
+ * - PHP \Namespace\Class -> "Class"
+ * - ClassName.methodName or ClassName::methodName -> "methodName" (so method-camel-case checks the method only)
+ * Strips file extension when present. */
 function nameForNamingCheck(symbol: CodeSymbol): string {
   const name = symbol.qualifiedName ?? symbol.name;
   let segment = name;
   if (name.includes("\\") || name.includes("/")) {
     segment = name.split(/[\\/]/).pop() ?? name;
+  }
+  // For method/function kinds, qualifiedName is often "ClassName.methodName" or "Class::method"; use short name.
+  if (segment.includes(".") || segment.includes("::")) {
+    segment = segment.split(/[.]|::/).pop() ?? segment;
   }
   return segment.replace(FILE_EXT_REGEX, "") || segment;
 }
