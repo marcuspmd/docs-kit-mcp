@@ -1,6 +1,6 @@
 # Task 15 — Knowledge Graph
 
-> **Status:** pending
+> **Status:** done
 > **Layer:** Knowledge
 > **Priority:** Release 1
 > **Depends on:** 02, 11
