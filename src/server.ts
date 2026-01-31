@@ -11,6 +11,10 @@ import { createSymbolRepository, createRelationshipRepository } from "./storage/
 import { createPatternAnalyzer } from "./patterns/patternAnalyzer.js";
 import { createEventFlowAnalyzer } from "./events/eventFlowAnalyzer.js";
 import { createRagIndex } from "./knowledge/rag.js";
+import { createArchGuard } from "./governance/archGuard.js";
+import { createReaper } from "./governance/reaper.js";
+import { createContextMapper } from "./business/contextMapper.js";
+import { createCodeExampleValidator, ValidationResult } from "./docs/codeExampleValidator.js";
 import OpenAI from "openai";
 import Parser from "tree-sitter";
 import TypeScript from "tree-sitter-typescript";
@@ -41,7 +45,35 @@ const ragIndex = createRagIndex({
     return res.data.map((d) => d.embedding);
   },
 });
+const archGuard = createArchGuard();
 
+// Set default rules
+archGuard.setRules([
+  {
+    name: "ClassNaming",
+    description: "Classes should be PascalCase",
+    type: "naming_convention",
+    severity: "warning",
+    config: { pattern: "^[A-Z][a-zA-Z0-9]*$", kind: "class" },
+  },
+  {
+    name: "MethodNaming",
+    description: "Methods should be camelCase",
+    type: "naming_convention",
+    severity: "warning",
+    config: { pattern: "^[a-z][a-zA-Z0-9]*$", kind: "method" },
+  },
+  {
+    name: "FunctionNaming",
+    description: "Functions should be camelCase",
+    type: "naming_convention",
+    severity: "warning",
+    config: { pattern: "^[a-z][a-zA-Z0-9]*$", kind: "function" },
+  },
+]);
+const reaper = createReaper();
+const contextMapper = createContextMapper();
+const codeExampleValidator = createCodeExampleValidator();
 const server = new McpServer({
   name: "docs-agent",
   version: "1.0.0",
@@ -520,6 +552,159 @@ server.tool(
           {
             type: "text" as const,
             text: answer,
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  "analyzeArchitecture",
+  "Analyze code for architecture violations and naming conventions",
+  {},
+  async () => {
+    try {
+      const allSymbols = symbolRepo.findAll();
+      const allRels = relRepo.findAll().map((r) => ({
+        sourceId: r.source_id,
+        targetId: r.target_id,
+        type: r.type,
+      }));
+      const violations = archGuard.analyze(allSymbols, allRels);
+
+      const report = violations
+        .map((v) => `[${v.severity.toUpperCase()}] ${v.rule}: ${v.message} (${v.file})`)
+        .join("\n");
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: report || "No architecture violations found.",
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  "scanForDeadCode",
+  "Scan for dead code, orphan docs, and broken links",
+  {
+    docsDir: z.string().default("docs").describe("Docs directory"),
+  },
+  async ({ docsDir }) => {
+    try {
+      await registry.rebuild(docsDir);
+      const allSymbols = symbolRepo.findAll();
+      const mappings = await registry.findAllMappings();
+      const findings = reaper.scan(allSymbols, graph, mappings);
+
+      const report = findings
+        .map(
+          (f) =>
+            `[${f.type.toUpperCase()}] ${f.target}: ${f.reason} (suggested: ${f.suggestedAction})`,
+        )
+        .join("\n");
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: report || "No dead code or orphan docs found.",
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  "buildTraceabilityMatrix",
+  "Build Requirements Traceability Matrix from commits and comments",
+  {
+    docsDir: z.string().default("docs").describe("Docs directory"),
+  },
+  async ({ docsDir }) => {
+    try {
+      await registry.rebuild(docsDir);
+      const refs = await contextMapper.extractRefs(config.projectRoot);
+      const rtm = await contextMapper.buildRTM(refs, registry);
+
+      const report = rtm
+        .map((entry) => {
+          const symbols = entry.symbols.join(", ");
+          const tests = entry.tests.join(", ");
+          const docs = entry.docs.join(", ");
+          return `**${entry.ticketId}**\n- Symbols: ${symbols || "None"}\n- Tests: ${tests || "None"}\n- Docs: ${docs || "None"}`;
+        })
+        .join("\n\n");
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: report || "No traceability entries found.",
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  "validateExamples",
+  "Validate code examples in documentation against real code",
+  {
+    docsDir: z.string().default("docs").describe("Docs directory"),
+    docPath: z.string().optional().describe("Specific doc file to validate (optional)"),
+  },
+  async ({ docsDir, docPath }) => {
+    try {
+      let results: ValidationResult[];
+      if (docPath) {
+        results = await codeExampleValidator.validateDoc(path.join(docsDir, docPath));
+      } else {
+        results = await codeExampleValidator.validateAll(docsDir);
+      }
+
+      const report = results
+        .map((r) => {
+          const status = r.valid ? "✅ PASS" : "❌ FAIL";
+          const error = r.error ? ` - ${r.error}` : "";
+          return `${status} ${r.docPath}:${r.example.lineStart}-${r.example.lineEnd} (${r.example.language})${error}`;
+        })
+        .join("\n");
+
+      const summary = `${results.filter((r) => r.valid).length}/${results.length} examples passed validation.`;
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `${summary}\n\n${report || "No code examples found."}`,
           },
         ],
       };

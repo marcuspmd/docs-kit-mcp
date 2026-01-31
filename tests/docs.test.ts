@@ -46,6 +46,7 @@ import { mkdtemp, writeFile, mkdir, rm, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Config, ConfigSchema } from "../src/config.js";
+import { createCodeExampleValidator } from "../src/docs/codeExampleValidator.js";
 
 describe("frontmatter parser", () => {
   const fixture1 = `---
@@ -544,5 +545,172 @@ Old deprecated method.
     );
     expect(results).toHaveLength(1);
     expect(results[0].action).toBe("skipped");
+  });
+});
+
+describe("CodeExampleValidator", () => {
+  describe("extractExamples", () => {
+    it("extracts code blocks from markdown", async () => {
+      const validator = createCodeExampleValidator();
+      const tmpDir = await mkdtemp(join(tmpdir(), "doc-test-"));
+      const docPath = join(tmpDir, "test.md");
+
+      const content = `# Test Document
+
+Some text here.
+
+\`\`\`typescript
+const x: number = 42;
+console.log(x);
+\`\`\`
+
+More text.
+
+\`\`\`bash
+echo "Hello World"
+\`\`\`
+`;
+
+      await writeFile(docPath, content);
+
+      const examples = await validator.extractExamples(docPath);
+
+      expect(examples).toHaveLength(2);
+      expect(examples[0].language).toBe("typescript");
+      expect(examples[0].code).toContain("const x: number = 42;");
+      expect(examples[1].language).toBe("bash");
+      expect(examples[1].code).toContain('echo "Hello World"');
+
+      await rm(tmpDir, { recursive: true });
+    });
+  });
+
+  describe("validateExample", () => {
+    it("validates TypeScript code", async () => {
+      const validator = createCodeExampleValidator();
+
+      const example = {
+        language: "typescript",
+        code: "const x: number = 42; console.log(x);",
+        lineStart: 1,
+        lineEnd: 1,
+      };
+
+      const result = await validator.validateExample(example);
+
+      expect(result.valid).toBe(true);
+      expect(result.example).toBe(example);
+    });
+
+    it("validates JavaScript code", async () => {
+      const validator = createCodeExampleValidator();
+
+      const example = {
+        language: "javascript",
+        code: "const x = 42; console.log(x);",
+        lineStart: 1,
+        lineEnd: 1,
+      };
+
+      const result = await validator.validateExample(example);
+
+      expect(result.valid).toBe(true);
+      expect(result.example).toBe(example);
+    });
+
+    it("validates Bash code", async () => {
+      const validator = createCodeExampleValidator();
+
+      const example = {
+        language: "bash",
+        code: 'echo "Hello World"',
+        lineStart: 1,
+        lineEnd: 1,
+      };
+
+      const result = await validator.validateExample(example);
+
+      expect(result.valid).toBe(true);
+      expect(result.example).toBe(example);
+    });
+
+    it("rejects invalid TypeScript", async () => {
+      const validator = createCodeExampleValidator();
+
+      const example = {
+        language: "typescript",
+        code: "const x: number = 'invalid';",
+        lineStart: 1,
+        lineEnd: 1,
+      };
+
+      const result = await validator.validateExample(example);
+
+      expect(result.valid).toBe(false);
+      expect(result.error).toContain("TypeScript compilation error");
+    });
+
+    it("handles unknown languages", async () => {
+      const validator = createCodeExampleValidator();
+
+      const example = {
+        language: "unknown",
+        code: "some code here",
+        lineStart: 1,
+        lineEnd: 1,
+      };
+
+      const result = await validator.validateExample(example);
+
+      expect(result.valid).toBe(true); // Accepts unknown languages if not empty
+    });
+
+    it("validates PHP code", async () => {
+      const validator = createCodeExampleValidator();
+
+      const example = {
+        language: "php",
+        code: "<?php\necho 'Hello World';\n?>",
+        lineStart: 1,
+        lineEnd: 1,
+      };
+
+      const result = await validator.validateExample(example);
+
+      expect(result.valid).toBe(true);
+      expect(result.example).toBe(example);
+    });
+
+    it("validates Dart code", async () => {
+      const validator = createCodeExampleValidator();
+
+      const example = {
+        language: "dart",
+        code: "void main() {\n  print('Hello World');\n}",
+        lineStart: 1,
+        lineEnd: 1,
+      };
+
+      const result = await validator.validateExample(example);
+
+      expect(result.valid).toBe(true);
+      expect(result.example).toBe(example);
+    });
+
+    it("validates Flutter code", async () => {
+      const validator = createCodeExampleValidator();
+
+      const example = {
+        language: "flutter",
+        code: "void main() {\n  print('Hello Flutter');\n}",
+        lineStart: 1,
+        lineEnd: 1,
+      };
+
+      const result = await validator.validateExample(example);
+
+      expect(result.valid).toBe(true);
+      expect(result.example).toBe(example);
+    });
   });
 });

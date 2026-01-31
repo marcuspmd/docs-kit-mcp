@@ -14,6 +14,7 @@ export interface DocRegistry {
   rebuild(docsDir: string): Promise<void>;
   findDocBySymbol(symbolName: string): Promise<DocMapping[]>;
   findSymbolsByDoc(docPath: string): Promise<string[]>;
+  findAllMappings(): Promise<DocMapping[]>;
   register(mapping: DocMapping): Promise<void>;
   unregister(symbolName: string): Promise<void>;
 }
@@ -38,6 +39,7 @@ export function createDocRegistry(db: Database.Database): DocRegistry {
     "SELECT symbol_name, doc_path, section FROM doc_mappings WHERE symbol_name = ?",
   );
   const findByDocStmt = db.prepare("SELECT symbol_name FROM doc_mappings WHERE doc_path = ?");
+  const findAllStmt = db.prepare("SELECT symbol_name, doc_path, section FROM doc_mappings");
 
   return {
     async rebuild(docsDir: string): Promise<void> {
@@ -71,6 +73,19 @@ export function createDocRegistry(db: Database.Database): DocRegistry {
         symbol_name: string;
       }>;
       return rows.map((r) => r.symbol_name);
+    },
+
+    async findAllMappings(): Promise<DocMapping[]> {
+      const rows = findAllStmt.all() as Array<{
+        symbol_name: string;
+        doc_path: string;
+        section: string | null;
+      }>;
+      return rows.map((r) => ({
+        symbolName: r.symbol_name,
+        docPath: r.doc_path,
+        section: r.section ?? undefined,
+      }));
     },
 
     async register(mapping: DocMapping): Promise<void> {
