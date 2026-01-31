@@ -144,7 +144,7 @@ function languageForFile(file: string) {
   if (file.endsWith(".js") || file.endsWith(".jsx")) return JavaScript;
   if (file.endsWith(".py")) return Python;
   if (file.endsWith(".go")) return GoLang;
-  if (file.endsWith(".php")) return PHP;
+  if (file.endsWith(".php")) return (PHP as any).php ?? PHP;
   if (file.endsWith(".dart")) return undefined;
   if (file.endsWith(".rb")) return Ruby;
   if (file.endsWith(".cs")) return CSharp;
@@ -304,9 +304,10 @@ export function indexFile(filePath: string, source: string, parser: Parser): Cod
   try {
     (parser as unknown as { setLanguage: (l: unknown) => void }).setLanguage(lang);
   } catch {
-    // ignore setLanguage errors
+    return [];
   }
   const tree = parser.parse(source);
+  if (!tree) return [];
   const strategy = getStrategy(detectLanguage(filePath));
   const namespace = strategy.extractNamespace(tree.rootNode);
   return walkNode(tree.rootNode, filePath, undefined, undefined, namespace);
