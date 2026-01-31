@@ -1,5 +1,7 @@
 import { createContextMapper } from "../src/business/contextMapper.js";
+import { createBusinessTranslator } from "../src/business/businessTranslator.js";
 import { createRTM } from "../src/business/rtm.js";
+import { buildDescribeInBusinessTermsPrompt } from "../src/prompts/describeInBusinessTerms.prompt.js";
 import type { DocRegistry, DocMapping } from "../src/docs/docRegistry.js";
 
 function mockRegistry(mappings: Record<string, DocMapping[]>): DocRegistry {
@@ -191,5 +193,82 @@ describe("RTM", () => {
       expect(csv).toContain('PROJ-1,"OrderService","order.test.ts","docs/orders.md"');
       expect(csv).toContain('PROJ-2,"PayService","",""');
     });
+  });
+});
+
+describe("BusinessTranslator", () => {
+  it("describeInBusinessTerms returns LLM response", async () => {
+    const mockLlm = {
+      chat: async (messages: { role: string; content: string }[]) => {
+        expect(messages).toHaveLength(1);
+        expect(messages[0].role).toBe("user");
+        expect(messages[0].content).toContain("OrderService.createOrder");
+        expect(messages[0].content).toContain("method");
+        expect(messages[0].content).toContain("if (amount > 0)");
+        return "This rule validates the order amount and creates the order when valid.";
+      },
+    };
+
+    const translator = createBusinessTranslator(mockLlm);
+    const sourceCode = `if (amount > 0) {
+  return createOrder(amount);
+}
+return null;`;
+
+    const result = await translator.describeInBusinessTerms(
+      { name: "OrderService.createOrder", kind: "method" },
+      sourceCode,
+    );
+
+    expect(result).toBe("This rule validates the order amount and creates the order when valid.");
+  });
+
+  it("describeInBusinessTerms passes existingContext to prompt", async () => {
+    let capturedContent = "";
+    const mockLlm = {
+      chat: async (messages: { role: string; content: string }[]) => {
+        capturedContent = messages[0].content;
+        return "Business description.";
+      },
+    };
+
+    const translator = createBusinessTranslator(mockLlm);
+    await translator.describeInBusinessTerms(
+      { name: "PaymentService.charge", kind: "method" },
+      "charge(amount);",
+      "Existing doc: charges the user.",
+    );
+
+    expect(capturedContent).toContain("Existing doc: charges the user.");
+  });
+});
+
+describe("describeInBusinessTerms prompt", () => {
+  it("includes symbol name, kind, source code and optional context", () => {
+    const prompt = buildDescribeInBusinessTermsPrompt({
+      symbolName: "OrderService.createOrder",
+      kind: "method",
+      sourceCode: "if (amount > 0) return createOrder(amount);",
+      existingContext: "Charges the customer.",
+    });
+
+    expect(prompt).toContain("OrderService.createOrder");
+    expect(prompt).toContain("method");
+    expect(prompt).toContain("if (amount > 0) return createOrder(amount);");
+    expect(prompt).toContain("Charges the customer.");
+    expect(prompt).toContain("business terms");
+    expect(prompt).toContain("rules");
+  });
+
+  it("builds prompt without existingContext", () => {
+    const prompt = buildDescribeInBusinessTermsPrompt({
+      symbolName: "PaymentService",
+      kind: "class",
+      sourceCode: "class PaymentService {}",
+    });
+
+    expect(prompt).toContain("PaymentService");
+    expect(prompt).toContain("class");
+    expect(prompt).not.toContain("Existing context");
   });
 });

@@ -19,7 +19,7 @@
     "mcp": "node dist/server.js",
     "cli": "node dist/cli.js",
     "gen:site": "node dist/cli.js build-site --out docs-site --root . --db .doc-kit/index.db",
-    "gen:docs": "node dist/cli.js generate-docs --out docs-output --root . --db .doc-kit/index.db",
+    "gen:docs": "node dist/cli.js generate-repo-docs . docs-output",
     "serve:site": "npx serve docs-site"
   },
   "engines": {

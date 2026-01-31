@@ -14,6 +14,7 @@ import { createRagIndex } from "./knowledge/rag.js";
 import { createArchGuard } from "./governance/archGuard.js";
 import { createReaper } from "./governance/reaper.js";
 import { createContextMapper } from "./business/contextMapper.js";
+import { createBusinessTranslator } from "./business/businessTranslator.js";
 import { createCodeExampleValidator, ValidationResult } from "./docs/codeExampleValidator.js";
 import { generateProjectStatus, formatProjectStatus } from "./governance/projectStatus.js";
 import { performSmartCodeReview } from "./governance/smartCodeReview.js";
@@ -72,6 +73,7 @@ archGuard.setRules([
 ]);
 const reaper = createReaper();
 const contextMapper = createContextMapper();
+const businessTranslator = createBusinessTranslator(llm);
 const codeExampleValidator = createCodeExampleValidator();
 const server = new McpServer({
   name: "docs-kit",
@@ -687,6 +689,62 @@ server.tool(
             text: report || "No traceability entries found.",
           },
         ],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  "describeInBusinessTerms",
+  "Describe a code symbol in business terms (rules, if/else, outcomes) for product/compliance",
+  {
+    symbol: z.string().describe("Symbol name (e.g. OrderService.createOrder)"),
+    docsDir: z.string().default("docs").describe("Docs directory for existing doc context"),
+  },
+  async ({ symbol: symbolName, docsDir }) => {
+    try {
+      await registry.rebuild(docsDir);
+      const { readFile } = await import("node:fs/promises");
+      const symbols = symbolRepo.findByName(symbolName);
+      if (symbols.length === 0) {
+        return {
+          content: [{ type: "text" as const, text: `No symbol found: ${symbolName}` }],
+          isError: true,
+        };
+      }
+      const sym = symbols[0];
+      const filePath = path.resolve(config.projectRoot, sym.file);
+      let sourceCode = "";
+      try {
+        const fullSource = await readFile(filePath, "utf-8");
+        const lines = fullSource.split("\n").slice(sym.startLine - 1, sym.endLine);
+        sourceCode = lines.join("\n");
+      } catch {
+        return {
+          content: [{ type: "text" as const, text: `Could not read source for: ${sym.file}` }],
+          isError: true,
+        };
+      }
+      let existingContext: string | undefined;
+      const mappings = await registry.findDocBySymbol(symbolName);
+      for (const m of mappings) {
+        try {
+          existingContext = await readFile(path.join(docsDir, m.docPath), "utf-8");
+          break;
+        } catch { /* skip */ }
+      }
+      const description = await businessTranslator.describeInBusinessTerms(
+        { name: sym.name, kind: sym.kind },
+        sourceCode,
+        existingContext,
+      );
+      return {
+        content: [{ type: "text" as const, text: description }],
       };
     } catch (err) {
       return {

@@ -65,6 +65,26 @@ npm run format:check
 
 ---
 
+## 📋 Comandos CLI (`docs-kit`)
+
+Todos os comandos da CLI principal (após `npm run build`, use `docs-kit` ou `node dist/cli.js`):
+
+| Comando | Descrição | Opções principais |
+|---------|------------|-------------------|
+| `docs-kit init [dir]` | Cria `docs.config.js` com valores padrão | — |
+| `docs-kit index [dir]` | Indexa repositório (símbolos, relações, métricas) | `--db`, `--docs`, `--full` |
+| `docs-kit build-site` | Gera site HTML estático da documentação | `--out`, `--db`, `--root` |
+| `docs-kit build-docs` | Gera documentação em Markdown a partir do índice | `--out`, `--db`, `--root` |
+| `docs-kit generate-repo-docs [repo-dir] [docs-dir]` | Gera stubs de docs para símbolos não documentados | — |
+| `docs-kit project-status` | Relatório de status (cobertura, padrões, violações) | `--db`, `--docs` |
+| `docs-kit smart-code-review` | Revisão de código com múltiplas análises | `--db`, `--docs`, `--no-examples` |
+| `docs-kit dead-code` | Detecta código morto e docs órfãs no banco | `--db`, `--docs` |
+| `docs-kit --help` | Exibe ajuda | — |
+
+Banco padrão: `--db` usa `.doc-kit/index.db` (index/build-*) ou `.doc-kit/registry.db` (registry/guard). Diretório de docs padrão: `--docs docs`.
+
+---
+
 ## 📦 CLI: `doc-guard`
 
 A ferramenta principal para auditoria de documentação. Ela reconstrói o `DocRegistry` com base na pasta `docs` e analisa as mudanças entre `base` e `head`.
@@ -188,8 +208,9 @@ node dist/server.js &
 No VS Code (via extensão MCP ou Copilot):
 
 ```
-@docs-kit generateDocs --base main
+@docs-kit generateDocs --base main [--dryRun true]
 # → "Updated 3 doc sections across 2 files"
+# Recomendado: use dryRun: true para revisar antes de aplicar; não commitar direto.
 
 @docs-kit explainSymbol symbol=OrderService.createOrder
 # → "OrderService.createOrder cria um novo pedido... [resumo do código + doc]"
@@ -238,12 +259,8 @@ npx doc-guard --base origin/main
 3. Adicione/atualize testes e rode `npm run test`
 4. Formate com `npm run format` e submeta um pull request
 
-  CLI usage:
-  docs-kit index [dir] [--exclude dirs] [--db path]
-  docs-kit build-site [--out dir] [--db path]
-  docs-kit generate-repo-docs [repo-dir] [docs-dir]
-  docs-kit build-docs [--out dir] [--db path] [--root dir]
-  docs-kit project-status [--db path] [--docs dir]
+Para lista completa de comandos CLI, veja a seção [Comandos CLI](#-comandos-cli-docs-kit) acima.
+
 ---
 
 ## Licença

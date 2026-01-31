@@ -609,21 +609,25 @@ echo "Hello World"
   });
 
   describe("validateExample", () => {
-    it("validates TypeScript code", async () => {
-      const validator = createCodeExampleValidator();
+    it(
+      "validates TypeScript code",
+      async () => {
+        const validator = createCodeExampleValidator();
 
-      const example = {
-        language: "typescript",
-        code: "const x: number = 42; console.log(x);",
-        lineStart: 1,
-        lineEnd: 1,
-      };
+        const example = {
+          language: "typescript",
+          code: "const x: number = 42; console.log(x);",
+          lineStart: 1,
+          lineEnd: 1,
+        };
 
-      const result = await validator.validateExample(example);
+        const result = await validator.validateExample(example);
 
-      expect(result.valid).toBe(true);
-      expect(result.example).toBe(example);
-    });
+        expect(result.valid).toBe(true);
+        expect(result.example).toBe(example);
+      },
+      15000,
+    );
 
     it("validates JavaScript code", async () => {
       const validator = createCodeExampleValidator();

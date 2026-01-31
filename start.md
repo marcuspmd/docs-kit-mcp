@@ -141,6 +141,7 @@ docs-kit/
 │   ├── prompts/
 │   │   ├── updateSection.prompt.ts
 │   │   ├── explainSymbol.prompt.ts
+│   │   ├── describeInBusinessTerms.prompt.ts
 │   │   ├── generateMermaid.prompt.ts
 │   │   ├── analyzePatterns.prompt.ts
 │   │   └── generateEventFlow.prompt.ts
@@ -293,6 +294,8 @@ Cria diagrama para ilustrar relações chave.
 ---
 
 ## 📋 Plano Detalhado para Criar PRD Abrangente
+
+> **Nota:** Esta seção descreve sub-tarefas de documento/PRD para uso futuro. Não faz parte do escopo de implementação atual; as sub-tarefas 1–8 abaixo ficam arquivadas até decisão de elaborar um PRD formal.
 
 ### 1. 🔍 Entendimento Aprofundado
 - **Reformulação do Objetivo**: Criar um PRD completo e acionável para o Documentation Agent MCP, baseado no resumo da conversa, que inclui arquitetura, funcionalidades, priorização e roadmap.
