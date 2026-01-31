@@ -13,6 +13,7 @@ import {
   initializeSchema,
   createSymbolRepository,
   createRelationshipRepository,
+  createFileHashRepository,
 } from "./storage/db.js";
 import { loadConfig, configExists, createDefaultConfig } from "./configLoader.js";
 import fg from "fast-glob";
@@ -95,8 +96,8 @@ function printHelp() {
 
 Usage:
   doc-kit init [dir]                                    Create docs.config.js with defaults
-  doc-kit index [dir] [--db path] [--docs dir]
-                                                        Index repository
+  doc-kit index [dir] [--db path] [--docs dir] [--full]
+                                                        Index repository (incremental by default)
   doc-kit build-site [--out dir] [--db path] [--root dir]
                                                         Generate static HTML site
   doc-kit build-docs [--out dir] [--db path] [--root dir]
@@ -163,9 +164,11 @@ async function runIndex(args: string[]) {
   const { positional, flags } = parseArgs(args, {
     db: "",
     docs: "",
+    full: undefined as unknown as string,
   });
 
   const rootDir = positional[0] || ".";
+  const fullRebuild = "full" in flags;
 
   if (!configExists(rootDir)) {
     const configPath = createDefaultConfig(rootDir);
@@ -189,8 +192,15 @@ async function runIndex(args: string[]) {
 
   const symbolRepo = createSymbolRepository(db);
   const relRepo = createRelationshipRepository(db);
+  const fileHashRepo = createFileHashRepository(db);
 
   const parser = new Parser();
+
+  if (fullRebuild) {
+    step("Full rebuild requested — clearing hashes");
+    fileHashRepo.clear();
+    done();
+  }
 
   // Find source files using config include/exclude patterns
   step("Scanning for source files");
@@ -202,24 +212,61 @@ async function runIndex(args: string[]) {
   const tsFiles = relativeFiles.map((f) => path.join(rootDir, f));
   done(`found ${tsFiles.length} files`);
 
+  // Detect removed files and clean up
+  const knownFiles = fileHashRepo.getAll();
+  const currentFileSet = new Set(relativeFiles);
+  const removedFiles: string[] = [];
+  for (const { filePath: knownPath } of knownFiles) {
+    if (!currentFileSet.has(knownPath)) {
+      removedFiles.push(knownPath);
+      symbolRepo.deleteByFile(knownPath);
+      relRepo.deleteBySource(knownPath);
+      fileHashRepo.delete(knownPath);
+    }
+  }
+  if (removedFiles.length > 0) {
+    console.log(`  -> Removed ${removedFiles.length} stale files from index`);
+  }
+
   // Phase 1: Index symbols + collect AST trees
   step("Parsing AST and extracting symbols");
   let allSymbols: CodeSymbol[] = [];
   const trees = new Map<string, Parser.Tree>();
   const sources = new Map<string, string>();
   let errorCount = 0;
+  let skippedCount = 0;
   const indexErrors: Array<{ file: string; error: string }> = [];
+  const { createHash } = await import("node:crypto");
 
   for (const filePath of tsFiles) {
     try {
       const source = fs.readFileSync(filePath, "utf-8");
       const relPath = path.relative(rootDir, filePath);
+
+      // Incremental: skip unchanged files
+      if (!fullRebuild) {
+        const hash = createHash("sha256").update(source).digest("hex");
+        const existing = fileHashRepo.get(relPath);
+        if (existing && existing.contentHash === hash) {
+          skippedCount++;
+          // Load existing symbols from DB for relationship extraction
+          const existingSymbols = symbolRepo.findByFile(relPath);
+          allSymbols.push(...existingSymbols);
+          continue;
+        }
+        fileHashRepo.upsert(relPath, hash);
+      } else {
+        const hash = createHash("sha256").update(source).digest("hex");
+        fileHashRepo.upsert(relPath, hash);
+      }
+
+      // Delete old symbols for this file before re-indexing
+      symbolRepo.deleteByFile(relPath);
+
       const symbols = indexFile(relPath, source, parser);
-      // parser.setLanguage is done inside indexFile; parse again to store tree
       const tree = parser.parse(source);
       trees.set(relPath, tree);
       sources.set(relPath, source);
-      // Populate lastModified and source for each symbol
       const stat = fs.statSync(filePath);
       for (const sym of symbols) {
         sym.lastModified = stat.mtime;
@@ -233,7 +280,8 @@ async function runIndex(args: string[]) {
       indexErrors.push({ file: rel, error: msg });
     }
   }
-  done(`${allSymbols.length} symbols${errorCount > 0 ? ` (${errorCount} errors)` : ""}`);
+  const skipMsg = skippedCount > 0 ? ` (${skippedCount} unchanged, skipped)` : "";
+  done(`${allSymbols.length} symbols${errorCount > 0 ? ` (${errorCount} errors)` : ""}${skipMsg}`);
 
   if (indexErrors.length > 0) {
     // Group errors by message to avoid flooding the output
@@ -309,9 +357,10 @@ async function runIndex(args: string[]) {
   // Phase 5: Persist to SQLite
   step("Persisting to SQLite");
 
-  // Clear existing data for this project
-  db.prepare("DELETE FROM symbols").run();
-  db.prepare("DELETE FROM relationships").run();
+  if (fullRebuild) {
+    db.prepare("DELETE FROM symbols").run();
+    db.prepare("DELETE FROM relationships").run();
+  }
 
   const upsertSymbols = db.transaction(() => {
     for (const symbol of allSymbols) {
@@ -348,6 +397,31 @@ async function runIndex(args: string[]) {
       }
     })();
     done(`${docMappingsCount} mappings`);
+  }
+
+  // Phase 7: Auto-populate RAG index
+  if (process.env.OPENAI_API_KEY) {
+    step("Populating RAG index");
+    try {
+      const OpenAI = (await import("openai")).default;
+      const { createRagIndex } = await import("./knowledge/rag.js");
+      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+      const ragIndex = createRagIndex({
+        embeddingModel: "text-embedding-ada-002",
+        db,
+        embedFn: async (texts: string[]) => {
+          const res = await openai.embeddings.create({ model: "text-embedding-ada-002", input: texts });
+          return res.data.map((d) => d.embedding);
+        },
+      });
+      await ragIndex.indexSymbols(allSymbols, sources);
+      if (fs.existsSync(docsPath)) {
+        await ragIndex.indexDocs(docsDir);
+      }
+      done(`${ragIndex.chunkCount()} chunks`);
+    } catch (err) {
+      done(`skipped (${(err as Error).message})`);
+    }
   }
 
   db.close();

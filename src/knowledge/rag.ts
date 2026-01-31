@@ -2,12 +2,14 @@ import { readFile } from "node:fs/promises";
 import { join } from "node:path";
 import fastGlob from "fast-glob";
 import type { CodeSymbol } from "../indexer/symbol.types.js";
+import type Database from "better-sqlite3";
 
 export interface RagOptions {
   embeddingModel: string;
   chunkSize?: number;
   overlapSize?: number;
   embedFn: (texts: string[]) => Promise<number[][]>;
+  db?: Database.Database;
 }
 
 export interface SearchResult {
@@ -90,11 +92,52 @@ export function createRagIndex(options: RagOptions): RagIndex {
   const chunkSize = options.chunkSize ?? 500;
   const overlapSize = options.overlapSize ?? 50;
   const embedFn = options.embedFn;
+  const db = options.db;
 
   const store: StoredChunk[] = [];
   const indexedHashes = new Set<string>();
+  let loadedFromDb = false;
+
+  function loadFromDb(): void {
+    if (loadedFromDb || !db) return;
+    loadedFromDb = true;
+    try {
+      const rows = db.prepare("SELECT hash, content, source, symbol_id, vector FROM rag_chunks").all() as Array<{
+        hash: string;
+        content: string;
+        source: string;
+        symbol_id: string | null;
+        vector: string;
+      }>;
+      for (const row of rows) {
+        if (indexedHashes.has(row.hash)) continue;
+        indexedHashes.add(row.hash);
+        store.push({
+          hash: row.hash,
+          content: row.content,
+          source: row.source,
+          symbolId: row.symbol_id ?? undefined,
+          vector: JSON.parse(row.vector),
+        });
+      }
+    } catch {
+      // Table may not exist yet
+    }
+  }
+
+  function persistChunk(chunk: StoredChunk): void {
+    if (!db) return;
+    try {
+      db.prepare(
+        "INSERT OR REPLACE INTO rag_chunks (hash, content, source, symbol_id, vector) VALUES (?, ?, ?, ?, ?)",
+      ).run(chunk.hash, chunk.content, chunk.source, chunk.symbolId ?? null, JSON.stringify(chunk.vector));
+    } catch {
+      // Ignore persistence errors
+    }
+  }
 
   async function addChunks(texts: string[], source: string, symbolId?: string): Promise<void> {
+    loadFromDb();
     const newTexts: Array<{ text: string; hash: string }> = [];
 
     for (const text of texts) {
@@ -109,13 +152,15 @@ export function createRagIndex(options: RagOptions): RagIndex {
 
     for (let i = 0; i < newTexts.length; i++) {
       indexedHashes.add(newTexts[i].hash);
-      store.push({
+      const chunk: StoredChunk = {
         content: newTexts[i].text,
         source,
         symbolId,
         vector: vectors[i],
         hash: newTexts[i].hash,
-      });
+      };
+      store.push(chunk);
+      persistChunk(chunk);
     }
   }
 
@@ -138,6 +183,7 @@ export function createRagIndex(options: RagOptions): RagIndex {
     },
 
     async search(query, topK = 5) {
+      loadFromDb();
       if (store.length === 0) return [];
 
       const [queryVector] = await embedFn([query]);
@@ -153,6 +199,7 @@ export function createRagIndex(options: RagOptions): RagIndex {
     },
 
     chunkCount() {
+      loadFromDb();
       return store.length;
     },
   };

@@ -69,6 +69,20 @@ CREATE TABLE IF NOT EXISTS doc_mappings (
   PRIMARY KEY (symbol_name, doc_path)
 );
 
+CREATE TABLE IF NOT EXISTS rag_chunks (
+  hash            TEXT PRIMARY KEY,
+  content         TEXT NOT NULL,
+  source          TEXT NOT NULL,
+  symbol_id       TEXT,
+  vector          TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS file_hashes (
+  file_path       TEXT PRIMARY KEY,
+  content_hash    TEXT NOT NULL,
+  last_indexed_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file);
 CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind);
 CREATE INDEX IF NOT EXISTS idx_doc_mappings_path ON doc_mappings(doc_path);
@@ -277,6 +291,46 @@ export function createSymbolRepository(db: Database.Database): SymbolRepository 
 
     deleteByFile(file: string): void {
       deleteByFileStmt.run(file);
+    },
+  };
+}
+
+/* ================== FileHashRepository ================== */
+
+export interface FileHashRepository {
+  get(filePath: string): { contentHash: string; lastIndexedAt: string } | undefined;
+  upsert(filePath: string, contentHash: string): void;
+  getAll(): Array<{ filePath: string; contentHash: string }>;
+  delete(filePath: string): void;
+  clear(): void;
+}
+
+export function createFileHashRepository(db: Database.Database): FileHashRepository {
+  const getStmt = db.prepare("SELECT content_hash, last_indexed_at FROM file_hashes WHERE file_path = ?");
+  const upsertStmt = db.prepare(
+    "INSERT OR REPLACE INTO file_hashes (file_path, content_hash, last_indexed_at) VALUES (?, ?, datetime('now'))",
+  );
+  const getAllStmt = db.prepare("SELECT file_path, content_hash FROM file_hashes");
+  const deleteStmt = db.prepare("DELETE FROM file_hashes WHERE file_path = ?");
+  const clearStmt = db.prepare("DELETE FROM file_hashes");
+
+  return {
+    get(filePath) {
+      const row = getStmt.get(filePath) as { content_hash: string; last_indexed_at: string } | undefined;
+      return row ? { contentHash: row.content_hash, lastIndexedAt: row.last_indexed_at } : undefined;
+    },
+    upsert(filePath, contentHash) {
+      upsertStmt.run(filePath, contentHash);
+    },
+    getAll() {
+      const rows = getAllStmt.all() as Array<{ file_path: string; content_hash: string }>;
+      return rows.map((r) => ({ filePath: r.file_path, contentHash: r.content_hash }));
+    },
+    delete(filePath) {
+      deleteStmt.run(filePath);
+    },
+    clear() {
+      clearStmt.run();
     },
   };
 }

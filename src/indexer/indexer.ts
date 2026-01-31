@@ -11,6 +11,7 @@ import Ruby from "tree-sitter-ruby";
 import CSharp from "tree-sitter-c-sharp";
 import fg from "fast-glob";
 import { readFile } from "node:fs/promises";
+import { createHash } from "node:crypto";
 import {
   type CodeSymbol,
   type SymbolKind,
@@ -18,6 +19,7 @@ import {
   generateSymbolId,
 } from "./symbol.types.js";
 import { getStrategy } from "./languages/index.js";
+import type { FileHashRepository } from "../storage/db.js";
 
 /* ================== Types ================== */
 
@@ -25,12 +27,16 @@ export interface IndexerOptions {
   rootDir: string;
   include: string[];
   exclude: string[];
+  fileHashRepo?: FileHashRepository;
+  full?: boolean;
 }
 
 export interface IndexResult {
   symbols: CodeSymbol[];
   fileCount: number;
   errors: Array<{ file: string; error: string }>;
+  skippedCount?: number;
+  removedFiles?: string[];
 }
 
 /* ================== Node-type mapping ================== */
@@ -382,8 +388,12 @@ export function indexFile(filePath: string, source: string, parser: Parser): Cod
 
 /* ================== Project indexer ================== */
 
+function contentHash(content: string): string {
+  return createHash("sha256").update(content).digest("hex");
+}
+
 export async function indexProject(options: IndexerOptions): Promise<IndexResult> {
-  const { rootDir, include, exclude } = options;
+  const { rootDir, include, exclude, fileHashRepo, full } = options;
 
   if (!include || !exclude) {
     throw new Error("indexProject requires explicit include and exclude patterns. Use loadConfig() to get defaults.");
@@ -399,11 +409,39 @@ export async function indexProject(options: IndexerOptions): Promise<IndexResult
 
   const symbols: CodeSymbol[] = [];
   const errors: Array<{ file: string; error: string }> = [];
+  let skippedCount = 0;
+  const removedFiles: string[] = [];
+
+  // Detect removed files
+  if (fileHashRepo && !full) {
+    const knownFiles = fileHashRepo.getAll();
+    const currentFileSet = new Set(files);
+    for (const { filePath } of knownFiles) {
+      if (!currentFileSet.has(filePath)) {
+        removedFiles.push(filePath);
+        fileHashRepo.delete(filePath);
+      }
+    }
+  }
 
   for (const file of files) {
     try {
       const absolutePath = `${rootDir}/${file}`;
       const source = await readFile(absolutePath, "utf-8");
+
+      // Incremental: skip unchanged files
+      if (fileHashRepo && !full) {
+        const hash = contentHash(source);
+        const existing = fileHashRepo.get(file);
+        if (existing && existing.contentHash === hash) {
+          skippedCount++;
+          continue;
+        }
+        fileHashRepo.upsert(file, hash);
+      } else if (fileHashRepo && full) {
+        fileHashRepo.upsert(file, contentHash(source));
+      }
+
       const fileSymbols = indexFile(file, source, parser);
       symbols.push(...fileSymbols);
     } catch (err) {
@@ -414,5 +452,5 @@ export async function indexProject(options: IndexerOptions): Promise<IndexResult
     }
   }
 
-  return { symbols, fileCount: files.length, errors };
+  return { symbols, fileCount: files.length, errors, skippedCount, removedFiles };
 }

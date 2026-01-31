@@ -23,6 +23,10 @@ import TypeScript from "tree-sitter-typescript";
 import { indexFile } from "./indexer/indexer.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import { buildExplainSymbolPrompt } from "./prompts/explainSymbol.prompt.js";
+import { buildImpactAnalysisPrompt } from "./prompts/impactAnalysis.prompt.js";
+import { buildSmartCodeReviewPrompt } from "./prompts/smartCodeReview.prompt.js";
+import { buildCodeReviewPrompt } from "./prompts/codeReview.prompt.js";
 import "dotenv/config";
 
 const config = await loadConfig(process.cwd());
@@ -37,6 +41,7 @@ const eventFlowAnalyzer = createEventFlowAnalyzer();
 const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
 const ragIndex = createRagIndex({
   embeddingModel: "text-embedding-ada-002",
+  db,
   embedFn: async (texts: string[]) => {
     const res = await openai.embeddings.create({ model: "text-embedding-ada-002", input: texts });
     return res.data.map((d) => d.embedding);
@@ -125,17 +130,20 @@ server.tool(
     symbol: z.string().describe("Symbol name (e.g. OrderService.createOrder)"),
     docsDir: z.string().default("docs").describe("Docs directory"),
   },
-  async ({ symbol, docsDir }) => {
+  async ({ symbol: symbolName, docsDir }) => {
     try {
       await registry.rebuild(docsDir);
-      const mappings = await registry.findDocBySymbol(symbol);
 
-      if (mappings.length === 0) {
+      // Find symbol in index
+      const symbols = symbolRepo.findByName(symbolName);
+      const mappings = await registry.findDocBySymbol(symbolName);
+
+      if (symbols.length === 0 && mappings.length === 0) {
         return {
           content: [
             {
               type: "text" as const,
-              text: `No documentation found for symbol: ${symbol}`,
+              text: `No symbol or documentation found for: ${symbolName}`,
             },
           ],
         };
@@ -143,23 +151,48 @@ server.tool(
 
       const { readFile } = await import("node:fs/promises");
       const { join } = await import("node:path");
-      const { parseSections } = await import("./docs/docUpdater.js");
 
-      const parts: string[] = [`# ${symbol}\n`];
+      // Get doc content
+      let docContent: string | undefined;
       for (const mapping of mappings) {
-        const content = await readFile(join(docsDir, mapping.docPath), "utf-8");
-        const sections = parseSections(content);
-        const baseName = symbol.includes(".") ? symbol.split(".").pop()! : symbol;
-        const section = sections.find((s) => s.heading === symbol || s.heading === baseName);
-        if (section) {
-          parts.push(`From \`${mapping.docPath}\`:\n\n${section.content}`);
-        } else {
-          parts.push(`Linked doc: \`${mapping.docPath}\` (no matching section found)`);
-        }
+        try {
+          docContent = await readFile(join(docsDir, mapping.docPath), "utf-8");
+          break;
+        } catch { /* skip */ }
       }
 
+      // Get source code and dependencies if we have the symbol in index
+      let sourceCode: string | undefined;
+      let dependencies: typeof symbols = [];
+      let dependents: typeof symbols = [];
+      const sym = symbols[0];
+
+      if (sym) {
+        try {
+          const filePath = path.resolve(config.projectRoot, sym.file);
+          const fullSource = await readFile(filePath, "utf-8");
+          const lines = fullSource.split("\n").slice(sym.startLine - 1, sym.endLine);
+          sourceCode = lines.join("\n");
+        } catch { /* skip */ }
+
+        // Get dependencies from graph
+        const depRels = graph.getDependencies(sym.id);
+        dependencies = symbolRepo.findByIds(depRels.map((r) => r.targetId));
+        const depByRels = graph.getDependents(sym.id);
+        dependents = symbolRepo.findByIds(depByRels.map((r) => r.sourceId));
+      }
+
+      // Build rich prompt for LLM
+      const prompt = buildExplainSymbolPrompt({
+        symbol: sym || { id: "", name: symbolName, kind: "function", file: "unknown", startLine: 0, endLine: 0 } as any,
+        sourceCode,
+        docContent,
+        dependencies,
+        dependents,
+      });
+
       return {
-        content: [{ type: "text" as const, text: parts.join("\n\n") }],
+        content: [{ type: "text" as const, text: prompt }],
       };
     } catch (err) {
       return {
@@ -367,20 +400,21 @@ server.tool(
         };
       }
 
-      // For simplicity, take the first match
       const targetSymbol = symbols[0];
       const impactedIds = graph.getImpactRadius(targetSymbol.id, maxDepth);
       const impactedSymbols = symbolRepo.findByIds(impactedIds);
 
-      const impactList = impactedSymbols
-        .map((s) => `- ${s.name} (${s.kind} in ${s.file})`)
-        .join("\n");
+      const prompt = buildImpactAnalysisPrompt({
+        targetSymbol,
+        impactedSymbols,
+        maxDepth,
+      });
 
       return {
         content: [
           {
             type: "text" as const,
-            text: `Changing ${targetSymbol.name} (${targetSymbol.kind}) would impact:\n${impactList || "No other symbols."}`,
+            text: prompt,
           },
         ],
       };
@@ -796,6 +830,131 @@ server.tool(
             text: `Error generating status report: ${(err as Error).message}`,
           },
         ],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  "getRelevantContext",
+  "Get comprehensive context for understanding or modifying a symbol or file — combines index, graph, docs, and source code",
+  {
+    symbol: z.string().optional().describe("Symbol name to get context for"),
+    file: z.string().optional().describe("File path to get context for"),
+    docsDir: z.string().default("docs").describe("Docs directory"),
+  },
+  async ({ symbol: symbolName, file: filePath, docsDir }) => {
+    try {
+      if (!symbolName && !filePath) {
+        return {
+          content: [{ type: "text" as const, text: "Provide either symbol or file parameter." }],
+          isError: true,
+        };
+      }
+
+      const { readFile } = await import("node:fs/promises");
+      const parts: string[] = [];
+      let targetSymbols: ReturnType<typeof symbolRepo.findByName> = [];
+
+      if (symbolName) {
+        targetSymbols = symbolRepo.findByName(symbolName);
+      } else if (filePath) {
+        targetSymbols = symbolRepo.findByFile(filePath);
+      }
+
+      if (targetSymbols.length === 0) {
+        return {
+          content: [{ type: "text" as const, text: `No symbols found for: ${symbolName || filePath}` }],
+        };
+      }
+
+      // 1. Symbol info
+      parts.push(`# Context for ${symbolName || filePath}\n`);
+      parts.push(`## Symbols (${targetSymbols.length})\n`);
+      for (const sym of targetSymbols) {
+        parts.push(`### ${sym.qualifiedName || sym.name}`);
+        parts.push(`- Kind: ${sym.kind}`);
+        parts.push(`- File: ${sym.file}:${sym.startLine}-${sym.endLine}`);
+        if (sym.signature) parts.push(`- Signature: \`${sym.signature}\``);
+        if (sym.layer) parts.push(`- Layer: ${sym.layer}`);
+        if (sym.pattern) parts.push(`- Pattern: ${sym.pattern}`);
+        if (sym.summary) parts.push(`- Summary: ${sym.summary}`);
+        parts.push(``);
+      }
+
+      // 2. Dependencies (1 level)
+      const allDepIds = new Set<string>();
+      const allDependentIds = new Set<string>();
+      for (const sym of targetSymbols) {
+        const deps = graph.getDependencies(sym.id);
+        for (const d of deps) allDepIds.add(d.targetId);
+        const dependents = graph.getDependents(sym.id);
+        for (const d of dependents) allDependentIds.add(d.sourceId);
+      }
+
+      const depSymbols = symbolRepo.findByIds([...allDepIds]);
+      const dependentSymbols = symbolRepo.findByIds([...allDependentIds]);
+
+      if (depSymbols.length > 0) {
+        parts.push(`## Dependencies (${depSymbols.length})\n`);
+        for (const dep of depSymbols) {
+          parts.push(`- ${dep.name} (${dep.kind} in ${dep.file})`);
+        }
+        parts.push(``);
+      }
+
+      if (dependentSymbols.length > 0) {
+        parts.push(`## Dependents (${dependentSymbols.length})\n`);
+        for (const dep of dependentSymbols) {
+          parts.push(`- ${dep.name} (${dep.kind} in ${dep.file})`);
+        }
+        parts.push(``);
+      }
+
+      // 3. Mapped docs
+      await registry.rebuild(docsDir);
+      const docParts: string[] = [];
+      for (const sym of targetSymbols) {
+        const mappings = await registry.findDocBySymbol(sym.name);
+        for (const m of mappings) {
+          try {
+            const content = await readFile(path.join(docsDir, m.docPath), "utf-8");
+            docParts.push(`### ${m.docPath}\n${content.slice(0, 2000)}`);
+          } catch { /* skip */ }
+        }
+      }
+      if (docParts.length > 0) {
+        parts.push(`## Documentation\n`);
+        parts.push(...docParts);
+        parts.push(``);
+      }
+
+      // 4. Source code of relevant files
+      const relevantFiles = new Set(targetSymbols.map((s) => s.file));
+      parts.push(`## Source Code\n`);
+      for (const file of relevantFiles) {
+        try {
+          const absPath = path.resolve(config.projectRoot, file);
+          const source = await readFile(absPath, "utf-8");
+          const lines = source.split("\n");
+          // Only include lines around the symbols in this file
+          const fileSymbols = targetSymbols.filter((s) => s.file === file);
+          const minLine = Math.max(0, Math.min(...fileSymbols.map((s) => s.startLine)) - 3);
+          const maxLine = Math.min(lines.length, Math.max(...fileSymbols.map((s) => s.endLine)) + 3);
+          parts.push(`### ${file}:${minLine + 1}-${maxLine}`);
+          parts.push("```");
+          parts.push(lines.slice(minLine, maxLine).join("\n"));
+          parts.push("```\n");
+        } catch { /* skip */ }
+      }
+
+      return {
+        content: [{ type: "text" as const, text: parts.join("\n") }],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }],
         isError: true,
       };
     }
