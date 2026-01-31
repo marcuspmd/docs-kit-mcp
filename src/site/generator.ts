@@ -202,7 +202,15 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   // Generate index.html
   fs.writeFileSync(
     path.join(outDir, "index.html"),
-    renderDashboard({ symbols, relationships, patterns, files, archViolations, reaperFindings }),
+    renderDashboard({
+      symbols,
+      relationships,
+      patterns,
+      files,
+      archViolations,
+      reaperFindings,
+      generatedAt: new Date().toISOString(),
+    }),
   );
 
   // Copy markdown docs referenced by symbols into the site output so links work

@@ -336,6 +336,14 @@ function layout(
       panel.addEventListener('mousedown', function(e) {
         e.preventDefault();
       });
+
+      document.addEventListener('keydown', function(e) {
+        if (e.key !== '/' || e.ctrlKey || e.metaKey || e.altKey) return;
+        var tag = (e.target && e.target.tagName) ? e.target.tagName.toLowerCase() : '';
+        if (tag === 'input' || tag === 'textarea' || (e.target && e.target.isContentEditable)) return;
+        e.preventDefault();
+        input.focus();
+      });
     })();
   </script>
 </body>
@@ -373,6 +381,8 @@ export interface SiteData {
   files: string[];
   archViolations?: ArchViolationRow[];
   reaperFindings?: ReaperFindingRow[];
+  /** ISO date string when the site was generated */
+  generatedAt?: string;
 }
 
 export function renderMarkdownWrapper(title: string, mdFilename: string): string {
@@ -413,7 +423,7 @@ export function renderMarkdownWrapper(title: string, mdFilename: string): string
 }
 
 export function renderDashboard(data: SiteData): string {
-  const { symbols, relationships, patterns, files, archViolations = [], reaperFindings = [] } = data;
+  const { symbols, relationships, patterns, files, archViolations = [], reaperFindings = [], generatedAt } = data;
 
   const kindCounts: Record<string, number> = {};
   for (const s of symbols) {
@@ -466,8 +476,33 @@ export function renderDashboard(data: SiteData): string {
     .sort((a, b) => (incomingCount.get(b.id) ?? 0) - (incomingCount.get(a.id) ?? 0))
     .slice(0, 10);
 
+  const generatedLabel = generatedAt
+    ? (() => {
+        try {
+          const d = new Date(generatedAt);
+          return d.toLocaleDateString(undefined, { dateStyle: "medium" }) + " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+        } catch {
+          return generatedAt;
+        }
+      })()
+    : "";
+  const highComplexityCount = symbols.filter((s) => (s.metrics?.cyclomaticComplexity ?? 0) > 10).length;
+
   const body = `
-    <h1 class="text-3xl font-bold text-gray-900 mb-8 pb-4 border-b border-gray-200">docs-kit Documentation</h1>
+    <div class="flex flex-wrap items-center justify-between gap-4 mb-6 pb-4 border-b border-gray-200">
+      <h1 class="text-3xl font-bold text-gray-900">docs-kit Documentation</h1>
+      ${generatedLabel ? `<p class="text-sm text-gray-500" title="Index build time">Generated: ${escapeHtml(generatedLabel)}</p>` : ""}
+    </div>
+
+    ${deprecatedSymbols.length > 0 || archViolations.length > 0 || highComplexityCount > 0
+      ? `
+    <div class="flex flex-wrap gap-3 mb-8 p-4 bg-gray-50 rounded-lg border border-gray-200">
+      <span class="text-sm font-medium text-gray-700">Health:</span>
+      ${deprecatedSymbols.length > 0 ? `<a href="#deprecated-symbols" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200 hover:bg-amber-200">${deprecatedSymbols.length} deprecated</a>` : ""}
+      ${archViolations.length > 0 ? `<a href="#arch-violations" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 border border-red-200 hover:bg-red-200">${archViolations.length} violations</a>` : ""}
+      ${highComplexityCount > 0 ? `<a href="#top-complex-symbols" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200 hover:bg-orange-200">${highComplexityCount} high complexity</a>` : ""}
+    </div>`
+      : ""}
 
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
       <div class="bg-white overflow-hidden shadow rounded-lg">
@@ -626,9 +661,26 @@ export function renderDashboard(data: SiteData): string {
 
     <div id="architecture-layers" class="mb-12">
       <h2 class="text-2xl font-bold text-gray-900 mb-6">Architecture Layers</h2>
+      ${(() => {
+        const layerEntries = Object.entries(layerCounts).sort((a, b) => b[1] - a[1]);
+        const maxLayer = Math.max(1, ...layerEntries.map(([, c]) => c));
+        return `
+      <div class="space-y-3 max-w-2xl mb-4">
+        ${layerEntries
+          .map(
+            ([layer, count]) => `
+        <div class="flex items-center gap-3">
+          <span class="text-sm font-medium text-gray-700 capitalize w-24 flex-shrink-0">${layer}</span>
+          <div class="flex-1 h-6 bg-gray-100 rounded overflow-hidden" title="${count} symbols">
+            <div class="h-full bg-blue-500 rounded" style="width:${Math.round((count / maxLayer) * 100)}%"></div>
+          </div>
+          <span class="text-sm font-semibold text-gray-900 w-10 text-right">${count}</span>
+        </div>`,
+          )
+          .join("")}
+      </div>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-        ${Object.entries(layerCounts)
-          .sort((a, b) => b[1] - a[1])
+        ${layerEntries
           .map(
             ([layer, count]) => `
           <div class="bg-white overflow-hidden shadow rounded-lg border border-gray-200">
@@ -639,7 +691,8 @@ export function renderDashboard(data: SiteData): string {
           </div>`,
           )
           .join("")}
-      </div>
+      </div>`;
+      })()}
     </div>
 
     <div class="mb-12" id="architecture-overview">
@@ -733,9 +786,26 @@ export function renderDashboard(data: SiteData): string {
 
     <div class="mb-12">
       <h2 class="text-2xl font-bold text-gray-900 mb-6">Symbol Kinds</h2>
+      ${(() => {
+        const kindEntries = Object.entries(kindCounts).sort((a, b) => b[1] - a[1]);
+        const maxKind = Math.max(1, ...kindEntries.map(([, c]) => c));
+        return `
+      <div class="space-y-3 max-w-2xl mb-6">
+        ${kindEntries
+          .map(
+            ([kind, count]) => `
+        <div class="flex items-center gap-3">
+          <span class="text-sm font-medium text-gray-700 w-28 flex-shrink-0">${kind}</span>
+          <div class="flex-1 h-6 bg-gray-100 rounded overflow-hidden" title="${count} symbols">
+            <div class="h-full bg-blue-500 rounded" style="width:${Math.round((count / maxKind) * 100)}%"></div>
+          </div>
+          <span class="text-sm font-semibold text-gray-900 w-10 text-right">${count}</span>
+        </div>`,
+          )
+          .join("")}
+      </div>
       <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
-        ${Object.entries(kindCounts)
-          .sort((a, b) => b[1] - a[1])
+        ${kindEntries
           .map(
             ([kind, count]) => `
           <div class="bg-white shadow rounded-lg p-4 border border-gray-200 flex justify-between items-center">
@@ -744,7 +814,8 @@ export function renderDashboard(data: SiteData): string {
           </div>`,
           )
           .join("")}
-      </div>
+      </div>`;
+      })()}
     </div>
 
     <div class="mb-12">
@@ -966,7 +1037,7 @@ export function renderFilesPage(files: string[], symbols: CodeSymbol[]): string 
 
     if (node.isFile) {
       return `
-        <div class="flex items-center py-1 hover:bg-gray-50 group transition-colors rounded-md px-2 -mx-2">
+        <div class="file-tree-row flex items-center py-1 hover:bg-gray-50 group transition-colors rounded-md px-2 -mx-2" data-path="${escapeHtml(node.path)}" data-name="${escapeHtml(node.name)}">
           <div style="width: ${indent}rem" class="flex-shrink-0"></div>
           <svg class="h-4 w-4 text-gray-400 mr-2 flex-shrink-0 group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
             <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
@@ -985,7 +1056,7 @@ export function renderFilesPage(files: string[], symbols: CodeSymbol[]): string 
 
       const dirId = "dir-" + node.path.replace(/\//g, "-");
       return `
-        <details class="group/folder" open id="${escapeHtml(dirId)}">
+        <details class="group/folder file-tree-dir" open id="${escapeHtml(dirId)}" data-path="${escapeHtml(node.path)}" data-name="${escapeHtml(node.name)}">
           <summary class="flex items-center py-1 hover:bg-gray-50 cursor-pointer select-none rounded-md px-2 -mx-2 transition-colors">
             <div style="width: ${indent}rem" class="flex-shrink-0"></div>
             <svg class="h-4 w-4 text-gray-400 mr-2 flex-shrink-0 group-open/folder:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
@@ -1006,23 +1077,65 @@ export function renderFilesPage(files: string[], symbols: CodeSymbol[]): string 
   }
 
   const body = `
-    <div class="flex items-center justify-between mb-8 pb-4 border-b border-gray-200">
+    <div class="flex flex-wrap items-center justify-between gap-4 mb-6 pb-4 border-b border-gray-200">
       <h1 class="text-3xl font-bold text-gray-900">File Explorer</h1>
       <div class="text-sm text-gray-500">
-        <span class="font-semibold text-gray-900">${files.length}</span> files, 
+        <span class="font-semibold text-gray-900">${files.length}</span> files,
         <span class="font-semibold text-gray-900">${symbols.length}</span> symbols
       </div>
     </div>
-    
+
+    <div class="mb-4">
+      <label for="file-tree-filter" class="block text-sm font-medium text-gray-700 mb-1">Filter by path or name</label>
+      <input type="text" id="file-tree-filter" class="block w-full rounded-md border-gray-300 shadow-sm focus:ring-blue-500 focus:border-blue-500 sm:text-sm py-2 px-3" placeholder="e.g. src/site or .ts" aria-label="Filter file tree">
+    </div>
+
     <div class="bg-white shadow rounded-lg border border-gray-200 overflow-hidden">
-      <div class="p-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+      <div class="p-4 bg-gray-50 border-b border-gray-200 flex flex-wrap justify-between items-center gap-2">
         <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Project Source</span>
-        <button onclick="document.querySelectorAll('details').forEach(d => d.open = false)" class="text-xs text-blue-600 hover:text-blue-800 font-medium">Collapse All</button>
+        <div class="flex gap-2">
+          <button type="button" id="file-tree-expand-all" class="text-xs text-blue-600 hover:text-blue-800 font-medium">Expand All</button>
+          <button type="button" onclick="document.querySelectorAll('.file-tree-dir').forEach(d => d.open = false)" class="text-xs text-blue-600 hover:text-blue-800 font-medium">Collapse All</button>
+        </div>
       </div>
-      <div class="p-2 overflow-x-auto">
+      <div class="p-2 overflow-x-auto" id="file-tree-container">
         ${renderNode(root, 0)}
       </div>
     </div>
+
+    <script>
+      (function(){
+        var filterInput = document.getElementById('file-tree-filter');
+        var container = document.getElementById('file-tree-container');
+        var expandBtn = document.getElementById('file-tree-expand-all');
+        if (!filterInput || !container) return;
+
+        function filterTree() {
+          var q = (filterInput.value || '').trim().toLowerCase();
+          var dirs = container.querySelectorAll('.file-tree-dir');
+          var rows = container.querySelectorAll('.file-tree-row');
+          function match(el) {
+            var path = (el.getAttribute('data-path') || '').toLowerCase();
+            var name = (el.getAttribute('data-name') || '').toLowerCase();
+            return !q || path.indexOf(q) !== -1 || name.indexOf(q) !== -1;
+          }
+          rows.forEach(function(el) { el.style.display = match(el) ? '' : 'none'; });
+          dirs.forEach(function(el) { el.style.display = match(el) ? '' : 'none'; });
+          if (q) {
+            [].slice.call(dirs).reverse().forEach(function(d) {
+              var inside = d.querySelectorAll('.file-tree-dir, .file-tree-row');
+              var anyVisible = [].some.call(inside, function(c) { return c.style.display !== 'none'; });
+              if (anyVisible) d.style.display = '';
+            });
+            dirs.forEach(function(d) { if (d.style.display !== 'none') d.setAttribute('open', ''); });
+          }
+        }
+
+        filterInput.addEventListener('input', filterTree);
+        filterInput.addEventListener('keydown', function(e) { if (e.key === 'Escape') { filterInput.value = ''; filterTree(); filterInput.blur(); } });
+        if (expandBtn) expandBtn.addEventListener('click', function() { container.querySelectorAll('.file-tree-dir').forEach(function(d) { d.setAttribute('open', ''); }); });
+      })();
+    </script>
   `;
 
   return layout("Files", "files.html", body);
