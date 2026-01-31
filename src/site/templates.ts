@@ -2,7 +2,13 @@ import type { CodeSymbol } from "../indexer/symbol.types.js";
 import type { DetectedPattern } from "../patterns/patternAnalyzer.js";
 import type { RelationshipRow } from "../storage/db.js";
 import { CSS } from "./styles.js";
-import { fileSlug, buildMermaidForSymbol } from "./shared.js";
+import {
+  fileSlug,
+  buildMermaidForSymbol,
+  buildMermaidForFile,
+  buildMermaidOverview,
+  buildMermaidTopConnected,
+} from "./shared.js";
 
 export { fileSlug };
 
@@ -12,6 +18,11 @@ function escapeHtml(str: string): string {
     .replace(/</g, "&lt;")
     .replace(/>/g, "&gt;")
     .replace(/"/g, "&quot;");
+}
+
+function escapeCodeBlocks(str: string): string {
+  // For syntax highlighting, we need to escape HTML but preserve code structure
+  return escapeHtml(str);
 }
 
 function badgeClass(kind: string): string {
@@ -25,6 +36,35 @@ function badgeClass(kind: string): string {
     type: "badge-type",
   };
   return map[kind] ?? "badge-class";
+}
+
+function visibilityBadge(visibility?: string): string {
+  if (!visibility) return "";
+  const map: Record<string, string> = {
+    public: "badge-public",
+    protected: "badge-protected",
+    private: "badge-private",
+  };
+  return `<span class="badge ${map[visibility] || "badge-public"}">${visibility}</span>`;
+}
+
+function layerBadge(layer?: string): string {
+  if (!layer) return "";
+  const map: Record<string, string> = {
+    domain: "badge-layer-domain",
+    application: "badge-layer-application",
+    infrastructure: "badge-layer-infrastructure",
+    presentation: "badge-layer-presentation",
+    test: "badge-layer",
+  };
+  return `<span class="badge ${map[layer] || "badge-layer"}">${layer}</span>`;
+}
+
+function statusBadges(symbol: CodeSymbol): string {
+  const badges = [];
+  if (symbol.exported) badges.push(`<span class="badge badge-exported">exported</span>`);
+  if (symbol.deprecated) badges.push(`<span class="badge badge-deprecated">deprecated</span>`);
+  return badges.join(" ");
 }
 
 function nav(current: string, depth: number): string {
@@ -97,6 +137,34 @@ export function renderDashboard(data: SiteData): string {
     kindCounts[s.kind] = (kindCounts[s.kind] ?? 0) + 1;
   }
 
+  // Layer counts
+  const layerCounts: Record<string, number> = {};
+  for (const s of symbols) {
+    const layer = s.layer || "unknown";
+    layerCounts[layer] = (layerCounts[layer] ?? 0) + 1;
+  }
+
+  // Top complex symbols
+  const complexSymbols = symbols
+    .filter((s) => s.metrics?.cyclomaticComplexity)
+    .sort((a, b) => (b.metrics!.cyclomaticComplexity || 0) - (a.metrics!.cyclomaticComplexity || 0))
+    .slice(0, 10);
+
+  // Group files by directory
+  const dirGroups: Record<string, { files: string[]; symbols: number }> = {};
+  for (const file of files) {
+    const dir = file.split("/")[0] || "root";
+    if (!dirGroups[dir]) dirGroups[dir] = { files: [], symbols: 0 };
+    dirGroups[dir].files.push(file);
+  }
+  for (const symbol of symbols) {
+    const dir = symbol.file.split("/")[0] || "root";
+    if (dirGroups[dir]) dirGroups[dir].symbols++;
+  }
+
+  // Overview graph
+  const overviewGraph = buildMermaidOverview(symbols, relationships, true);
+
   const topLevel = symbols.filter((s) => !s.parent);
 
   const body = `
@@ -121,6 +189,49 @@ export function renderDashboard(data: SiteData): string {
       </div>
     </div>
 
+    <h2>Architecture Layers</h2>
+    <div class="layer-cards">
+      ${Object.entries(layerCounts)
+        .sort((a, b) => b[1] - a[1])
+        .map(
+          ([layer, count]) => `
+        <div class="layer-card">
+          <div class="number">${count}</div>
+          <div class="label">${layer}</div>
+        </div>`,
+        )
+        .join("")}
+    </div>
+
+    ${
+      overviewGraph
+        ? `
+    <h2>Architecture Overview</h2>
+    <div class="mermaid-container">
+      <div class="mermaid">${overviewGraph}</div>
+    </div>`
+        : ""
+    }
+
+    <h2>Top Complex Symbols</h2>
+    <table>
+      <thead><tr><th scope="col">Name</th><th scope="col">File</th><th scope="col">Complexity</th><th scope="col">LOC</th></tr></thead>
+      <tbody>
+        ${complexSymbols
+          .map((s) => {
+            const complexity = s.metrics?.cyclomaticComplexity || 0;
+            const loc = s.metrics?.linesOfCode || 0;
+            return `<tr class="${complexity > 10 ? "complexity-high" : ""}">
+            <td><a href="symbols/${s.id}.html">${escapeHtml(s.name)}</a></td>
+            <td><a href="files/${fileSlug(s.file)}.html">${escapeHtml(s.file)}</a></td>
+            <td>${complexity}</td>
+            <td>${loc}</td>
+          </tr>`;
+          })
+          .join("")}
+      </tbody>
+    </table>
+
     <h2>Symbol Kinds</h2>
     <div class="stats">
       ${Object.entries(kindCounts)
@@ -135,13 +246,22 @@ export function renderDashboard(data: SiteData): string {
         .join("")}
     </div>
 
-    <h2>Files</h2>
-    <ul class="file-tree">
-      ${files
-        .sort()
-        .map((f) => `<li><a href="files/${fileSlug(f)}.html">${escapeHtml(f)}</a></li>`)
-        .join("")}
-    </ul>
+    <h2>Files by Directory</h2>
+    ${Object.entries(dirGroups)
+      .sort(([a], [b]) => a.localeCompare(b))
+      .map(
+        ([dir, { files: dirFiles, symbols: symbolCount }]) => `
+      <details class="dir-group">
+        <summary>${escapeHtml(dir)} <span class="dir-count">(${dirFiles.length} files, ${symbolCount} symbols)</span></summary>
+        <ul>
+          ${dirFiles
+            .sort()
+            .map((f) => `<li><a href="files/${fileSlug(f)}.html">${escapeHtml(f)}</a></li>`)
+            .join("")}
+        </ul>
+      </details>`,
+      )
+      .join("")}
 
     <h2>Top-Level Symbols</h2>
     <table>
@@ -176,7 +296,10 @@ export function renderDashboard(data: SiteData): string {
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2/dist/fuse.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <script>
+      mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose'});
+
       var INDEX = null;
       var FUSE = null;
 
@@ -288,27 +411,55 @@ export function renderSymbolPage(
   const outgoing = relationships.filter((r) => r.source_id === symbol.id);
   const incoming = relationships.filter((r) => r.target_id === symbol.id);
 
-  // Extract source code snippet
+  // Extract source code snippet with syntax highlighting
   let sourceSnippet = "";
   if (sourceCode) {
     const lines = sourceCode.split("\n");
     const start = Math.max(0, symbol.startLine - 1);
     const end = Math.min(lines.length, symbol.endLine);
     const snippet = lines.slice(start, end);
-    // Add line numbers
+    // Add line numbers and highlight current symbol line
+    const symbolLine = symbol.startLine - 1;
     const numbered = snippet
-      .map((line, i) => `${String(start + i + 1).padStart(4)} | ${line}`)
+      .map((line, i) => {
+        const lineNum = start + i + 1;
+        const isSymbolLine = lineNum === symbolLine;
+        return `<span class="${isSymbolLine ? "highlight-line" : ""}">${String(lineNum).padStart(4)} | ${escapeHtml(line)}</span>`;
+      })
       .join("\n");
     sourceSnippet = numbered;
   }
 
+  // Breadcrumb navigation
+  const breadcrumb = [
+    '<a href="../index.html">Dashboard</a>',
+    `<a href="../files/${fileSlug(symbol.file)}.html">${escapeHtml(symbol.file)}</a>`,
+  ];
+  if (symbol.parent) {
+    const parent = allSymbols.find((s) => s.id === symbol.parent);
+    if (parent) {
+      breadcrumb.splice(1, 0, `<a href="${parent.id}.html">${escapeHtml(parent.name)}</a>`);
+    }
+  }
+  breadcrumb.push(escapeHtml(symbol.name));
+
   // Per-symbol dependency graph
-  const depGraph = buildMermaidForSymbol(symbol, allSymbols, relationships, "outgoing");
+  const depGraph = buildMermaidForSymbol(symbol, allSymbols, relationships, "outgoing", true);
   // Per-symbol impact graph (who depends on me)
-  const impactGraph = buildMermaidForSymbol(symbol, allSymbols, relationships, "incoming");
+  const impactGraph = buildMermaidForSymbol(symbol, allSymbols, relationships, "incoming", true);
 
   const body = `
-    <h1><span class="badge ${badgeClass(symbol.kind)}">${symbol.kind}</span> ${escapeHtml(symbol.name)}</h1>
+    <div class="breadcrumb">
+      ${breadcrumb.map((item) => `<span>${item}</span>`).join('<span class="sep"></span>')}
+    </div>
+
+    <h1>
+      ${visibilityBadge(symbol.visibility)}
+      ${layerBadge(symbol.layer)}
+      ${statusBadges(symbol)}
+      <span class="badge ${badgeClass(symbol.kind)}">${symbol.kind}</span>
+      ${escapeHtml(symbol.name)}
+    </h1>
 
     <div class="card">
       <p><strong>File:</strong> <a href="../files/${fileSlug(symbol.file)}.html">${escapeHtml(symbol.file)}</a>:${symbol.startLine}-${symbol.endLine}</p>
@@ -324,7 +475,10 @@ export function renderSymbolPage(
     ${
       sourceSnippet
         ? `<h2>Source Code</h2>
-    <pre><code>${escapeHtml(sourceSnippet)}</code></pre>`
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <pre><code class="language-typescript">${sourceSnippet}</code></pre>
+    <script>hljs.highlightAll();</script>`
         : ""
     }
 
@@ -332,13 +486,14 @@ export function renderSymbolPage(
       children.length > 0
         ? `<h2>Members</h2>
     <table>
-      <thead><tr><th scope="col">Name</th><th scope="col">Kind</th><th scope="col">Signature</th></tr></thead>
+      <thead><tr><th scope="col">Name</th><th scope="col">Kind</th><th scope="col">Visibility</th><th scope="col">Signature</th></tr></thead>
       <tbody>
         ${children
           .map(
             (c) => `<tr>
           <td><a href="${c.id}.html">${escapeHtml(c.name)}</a></td>
           <td><span class="badge ${badgeClass(c.kind)}">${c.kind}</span></td>
+          <td>${visibilityBadge(c.visibility)}</td>
           <td>${c.signature ? `<code>${escapeHtml(c.signature)}</code>` : "-"}</td>
         </tr>`,
           )
@@ -355,13 +510,15 @@ export function renderSymbolPage(
     <table>
       <thead><tr><th scope="col">Listener</th><th scope="col">File</th></tr></thead>
       <tbody>
-        ${listeners.map((r) => {
-          const source = allSymbols.find((s) => s.id === r.source_id);
-          return `<tr>
+        ${listeners
+          .map((r) => {
+            const source = allSymbols.find((s) => s.id === r.source_id);
+            return `<tr>
           <td>${source ? `<a href="${source.id}.html">${escapeHtml(source.name)}</a>` : r.source_id}</td>
           <td>${source ? `<a href="../files/${fileSlug(source.file)}.html">${escapeHtml(source.file)}</a>` : "-"}</td>
         </tr>`;
-        }).join("")}
+          })
+          .join("")}
       </tbody>
     </table>`;
       }
@@ -375,13 +532,15 @@ export function renderSymbolPage(
     <table>
       <thead><tr><th scope="col">Event</th><th scope="col">File</th></tr></thead>
       <tbody>
-        ${listensTo.map((r) => {
-          const target = allSymbols.find((s) => s.id === r.target_id);
-          return `<tr>
+        ${listensTo
+          .map((r) => {
+            const target = allSymbols.find((s) => s.id === r.target_id);
+            return `<tr>
           <td>${target ? `<a href="${target.id}.html">${escapeHtml(target.name)}</a>` : r.target_id}</td>
           <td>${target ? `<a href="../files/${fileSlug(target.file)}.html">${escapeHtml(target.file)}</a>` : "-"}</td>
         </tr>`;
-        }).join("")}
+          })
+          .join("")}
       </tbody>
     </table>`;
       }
@@ -391,7 +550,9 @@ export function renderSymbolPage(
     ${
       depGraph
         ? `<h2>Dependencies</h2>
-    <div class="mermaid">${depGraph}</div>`
+    <div class="mermaid-container">
+      <div class="mermaid">${depGraph}</div>
+    </div>`
         : ""
     }
 
@@ -417,7 +578,9 @@ export function renderSymbolPage(
     ${
       impactGraph
         ? `<h2>Impact (depended by)</h2>
-    <div class="mermaid">${impactGraph}</div>`
+    <div class="mermaid-container">
+      <div class="mermaid">${impactGraph}</div>
+    </div>`
         : ""
     }
 
@@ -441,7 +604,7 @@ export function renderSymbolPage(
     }
 
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
-    <script>mermaid.initialize({startOnLoad:true,theme:'default'});</script>
+    <script>mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose'});</script>
   `;
 
   return layout(symbol.name, "", body, 1);
@@ -451,23 +614,88 @@ export function renderFilePage(
   filePath: string,
   symbols: CodeSymbol[],
   sourceCode?: string,
+  relationships?: RelationshipRow[],
+  allSymbols?: CodeSymbol[],
 ): string {
   const topLevel = symbols.filter((s) => !s.parent);
-  const allSymbols = symbols;
+
+  // File summary stats
+  const totalSymbols = symbols.length;
+  const totalLOC = sourceCode ? sourceCode.split("\n").length : 0;
+  const avgComplexity =
+    symbols
+      .filter((s) => s.metrics?.cyclomaticComplexity)
+      .reduce((sum, s) => sum + (s.metrics!.cyclomaticComplexity || 0), 0) / symbols.length || 0;
+
+  const kindCounts: Record<string, number> = {};
+  for (const s of symbols) {
+    kindCounts[s.kind] = (kindCounts[s.kind] ?? 0) + 1;
+  }
+
+  // File relationships graph
+  let fileGraph = "";
+  if (relationships && allSymbols) {
+    fileGraph = buildMermaidForFile(filePath, allSymbols, relationships, true);
+  }
 
   const body = `
     <h1>${escapeHtml(filePath)}</h1>
 
+    <div class="file-summary">
+      <div class="stat">
+        <div class="number">${totalSymbols}</div>
+        <div class="label">Total Symbols</div>
+      </div>
+      <div class="stat">
+        <div class="number">${totalLOC}</div>
+        <div class="label">Lines of Code</div>
+      </div>
+      <div class="stat">
+        <div class="number">${avgComplexity.toFixed(1)}</div>
+        <div class="label">Avg Complexity</div>
+      </div>
+      <div class="stat">
+        <div class="number">${Object.keys(kindCounts).length}</div>
+        <div class="label">Symbol Types</div>
+      </div>
+    </div>
+
+    ${
+      fileGraph
+        ? `
+    <h2>File Relationships</h2>
+    <div class="mermaid-container">
+      <div class="mermaid">${fileGraph}</div>
+    </div>`
+        : ""
+    }
+
+    <h2>Symbols by Kind</h2>
+    <div class="stats">
+      ${Object.entries(kindCounts)
+        .sort((a, b) => b[1] - a[1])
+        .map(
+          ([kind, count]) => `
+        <div class="stat">
+          <div class="number">${count}</div>
+          <div class="label">${kind}</div>
+        </div>`,
+        )
+        .join("")}
+    </div>
+
+    <h2>All Symbols</h2>
     <table>
-      <thead><tr><th scope="col">Name</th><th scope="col">Kind</th><th scope="col">Lines</th><th scope="col">Signature</th></tr></thead>
+      <thead><tr><th scope="col">Name</th><th scope="col">Kind</th><th scope="col">Visibility</th><th scope="col">Lines</th><th scope="col">Signature</th></tr></thead>
       <tbody>
         ${topLevel
           .sort((a, b) => a.startLine - b.startLine)
           .map((s) => {
-            const children = allSymbols.filter((c) => c.parent === s.id);
+            const children = symbols.filter((c) => c.parent === s.id);
             return `<tr>
           <td><a href="../symbols/${s.id}.html">${escapeHtml(s.name)}</a></td>
           <td><span class="badge ${badgeClass(s.kind)}">${s.kind}</span></td>
+          <td>${visibilityBadge(s.visibility)}</td>
           <td>${s.startLine}-${s.endLine}</td>
           <td>${s.signature ? `<code>${escapeHtml(s.signature)}</code>` : "-"}</td>
         </tr>
@@ -476,6 +704,7 @@ export function renderFilePage(
             (c) => `<tr>
           <td style="padding-left:2rem"><a href="../symbols/${c.id}.html">${escapeHtml(c.name)}</a></td>
           <td><span class="badge ${badgeClass(c.kind)}">${c.kind}</span></td>
+          <td>${visibilityBadge(c.visibility)}</td>
           <td>${c.startLine}-${c.endLine}</td>
           <td>${c.signature ? `<code>${escapeHtml(c.signature)}</code>` : "-"}</td>
         </tr>`,
@@ -489,9 +718,15 @@ export function renderFilePage(
     ${
       sourceCode
         ? `<h2>Full Source</h2>
-    <pre><code>${escapeHtml(sourceCode)}</code></pre>`
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+    <pre><code class="language-typescript">${escapeCodeBlocks(sourceCode)}</code></pre>
+    <script>hljs.highlightAll();</script>`
         : ""
     }
+
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script>mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose'});</script>
   `;
 
   return layout(filePath, "", body, 1);
@@ -509,6 +744,9 @@ export function renderRelationshipsPage(
     byType[r.type] = (byType[r.type] ?? 0) + 1;
   }
 
+  // Top connected symbols graph
+  const topConnectedGraph = buildMermaidTopConnected(symbols, relationships, 30, true);
+
   const body = `
     <h1>Relationships</h1>
 
@@ -525,17 +763,28 @@ export function renderRelationshipsPage(
         .join("")}
     </div>
 
+    ${
+      topConnectedGraph
+        ? `
+    <h2>Architecture Overview (Top 30 Connected)</h2>
+    <div class="mermaid-container">
+      <div class="mermaid">${topConnectedGraph}</div>
+    </div>`
+        : ""
+    }
+
     <p>Each symbol page contains focused dependency and impact graphs. Below is the full relationship table.</p>
 
     <h2>All Relationships</h2>
-    <table>
+    <input type="text" class="table-filter" id="relationship-filter" placeholder="Filter relationships...">
+    <table id="relationships-table">
       <thead><tr><th>Source</th><th>Type</th><th>Target</th></tr></thead>
       <tbody>
         ${relationships
           .map((r) => {
             const source = symbolMap.get(r.source_id);
             const target = symbolMap.get(r.target_id);
-            return `<tr>
+            return `<tr data-source="${escapeHtml(source?.name || r.source_id)}" data-type="${r.type}" data-target="${escapeHtml(target?.name || r.target_id)}">
           <td>${source ? `<a href="symbols/${source.id}.html">${escapeHtml(source.name)}</a>` : r.source_id}</td>
           <td>${r.type}</td>
           <td>${target ? `<a href="symbols/${target.id}.html">${escapeHtml(target.name)}</a>` : r.target_id}</td>
@@ -544,6 +793,26 @@ export function renderRelationshipsPage(
           .join("")}
       </tbody>
     </table>
+
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
+    <script>
+      mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose'});
+
+      // Client-side table filtering
+      document.getElementById('relationship-filter').addEventListener('input', function(e) {
+        const filter = e.target.value.toLowerCase();
+        const rows = document.querySelectorAll('#relationships-table tbody tr');
+
+        rows.forEach(row => {
+          const source = row.dataset.source.toLowerCase();
+          const type = row.dataset.type.toLowerCase();
+          const target = row.dataset.target.toLowerCase();
+
+          const matches = source.includes(filter) || type.includes(filter) || target.includes(filter);
+          row.style.display = matches ? '' : 'none';
+        });
+      });
+    </script>
   `;
 
   return layout("Relationships", "relationships.html", body);

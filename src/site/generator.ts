@@ -3,7 +3,7 @@ import * as path from "path";
 import Database from "better-sqlite3";
 import type { CodeSymbol } from "../indexer/symbol.types.js";
 import type { RelationshipRow } from "../storage/db.js";
-import type { DetectedPattern } from "../patterns/patternAnalyzer.js";
+import type { DetectedPattern, PatternKind } from "../patterns/patternAnalyzer.js";
 import {
   renderDashboard,
   renderSymbolPage,
@@ -19,6 +19,13 @@ export interface GeneratorOptions {
   dbPath: string;
   outDir: string;
   rootDir?: string;
+}
+
+interface PatternRow {
+  kind: string;
+  symbols: string;
+  confidence: number;
+  violations: string | null;
 }
 
 interface SymbolRow {
@@ -39,6 +46,8 @@ interface SymbolRow {
   summary: string | null;
   tags: string | null;
   last_modified: string | null;
+  layer: string | null;
+  deprecated: number | null;
 }
 
 function rowToSymbol(row: SymbolRow): CodeSymbol {
@@ -60,6 +69,8 @@ function rowToSymbol(row: SymbolRow): CodeSymbol {
     summary: row.summary ?? undefined,
     tags: row.tags ? JSON.parse(row.tags) : undefined,
     lastModified: row.last_modified ? new Date(row.last_modified) : undefined,
+    layer: (row.layer as CodeSymbol["layer"]) ?? undefined,
+    deprecated: row.deprecated !== null ? row.deprecated === 1 : undefined,
   };
 }
 
@@ -88,9 +99,22 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
 
   const relationships = db.prepare("SELECT * FROM relationships").all() as RelationshipRow[];
 
-  db.close();
+  // Load patterns if table exists
+  let patterns: DetectedPattern[] = [];
+  try {
+    const patternRows = db.prepare("SELECT * FROM patterns").all() as PatternRow[];
+    patterns = patternRows.map((row) => ({
+      kind: row.kind as PatternKind,
+      symbols: JSON.parse(row.symbols) as string[],
+      confidence: row.confidence,
+      violations: row.violations ? (JSON.parse(row.violations) as string[]) : [],
+    }));
+  } catch (e) {
+    // Patterns table doesn't exist, use empty array
+    patterns = [];
+  }
 
-  const patterns: DetectedPattern[] = [];
+  db.close();
   const files = [...new Set(symbols.map((s) => s.file))];
   const docRefs = new Set<string>();
 
