@@ -3,5 +3,17 @@
   "description": "Intelligent documentation agent via MCP",
   "command": "node",
   "args": ["dist/server.js"],
-  "env": { "NODE_ENV": "production" }
+  "env": { "NODE_ENV": "production" },
+  "agents": {
+    "@agent-doc": {
+      "enabled": true,
+      "description": "Agente para geração automática de documentação técnica do sistema.",
+      "entry": "dist/server.js",
+      "docsDir": "docs/",
+      "options": {
+        "autoGenerate": true,
+        "updateOnChange": true
+      }
+    }
+  }
 }

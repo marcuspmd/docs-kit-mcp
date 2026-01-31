@@ -5,7 +5,8 @@
   "type": "module",
   "main": "dist/server.js",
   "bin": {
-    "doc-guard": "dist/governance/docGuardBin.js"
+    "doc-guard": "dist/governance/docGuardBin.js",
+    "doc-kit": "dist/cli.js"
   },
   "scripts": {
     "build": "tsc",
@@ -13,7 +14,8 @@
     "lint": "eslint src/ tests/",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",
-    "dev": "tsx src/server.ts"
+    "dev": "tsx src/server.ts",
+    "mcp": "node dist/server.js"
   },
   "engines": {
     "node": ">=18"

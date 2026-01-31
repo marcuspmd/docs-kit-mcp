@@ -15,7 +15,9 @@ const PromptRuleSchema = z
 });
 export const ConfigSchema = z.object({
     projectRoot: z.string(),
-    include: z.array(z.string()).default([
+    include: z
+        .array(z.string())
+        .default([
         "**/*.ts",
         "**/*.tsx",
         "**/*.js",
@@ -25,7 +27,9 @@ export const ConfigSchema = z.object({
         "**/*.go",
         "**/*.rs",
     ]),
-    exclude: z.array(z.string()).default([
+    exclude: z
+        .array(z.string())
+        .default([
         "**/node_modules/**",
         "**/dist/**",
         "**/build/**",
@@ -56,9 +60,7 @@ export const ConfigSchema = z.object({
         docPrompt: z
             .string()
             .default("Update the relevant documentation section to reflect the code change. Preserve existing structure."),
-        changePrompt: z
-            .string()
-            .default("Summarize what changed semantically, not line-by-line."),
+        changePrompt: z.string().default("Summarize what changed semantically, not line-by-line."),
     })
         .default({}),
 });

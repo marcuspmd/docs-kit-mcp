@@ -112,9 +112,9 @@ export declare const ConfigSchema: z.ZodObject<{
         changePrompt?: string | undefined;
     }>>;
 }, "strip", z.ZodTypeAny, {
-    projectRoot: string;
     include: string[];
     exclude: string[];
+    projectRoot: string;
     respectGitignore: boolean;
     maxFileSize: number;
     dbPath: string;

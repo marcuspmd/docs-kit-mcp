@@ -6,6 +6,11 @@ import { ConfigSchema } from "./config.js";
 import { analyzeChanges } from "./analyzer/changeAnalyzer.js";
 import { createDocUpdater } from "./docs/docUpdater.js";
 import { createDocRegistry } from "./docs/docRegistry.js";
+import Parser from "tree-sitter";
+import TypeScript from "tree-sitter-typescript";
+import { indexFile } from "./indexer/indexer.js";
+import * as fs from "node:fs";
+import * as path from "node:path";
 const config = ConfigSchema.parse({
     projectRoot: process.cwd(),
 });
@@ -102,7 +107,10 @@ server.tool("generateMermaid", "Generate Mermaid diagram for given symbols", {
         .describe("Diagram type"),
 }, async ({ symbols: symbolsStr, type: diagramType }) => {
     try {
-        const symbolNames = symbolsStr.split(",").map((s) => s.trim()).filter(Boolean);
+        const symbolNames = symbolsStr
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
         let diagram;
         if (diagramType === "classDiagram") {
             const lines = ["classDiagram"];
@@ -154,6 +162,95 @@ server.tool("generateMermaid", "Generate Mermaid diagram for given symbols", {
     catch (err) {
         return {
             content: [{ type: "text", text: `Error: ${err.message}` }],
+            isError: true,
+        };
+    }
+});
+server.tool("scanFile", "Scan a TypeScript file and generate documentation for any undocumented symbols", {
+    filePath: z.string().describe("Path to the TypeScript file to scan"),
+    docsDir: z.string().default("docs").describe("Directory containing documentation files"),
+    dbPath: z
+        .string()
+        .default(".doc-kit/registry.db")
+        .describe("Path to the documentation registry database"),
+}, async ({ filePath: filePathParam, docsDir, dbPath }) => {
+    try {
+        const absoluteFilePath = path.resolve(filePathParam);
+        // Ensure db directory exists
+        const dbDir = path.dirname(dbPath);
+        if (!fs.existsSync(dbDir)) {
+            fs.mkdirSync(dbDir, { recursive: true });
+        }
+        const source = fs.readFileSync(absoluteFilePath, "utf-8");
+        const parser = new Parser();
+        parser.setLanguage(TypeScript.typescript);
+        const symbols = indexFile(absoluteFilePath, source, parser);
+        let createdCount = 0;
+        const createdSymbols = [];
+        for (const symbol of symbols) {
+            const mappings = await registry.findDocBySymbol(symbol.name);
+            if (mappings.length === 0) {
+                // Create a new doc file for this symbol
+                const docPath = `domain/${symbol.name}.md`;
+                const fullDocPath = path.join(docsDir, docPath);
+                const docDir = path.dirname(fullDocPath);
+                if (!fs.existsSync(docDir)) {
+                    fs.mkdirSync(docDir, { recursive: true });
+                }
+                // Create initial doc content
+                const initialContent = `---
+title: ${symbol.name}
+symbols:
+  - ${symbol.name}
+lastUpdated: ${new Date().toISOString().slice(0, 10)}
+---
+
+# ${symbol.name}
+
+> TODO: Document \`${symbol.name}\` (${symbol.kind} in ${path.relative(process.cwd(), symbol.file)}).
+
+## Description
+
+TODO: Add description here.
+
+## Usage
+
+TODO: Add usage examples here.
+`;
+                fs.writeFileSync(fullDocPath, initialContent, "utf-8");
+                // Register the mapping
+                await registry.register({
+                    symbolName: symbol.name,
+                    docPath,
+                });
+                createdCount++;
+                createdSymbols.push(symbol.name);
+            }
+        }
+        if (createdCount === 0) {
+            return {
+                content: [
+                    {
+                        type: "text",
+                        text: `No new symbols to document in ${filePathParam}. All symbols are already documented.`,
+                    },
+                ],
+            };
+        }
+        return {
+            content: [
+                {
+                    type: "text",
+                    text: `Created documentation for ${createdCount} symbols in ${filePathParam}:\n${createdSymbols.map((s) => `- ${s}`).join("\n")}`,
+                },
+            ],
+        };
+    }
+    catch (err) {
+        return {
+            content: [
+                { type: "text", text: `Error scanning file: ${err.message}` },
+            ],
             isError: true,
         };
     }

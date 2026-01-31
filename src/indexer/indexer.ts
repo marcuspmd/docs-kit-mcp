@@ -40,6 +40,20 @@ function walkNode(node: Parser.SyntaxNode, file: string, parent?: string): CodeS
   if (kind) {
     const name = node.childForFieldName("name")?.text ?? "anonymous";
     const id = generateSymbolId(file, name, kind);
+
+    // Extract signature for functions/methods
+    let signature: string | undefined;
+    if (kind === "function" || kind === "method") {
+      const parameters = node.childForFieldName("parameters");
+      const returnType = node.childForFieldName("return_type");
+      const paramsText = parameters ? parameters.text : "()";
+      const returnText = returnType ? `: ${returnType.text}` : "";
+      signature = `${name}${paramsText}${returnText}`;
+    } else if (kind === "interface" || kind === "class") {
+      // For interfaces/classes, we can add more later
+      signature = `${kind} ${name}`;
+    }
+
     symbols.push({
       id,
       name,
@@ -48,6 +62,7 @@ function walkNode(node: Parser.SyntaxNode, file: string, parent?: string): CodeS
       startLine: node.startPosition.row + 1,
       endLine: node.endPosition.row + 1,
       parent,
+      signature,
     });
 
     for (const child of node.children) {
