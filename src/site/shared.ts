@@ -39,7 +39,7 @@ export function buildMermaidForSymbol(
     lines.push(`  ${selfName}["${symbol.name}"]`);
     lines.push(`  style ${selfName} fill:#dbeafe,stroke:#2563eb,stroke-width:2px`);
     if (clickable) {
-      clickLines.push(`  click ${selfName} "symbols/${symbol.id}.html"`);
+      clickLines.push(`  click ${selfName} "${symbol.id}.html"`);
     }
   }
 
@@ -66,14 +66,14 @@ export function buildMermaidForSymbol(
       added.add(sName);
       lines.push(`  ${sName}["${source.name}"]`);
       if (clickable) {
-        clickLines.push(`  click ${sName} "symbols/${source.id}.html"`);
+        clickLines.push(`  click ${sName} "${source.id}.html"`);
       }
     }
     if (!added.has(tName)) {
       added.add(tName);
       lines.push(`  ${tName}["${target.name}"]`);
       if (clickable) {
-        clickLines.push(`  click ${tName} "symbols/${target.id}.html"`);
+        clickLines.push(`  click ${tName} "${target.id}.html"`);
       }
     }
 

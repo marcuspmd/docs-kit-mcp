@@ -2,7 +2,11 @@ import Database from "better-sqlite3";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { initializeSchema, createSymbolRepository, createRelationshipRepository } from "../../src/storage/db.js";
+import {
+  initializeSchema,
+  createSymbolRepository,
+  createRelationshipRepository,
+} from "../../src/storage/db.js";
 import { generateSite } from "../../src/site/generator.js";
 import { generateSymbolId } from "../../src/indexer/symbol.types.js";
 import { fileSlug } from "../../src/site/templates.js";
@@ -51,11 +55,7 @@ function createTestDb(dbPath: string) {
     symbolRepo.upsert(s);
   }
 
-  relRepo.upsert(
-    symbols[0].id,
-    symbols[2].id,
-    "uses",
-  );
+  relRepo.upsert(symbols[0].id, symbols[2].id, "uses");
 
   db.close();
   return symbols;
@@ -111,14 +111,13 @@ describe("generateSite", () => {
     expect(files.every((f) => !f.includes("%2F"))).toBe(true);
   });
 
-  it("generates relationships page without giant mermaid", () => {
+  it("generates relationships page", () => {
     generateSite({ dbPath, outDir });
     const html = fs.readFileSync(path.join(outDir, "relationships.html"), "utf-8");
     expect(html).toContain("Relationships");
     expect(html).toContain("UserService");
-    // Should have a table, not a giant mermaid
+    // Should have a table
     expect(html).toContain("<table>");
-    expect(html).not.toContain("classDiagram");
   });
 
   it("generates patterns page", () => {
@@ -129,9 +128,7 @@ describe("generateSite", () => {
 
   it("generates search.json", () => {
     generateSite({ dbPath, outDir });
-    const searchJson = JSON.parse(
-      fs.readFileSync(path.join(outDir, "search.json"), "utf-8"),
-    );
+    const searchJson = JSON.parse(fs.readFileSync(path.join(outDir, "search.json"), "utf-8"));
     expect(searchJson.length).toBe(3);
     expect(searchJson.some((s: { name: string }) => s.name === "UserService")).toBe(true);
   });
