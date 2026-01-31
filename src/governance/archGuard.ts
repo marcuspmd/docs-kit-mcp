@@ -1,10 +1,19 @@
 import { readFile } from "node:fs/promises";
 import type { CodeSymbol, SymbolRelationship } from "../indexer/symbol.types.js";
 
+export type ArchRuleType =
+  | "layer_boundary"
+  | "forbidden_import"
+  | "naming_convention"
+  | "max_complexity"
+  | "max_parameters"
+  | "max_lines"
+  | "missing_return_type";
+
 export interface ArchRule {
   name: string;
   description?: string;
-  type: "layer_boundary" | "forbidden_import" | "naming_convention";
+  type: ArchRuleType;
   severity?: "error" | "warning";
   config: Record<string, unknown>;
 }
@@ -106,12 +115,16 @@ function checkNamingConvention(rule: ArchRule, symbols: CodeSymbol[]): ArchViola
   const pattern = new RegExp(rule.config.pattern as string);
   const kind = rule.config.kind as string | undefined;
   const fileGlob = rule.config.file as string | undefined;
+  const allowNames = (rule.config.allowNames as string[] | undefined) ?? [];
+  const excludeNames = (rule.config.excludeNames as string[] | undefined) ?? [];
   const severity = rule.severity ?? "warning";
   const violations: ArchViolation[] = [];
+  const allowedSet = new Set([...allowNames, ...excludeNames].map((n) => n.toLowerCase()));
 
   for (const sym of symbols) {
     if (kind && sym.kind !== kind) continue;
     if (fileGlob && !matchGlob(fileGlob, sym.file)) continue;
+    if (allowedSet.has(sym.name.toLowerCase())) continue;
     if (!pattern.test(sym.name)) {
       violations.push({
         rule: rule.name,
@@ -121,6 +134,119 @@ function checkNamingConvention(rule: ArchRule, symbols: CodeSymbol[]): ArchViola
         severity,
       });
     }
+  }
+
+  return violations;
+}
+
+function checkMaxComplexity(rule: ArchRule, symbols: CodeSymbol[]): ArchViolation[] {
+  const max = (rule.config.max as number) ?? 10;
+  const kind = rule.config.kind as string | undefined;
+  const fileGlob = rule.config.file as string | undefined;
+  const severity = rule.severity ?? "warning";
+  const violations: ArchViolation[] = [];
+
+  for (const sym of symbols) {
+    if (kind && sym.kind !== kind) continue;
+    if (fileGlob && !matchGlob(fileGlob, sym.file)) continue;
+    const complexity = sym.metrics?.cyclomaticComplexity;
+    if (complexity == null) continue;
+    if (complexity > max) {
+      violations.push({
+        rule: rule.name,
+        file: sym.file,
+        symbolId: sym.id,
+        message: `'${sym.name}' has cyclomatic complexity ${complexity} (max ${max})`,
+        severity,
+      });
+    }
+  }
+
+  return violations;
+}
+
+function checkMaxParameters(rule: ArchRule, symbols: CodeSymbol[]): ArchViolation[] {
+  const max = (rule.config.max as number) ?? 5;
+  const kind = rule.config.kind as string | undefined;
+  const fileGlob = rule.config.file as string | undefined;
+  const severity = rule.severity ?? "warning";
+  const violations: ArchViolation[] = [];
+
+  for (const sym of symbols) {
+    if (kind && sym.kind !== kind) continue;
+    if (fileGlob && !matchGlob(fileGlob, sym.file)) continue;
+    const count = sym.metrics?.parameterCount;
+    if (count == null) continue;
+    if (count > max) {
+      violations.push({
+        rule: rule.name,
+        file: sym.file,
+        symbolId: sym.id,
+        message: `'${sym.name}' has ${count} parameters (max ${max})`,
+        severity,
+      });
+    }
+  }
+
+  return violations;
+}
+
+function checkMaxLines(rule: ArchRule, symbols: CodeSymbol[]): ArchViolation[] {
+  const max = (rule.config.max as number) ?? 80;
+  const kind = rule.config.kind as string | undefined;
+  const fileGlob = rule.config.file as string | undefined;
+  const severity = rule.severity ?? "warning";
+  const violations: ArchViolation[] = [];
+
+  for (const sym of symbols) {
+    if (kind && sym.kind !== kind) continue;
+    if (fileGlob && !matchGlob(fileGlob, sym.file)) continue;
+    const loc = sym.metrics?.linesOfCode ?? sym.endLine - sym.startLine + 1;
+    if (loc > max) {
+      violations.push({
+        rule: rule.name,
+        file: sym.file,
+        symbolId: sym.id,
+        message: `'${sym.name}' has ${loc} lines (max ${max})`,
+        severity,
+      });
+    }
+  }
+
+  return violations;
+}
+
+/** Detect if signature declares a return type (e.g. ): Type or ): void). */
+function hasReturnTypeInSignature(signature: string | undefined): boolean {
+  if (!signature) return false;
+  const afterParen = signature.match(/\)\s*([::\s].*)?$/);
+  if (!afterParen) return false;
+  const suffix = (afterParen[1] ?? "").trim();
+  return suffix.length > 0 && !/^\s*[{\[]?\s*$/.test(suffix);
+}
+
+function checkMissingReturnType(rule: ArchRule, symbols: CodeSymbol[]): ArchViolation[] {
+  const scope = (rule.config.scope as string | undefined) ?? "all";
+  const kind = rule.config.kind as string | undefined;
+  const fileGlob = rule.config.file as string | undefined;
+  const severity = rule.severity ?? "warning";
+  const violations: ArchViolation[] = [];
+
+  for (const sym of symbols) {
+    const isMethodOrFunction =
+      sym.kind === "method" || sym.kind === "function" || sym.kind === "constructor";
+    if (!isMethodOrFunction) continue;
+    if (kind && sym.kind !== kind) continue;
+    if (fileGlob && !matchGlob(fileGlob, sym.file)) continue;
+    if (scope === "public" && sym.visibility && sym.visibility !== "public") continue;
+    if (hasReturnTypeInSignature(sym.signature)) continue;
+    violations.push({
+      rule: rule.name,
+      file: sym.file,
+      symbolId: sym.id,
+      message: `'${sym.name}' has no declared return type`,
+      severity,
+    });
   }
 
   return violations;
@@ -154,6 +280,18 @@ export function createArchGuard(): ArchGuard {
             break;
           case "naming_convention":
             violations.push(...checkNamingConvention(rule, symbols));
+            break;
+          case "max_complexity":
+            violations.push(...checkMaxComplexity(rule, symbols));
+            break;
+          case "max_parameters":
+            violations.push(...checkMaxParameters(rule, symbols));
+            break;
+          case "max_lines":
+            violations.push(...checkMaxLines(rule, symbols));
+            break;
+          case "missing_return_type":
+            violations.push(...checkMissingReturnType(rule, symbols));
             break;
         }
       }

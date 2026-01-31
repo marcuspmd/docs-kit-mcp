@@ -1,4 +1,9 @@
 import { createArchGuard } from "../src/governance/archGuard.js";
+import {
+  buildArchGuardBaseRules,
+  getAllReservedNames,
+  RESERVED_NAMES_BY_LANGUAGE,
+} from "../src/governance/archGuardBase.js";
 import type { CodeSymbol, SymbolRelationship } from "../src/indexer/symbol.types.js";
 import { writeFile, unlink } from "node:fs/promises";
 import { join } from "node:path";
@@ -233,6 +238,108 @@ describe("ArchGuard", () => {
       expect(violations).toHaveLength(1);
       expect(violations[0].symbolId).toBe("b");
     });
+
+    it("allows reserved names via allowNames (e.g. PHP __construct)", () => {
+      const guard = createArchGuard();
+      guard.setRules([
+        {
+          name: "method-camel-case",
+          type: "naming_convention",
+          config: {
+            kind: "method",
+            pattern: "^[a-z][a-zA-Z0-9]*$",
+            allowNames: ["__construct", "__destruct", "constructor"],
+          },
+        },
+      ]);
+
+      const symbols = [
+        sym({ id: "m1", name: "doSomething", kind: "method", file: "src/a.php" }),
+        sym({ id: "m2", name: "__construct", kind: "method", file: "src/a.php" }),
+        sym({ id: "m3", name: "Bad_Name", kind: "method", file: "src/b.php" }),
+      ];
+
+      const violations = guard.analyze(symbols, []);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].symbolId).toBe("m3");
+    });
+  });
+
+  describe("max_complexity", () => {
+    it("flags symbols exceeding cyclomatic complexity", () => {
+      const guard = createArchGuard();
+      guard.setRules([
+        { name: "max-cc", type: "max_complexity", config: { max: 5 } },
+      ]);
+
+      const symbols = [
+        sym({ id: "a", name: "simple", kind: "function", file: "src/a.ts", metrics: { cyclomaticComplexity: 3 } }),
+        sym({ id: "b", name: "complex", kind: "function", file: "src/b.ts", metrics: { cyclomaticComplexity: 8 } }),
+      ];
+
+      const violations = guard.analyze(symbols, []);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].rule).toBe("max-cc");
+      expect(violations[0].symbolId).toBe("b");
+      expect(violations[0].message).toContain("8");
+    });
+  });
+
+  describe("max_parameters", () => {
+    it("flags symbols exceeding parameter count", () => {
+      const guard = createArchGuard();
+      guard.setRules([
+        { name: "max-params", type: "max_parameters", config: { max: 3 } },
+      ]);
+
+      const symbols = [
+        sym({ id: "a", name: "few", kind: "function", file: "src/a.ts", metrics: { parameterCount: 2 } }),
+        sym({ id: "b", name: "many", kind: "function", file: "src/b.ts", metrics: { parameterCount: 6 } }),
+      ];
+
+      const violations = guard.analyze(symbols, []);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].rule).toBe("max-params");
+      expect(violations[0].message).toContain("6");
+    });
+  });
+
+  describe("max_lines", () => {
+    it("flags symbols exceeding line count", () => {
+      const guard = createArchGuard();
+      guard.setRules([
+        { name: "max-lines", type: "max_lines", config: { max: 20 } },
+      ]);
+
+      const symbols = [
+        sym({ id: "a", name: "short", kind: "function", file: "src/a.ts", startLine: 1, endLine: 10 }),
+        sym({ id: "b", name: "long", kind: "function", file: "src/b.ts", startLine: 1, endLine: 50 }),
+      ];
+
+      const violations = guard.analyze(symbols, []);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].rule).toBe("max-lines");
+      expect(violations[0].message).toContain("50");
+    });
+  });
+
+  describe("missing_return_type", () => {
+    it("flags methods/functions without declared return type", () => {
+      const guard = createArchGuard();
+      guard.setRules([
+        { name: "require-return", type: "missing_return_type", config: {} },
+      ]);
+
+      const symbols = [
+        sym({ id: "a", name: "typed", kind: "function", file: "src/a.ts", signature: "foo(): number" }),
+        sym({ id: "b", name: "untyped", kind: "function", file: "src/b.ts", signature: "bar()" }),
+      ];
+
+      const violations = guard.analyze(symbols, []);
+      expect(violations).toHaveLength(1);
+      expect(violations[0].rule).toBe("require-return");
+      expect(violations[0].symbolId).toBe("b");
+    });
   });
 
   describe("loadRules", () => {
@@ -258,6 +365,28 @@ describe("ArchGuard", () => {
       } finally {
         await unlink(tmpFile);
       }
+    });
+  });
+
+  describe("archGuardBase", () => {
+    it("buildArchGuardBaseRules includes PHP __construct in allowNames for method rule", () => {
+      const rules = buildArchGuardBaseRules({ languages: ["php"], namingConvention: true });
+      const methodRule = rules.find((r) => r.type === "naming_convention" && r.config.kind === "method");
+      expect(methodRule).toBeDefined();
+      const allowNames = methodRule!.config.allowNames as string[] | undefined;
+      expect(allowNames).toContain("__construct");
+      expect(allowNames).toContain("__destruct");
+    });
+
+    it("getAllReservedNames returns union for multiple languages", () => {
+      const names = getAllReservedNames(["php", "ts"]);
+      expect(names).toContain("__construct");
+      expect(names).toContain("constructor");
+    });
+
+    it("RESERVED_NAMES_BY_LANGUAGE has php and python magic methods", () => {
+      expect(RESERVED_NAMES_BY_LANGUAGE.php).toContain("__construct");
+      expect(RESERVED_NAMES_BY_LANGUAGE.python).toContain("__init__");
     });
   });
 

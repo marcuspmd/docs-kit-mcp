@@ -474,38 +474,6 @@ server.registerTool(
 );
 
 server.registerTool(
-  "analyzeArchitecture",
-  {
-    description: "Analyze code for architecture violations and naming conventions",
-  },
-  async () => {
-    try {
-      const allSymbols = symbolRepo.findAll();
-      const allRels = relationshipRowsToSymbolRelationships(relRepo.findAll());
-      const violations = archGuard.analyze(allSymbols, allRels);
-
-      const report = violations
-        .map((v) => `[${v.severity.toUpperCase()}] ${v.rule}: ${v.message} (${v.file})`)
-        .join("\n");
-
-      return {
-        content: [
-          {
-            type: "text" as const,
-            text: report || "No architecture violations found.",
-          },
-        ],
-      };
-    } catch (err) {
-      return {
-        content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }],
-        isError: true,
-      };
-    }
-  },
-);
-
-server.registerTool(
   "scanForDeadCode",
   {
     description: "Scan for dead code, orphan docs, and broken links",

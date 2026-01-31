@@ -17,6 +17,7 @@ import {
   replaceAllPatterns,
   replaceAllArchViolations,
   replaceAllReaperFindings,
+  relationshipRowsToSymbolRelationships,
 } from "./storage/db.js";
 import { loadConfig, configExists, createDefaultConfig } from "./configLoader.js";
 import fg from "fast-glob";
@@ -29,6 +30,22 @@ import { createKnowledgeGraph } from "./knowledge/graph.js";
 import { createArchGuard } from "./governance/archGuard.js";
 import { createReaper } from "./governance/reaper.js";
 import type { CodeSymbol, SymbolRelationship } from "./indexer/symbol.types.js";
+import { analyzeChanges } from "./analyzer/changeAnalyzer.js";
+import { createDocUpdater } from "./docs/docUpdater.js";
+import { buildExplainSymbolContext } from "./handlers/explainSymbol.js";
+import { generateMermaid } from "./docs/mermaidGenerator.js";
+import { scanFileAndCreateDocs } from "./docs/docScanner.js";
+import { buildImpactAnalysisPrompt } from "./prompts/impactAnalysis.prompt.js";
+import {
+  createEventFlowAnalyzer,
+  formatEventFlowsAsMermaid,
+} from "./events/eventFlowAnalyzer.js";
+import { createRagIndex } from "./knowledge/rag.js";
+import { createLlmProvider } from "./llm/provider.js";
+import { buildRelevantContext } from "./knowledge/contextBuilder.js";
+import { createContextMapper } from "./business/contextMapper.js";
+import { createBusinessTranslator } from "./business/businessTranslator.js";
+import TypeScript from "tree-sitter-typescript";
 
 /* ================== Helpers ================== */
 
@@ -89,6 +106,49 @@ async function main() {
     case "dead-code":
       await runDeadCodeScan(args.slice(1));
       break;
+    case "generate-docs":
+      await runGenerateDocs(args.slice(1));
+      break;
+    case "explain-symbol":
+      await runExplainSymbol(args.slice(1));
+      break;
+    case "generate-mermaid":
+      await runGenerateMermaid(args.slice(1));
+      break;
+    case "scan-file":
+      await runScanFile(args.slice(1));
+      break;
+    case "impact-analysis":
+      await runImpactAnalysis(args.slice(1));
+      break;
+    case "analyze-patterns":
+      await runAnalyzePatterns(args.slice(1));
+      break;
+    case "generate-event-flow":
+      await runGenerateEventFlow(args.slice(1));
+      break;
+    case "create-onboarding":
+      await runCreateOnboarding(args.slice(1));
+      break;
+    case "ask-knowledge-base":
+      await runAskKnowledgeBase(args.slice(1));
+      break;
+    case "init-arch-guard":
+      await runInitArchGuard(args.slice(1));
+      break;
+    case "traceability-matrix":
+      await runBuildTraceabilityMatrix(args.slice(1));
+      break;
+    case "describe-business":
+      await runDescribeInBusinessTerms(args.slice(1));
+      break;
+    case "validate-examples":
+      await runValidateExamples(args.slice(1));
+      break;
+    case "relevant-context":
+      await runGetRelevantContext(args.slice(1));
+      break;
+    default:
       printHelp();
       process.exit(command === "--help" || command === "-h" ? 0 : 1);
   }
@@ -110,6 +170,28 @@ Usage:
   docs-kit smart-code-review [--db path] [--docs dir] [--no-examples]
                                                         Perform comprehensive code review
   docs-kit dead-code [--db path] [--docs dir]            Scan and mark dead code in database
+  docs-kit generate-docs [--base ref] [--head ref] [--dry-run] [--docs dir]
+                                                        Update docs for symbols affected by changes
+  docs-kit explain-symbol <symbol> [--docs dir]          Explain symbol with code + docs context
+  docs-kit generate-mermaid <symbols> [--type classDiagram|sequenceDiagram|flowchart]
+                                                        Generate Mermaid diagram for symbols
+  docs-kit scan-file <file> [--docs dir] [--db path]    Scan file and create docs for symbols
+  docs-kit impact-analysis <symbol> [--max-depth n] [--db path] [--docs dir]
+                                                        Analyze what breaks if symbol changes
+  docs-kit analyze-patterns [--db path]                 Detect patterns and violations
+  docs-kit generate-event-flow [--db path]              Simulate event flows and listeners
+  docs-kit create-onboarding <topic> [--docs dir] [--db path]
+                                                        Generate learning path using RAG
+  docs-kit ask-knowledge-base <question> [--docs dir] [--db path]
+                                                        Q&A on code + docs (uses LLM)
+  docs-kit init-arch-guard [--lang ts|js|php|python|go] [--out path]  Generate base arch-guard.json
+  docs-kit traceability-matrix [--docs dir] [--db path]  Requirements traceability matrix
+  docs-kit describe-business <symbol> [--docs dir] [--db path]
+                                                        Describe symbol in business terms
+  docs-kit validate-examples [--docs dir] [doc-path] [--db path]
+                                                        Validate code examples in docs
+  docs-kit relevant-context [--symbol name] [--file path] [--docs dir] [--db path]
+                                                        Get context for symbol or file
   docs-kit --help                                        Show this help
 
 Commands:
@@ -120,6 +202,20 @@ Commands:
   generate-repo-docs Create markdown doc stubs for undocumented symbols
   project-status     Generate comprehensive project status report
   smart-code-review  Perform comprehensive code review with multiple analyses
+  generate-docs      Update docs for symbols affected by recent git changes
+  explain-symbol     Explain a symbol combining code analysis and existing docs
+  generate-mermaid   Generate Mermaid diagram for given symbols
+  scan-file          Scan TS file and generate docs for undocumented symbols
+  impact-analysis    Analyze impact of changing a symbol (Knowledge Graph)
+  analyze-patterns   Detect patterns and violations (SOLID, etc.)
+  generate-event-flow Simulate event flows and listeners (Mermaid)
+  create-onboarding  Generate learning path using RAG
+  ask-knowledge-base Q&A on code + docs (LLM)
+  init-arch-guard     Generate base arch-guard.json with language-aware rules
+  traceability-matrix Requirements traceability matrix
+  describe-business  Describe symbol in business terms
+  validate-examples  Validate code examples in documentation
+  relevant-context   Get comprehensive context for symbol or file
 `);
 }
 
@@ -905,6 +1001,519 @@ async function runDeadCodeScan(args: string[]) {
   }
 
   db.close();
+}
+
+/* ================== generate-docs (server: generateDocs) ================== */
+
+async function runGenerateDocs(args: string[]) {
+  const { flags } = parseArgs(args, {
+    base: "main",
+    head: "",
+    "dry-run": undefined as unknown as string,
+    docs: "docs",
+    db: "",
+  });
+  const rootDir = ".";
+  if (!configExists(rootDir)) {
+    console.error("Error: No docs.config.js found. Run docs-kit init first.");
+    process.exit(1);
+  }
+  const config = await loadConfig(rootDir);
+  const dbPath = flags.db || config.dbPath;
+  const docsDir = flags.docs || "docs";
+  const base = flags.base || "main";
+  const head = flags.head || undefined;
+  const dryRun = "dry-run" in flags;
+
+  if (!fs.existsSync(dbPath)) {
+    console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
+    process.exit(1);
+  }
+
+  header("Generate docs for changed symbols");
+  const db = new Database(dbPath);
+  const registry = createDocRegistry(db);
+  step("Rebuilding registry");
+  await registry.rebuild(docsDir);
+  done();
+  step("Analyzing changes");
+  const impacts = await analyzeChanges({
+    repoPath: config.projectRoot,
+    base,
+    head,
+  });
+  done(`${impacts.length} impacts`);
+  const updater = createDocUpdater({ dryRun });
+  const results = await updater.applyChanges(impacts, registry, docsDir, config);
+  db.close();
+
+  const summaryLines = results
+    .filter((r) => r.action !== "skipped")
+    .map((r) => `${r.action}: ${r.symbolName} in ${r.docPath}`);
+  console.log(summaryLines.length ? summaryLines.join("\n") : "No doc updates needed.");
+}
+
+/* ================== explain-symbol (server: explainSymbol) ================== */
+
+async function runExplainSymbol(args: string[]) {
+  const { positional, flags } = parseArgs(args, { docs: "docs" });
+  const symbolName = positional[0];
+  if (!symbolName) {
+    console.error("Usage: docs-kit explain-symbol <symbol> [--docs dir]");
+    process.exit(1);
+  }
+  const rootDir = ".";
+  const config = await loadConfig(rootDir);
+  const dbPath = flags.db || config.dbPath;
+  const docsDir = flags.docs || "docs";
+  if (!fs.existsSync(dbPath)) {
+    console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
+    process.exit(1);
+  }
+  const db = new Database(dbPath);
+  const registry = createDocRegistry(db);
+  const symbolRepo = createSymbolRepository(db);
+  const graph = createKnowledgeGraph(db);
+  await registry.rebuild(docsDir);
+  const result = await buildExplainSymbolContext(symbolName, {
+    projectRoot: config.projectRoot,
+    docsDir,
+    registry,
+    symbolRepo,
+    graph,
+  });
+  db.close();
+  if (!result.found) {
+    console.log(`No symbol or documentation found for: ${symbolName}`);
+    return;
+  }
+  console.log(result.prompt);
+}
+
+/* ================== generate-mermaid (server: generateMermaid) ================== */
+
+async function runGenerateMermaid(args: string[]) {
+  const { positional, flags } = parseArgs(args, { type: "classDiagram" });
+  const symbolsStr = positional[0];
+  if (!symbolsStr) {
+    console.error("Usage: docs-kit generate-mermaid <comma-separated symbols> [--type classDiagram|sequenceDiagram|flowchart]");
+    process.exit(1);
+  }
+  const rootDir = ".";
+  const config = await loadConfig(rootDir);
+  const dbPath = flags.db || config.dbPath;
+  if (!fs.existsSync(dbPath)) {
+    console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
+    process.exit(1);
+  }
+  const symbolNames = symbolsStr.split(",").map((s) => s.trim()).filter(Boolean);
+  const diagramType = (flags.type === "sequenceDiagram" || flags.type === "flowchart") ? flags.type : "classDiagram";
+  const db = new Database(dbPath);
+  const symbolRepo = createSymbolRepository(db);
+  const relRepo = createRelationshipRepository(db);
+  const allSymbols = symbolRepo.findAll();
+  const allRels = relationshipRowsToSymbolRelationships(relRepo.findAll());
+  const diagram = generateMermaid(
+    { symbols: symbolNames, type: diagramType },
+    allSymbols,
+    allRels,
+  );
+  db.close();
+  console.log("```mermaid");
+  console.log(diagram);
+  console.log("```");
+}
+
+/* ================== scan-file (server: scanFile) ================== */
+
+async function runScanFile(args: string[]) {
+  const { positional, flags } = parseArgs(args, { docs: "docs", db: "" });
+  const filePathParam = positional[0];
+  if (!filePathParam) {
+    console.error("Usage: docs-kit scan-file <file> [--docs dir] [--db path]");
+    process.exit(1);
+  }
+  const rootDir = ".";
+  const config = await loadConfig(rootDir);
+  const dbPath = flags.db || config.dbPath;
+  const docsDir = flags.docs || "docs";
+  const absoluteFilePath = path.resolve(filePathParam);
+  if (!fs.existsSync(absoluteFilePath)) {
+    console.error(`Error: File not found: ${absoluteFilePath}`);
+    process.exit(1);
+  }
+  const dbDir = path.dirname(dbPath);
+  if (!fs.existsSync(dbDir)) {
+    fs.mkdirSync(dbDir, { recursive: true });
+  }
+  const db = new Database(dbPath);
+  initializeSchema(db);
+  const registry = createDocRegistry(db);
+  await registry.rebuild(docsDir);
+  const source = fs.readFileSync(absoluteFilePath, "utf-8");
+  const parser = new Parser();
+  parser.setLanguage(TypeScript.typescript);
+  const symbols = indexFile(absoluteFilePath, source, parser);
+  const { createdCount, createdSymbols } = await scanFileAndCreateDocs({
+    filePath: absoluteFilePath,
+    docsDir,
+    projectRoot: config.projectRoot,
+    symbols,
+    registry,
+  });
+  db.close();
+  if (createdCount === 0) {
+    console.log(`No new symbols to document in ${filePathParam}. All symbols are already documented.`);
+    return;
+  }
+  console.log(`Created documentation for ${createdCount} symbols:\n${createdSymbols.map((s) => `- ${s}`).join("\n")}`);
+}
+
+/* ================== impact-analysis (server: impactAnalysis) ================== */
+
+async function runImpactAnalysis(args: string[]) {
+  const { positional, flags } = parseArgs(args, { "max-depth": "3", db: "", docs: "docs" });
+  const symbolName = positional[0];
+  if (!symbolName) {
+    console.error("Usage: docs-kit impact-analysis <symbol> [--max-depth n] [--db path]");
+    process.exit(1);
+  }
+  const rootDir = ".";
+  const config = await loadConfig(rootDir);
+  const dbPath = flags.db || config.dbPath;
+  const maxDepth = parseInt(flags["max-depth"] || "3", 10) || 3;
+  if (!fs.existsSync(dbPath)) {
+    console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
+    process.exit(1);
+  }
+  const db = new Database(dbPath);
+  const symbolRepo = createSymbolRepository(db);
+  const graph = createKnowledgeGraph(db);
+  const symbols = symbolRepo.findByName(symbolName);
+  if (symbols.length === 0) {
+    db.close();
+    console.log(`No symbol found with name: ${symbolName}`);
+    return;
+  }
+  const targetSymbol = symbols[0];
+  const impactedIds = graph.getImpactRadius(targetSymbol.id, maxDepth);
+  const impactedSymbols = symbolRepo.findByIds(impactedIds);
+  const prompt = buildImpactAnalysisPrompt({ targetSymbol, impactedSymbols, maxDepth });
+  db.close();
+  console.log(prompt);
+}
+
+/* ================== analyze-patterns (server: analyzePatterns) ================== */
+
+async function runAnalyzePatterns(args: string[]) {
+  const { flags } = parseArgs(args, { db: "" });
+  const rootDir = ".";
+  const config = await loadConfig(rootDir);
+  const dbPath = flags.db || config.dbPath;
+  if (!fs.existsSync(dbPath)) {
+    console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
+    process.exit(1);
+  }
+  const db = new Database(dbPath);
+  const symbolRepo = createSymbolRepository(db);
+  const relRepo = createRelationshipRepository(db);
+  const patternAnalyzerInst = createPatternAnalyzer();
+  const allSymbols = symbolRepo.findAll();
+  const allRels = relationshipRowsToSymbolRelationships(relRepo.findAll());
+  const patterns = patternAnalyzerInst.analyze(allSymbols, allRels);
+  db.close();
+  const report = patterns
+    .map((p) => {
+      const symbolNames = p.symbols
+        .map((id) => allSymbols.find((s) => s.id === id)?.name || id)
+        .join(", ");
+      const violations = p.violations.map((v) => `- ${v}`).join("\n");
+      return `**${p.kind.toUpperCase()}** (confidence: ${(p.confidence * 100).toFixed(0)}%)\nSymbols: ${symbolNames}\nViolations:\n${violations || "None"}`;
+    })
+    .join("\n\n");
+  console.log(report || "No patterns detected.");
+}
+
+/* ================== generate-event-flow (server: generateEventFlow) ================== */
+
+async function runGenerateEventFlow(args: string[]) {
+  const { flags } = parseArgs(args, { db: "" });
+  const rootDir = ".";
+  const config = await loadConfig(rootDir);
+  const dbPath = flags.db || config.dbPath;
+  if (!fs.existsSync(dbPath)) {
+    console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
+    process.exit(1);
+  }
+  const db = new Database(dbPath);
+  const symbolRepo = createSymbolRepository(db);
+  const relRepo = createRelationshipRepository(db);
+  const eventFlowAnalyzer = createEventFlowAnalyzer();
+  const allSymbols = symbolRepo.findAll();
+  const allRels = relationshipRowsToSymbolRelationships(relRepo.findAll());
+  const flows = eventFlowAnalyzer.analyze(allSymbols, allRels);
+  const diagram = formatEventFlowsAsMermaid(flows);
+  db.close();
+  console.log("```mermaid");
+  console.log(diagram);
+  console.log("```");
+}
+
+/* ================== create-onboarding (server: createOnboarding) ================== */
+
+async function runCreateOnboarding(args: string[]) {
+  const { positional, flags } = parseArgs(args, { docs: "docs", db: "" });
+  const topic = positional[0];
+  if (!topic) {
+    console.error("Usage: docs-kit create-onboarding <topic> [--docs dir] [--db path]");
+    process.exit(1);
+  }
+  const rootDir = ".";
+  const config = await loadConfig(rootDir);
+  const dbPath = flags.db || config.dbPath;
+  const docsDir = flags.docs || "docs";
+  if (!fs.existsSync(dbPath)) {
+    console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
+    process.exit(1);
+  }
+  const db = new Database(dbPath);
+  const llm = createLlmProvider(config);
+  const ragIndex = createRagIndex({
+    embeddingModel: config.llm.embeddingModel ?? "text-embedding-ada-002",
+    db,
+    embedFn: (texts: string[]) => llm.embed(texts),
+  });
+  if (ragIndex.chunkCount() === 0) {
+    await ragIndex.indexDocs(docsDir);
+  }
+  const results = await ragIndex.search(topic, 10);
+  db.close();
+  const pathText = results
+    .map(
+      (r, i) =>
+        `${i + 1}. ${r.source} (score: ${(r.score * 100).toFixed(0)}%)\n   ${r.content.slice(0, 200)}...`,
+    )
+    .join("\n\n");
+  console.log(`Learning path for "${topic}":\n\n${pathText}`);
+}
+
+/* ================== ask-knowledge-base (server: askKnowledgeBase) ================== */
+
+async function runAskKnowledgeBase(args: string[]) {
+  const { positional, flags } = parseArgs(args, { docs: "docs", db: "" });
+  const question = positional[0];
+  if (!question) {
+    console.error("Usage: docs-kit ask-knowledge-base <question> [--docs dir] [--db path]");
+    process.exit(1);
+  }
+  const rootDir = ".";
+  const config = await loadConfig(rootDir);
+  const dbPath = flags.db || config.dbPath;
+  const docsDir = flags.docs || "docs";
+  if (!fs.existsSync(dbPath)) {
+    console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
+    process.exit(1);
+  }
+  const db = new Database(dbPath);
+  const llm = createLlmProvider(config);
+  const ragIndex = createRagIndex({
+    embeddingModel: config.llm.embeddingModel ?? "text-embedding-ada-002",
+    db,
+    embedFn: (texts: string[]) => llm.embed(texts),
+  });
+  if (ragIndex.chunkCount() === 0) {
+    await ragIndex.indexDocs(docsDir);
+  }
+  const results = await ragIndex.search(question, 5);
+  const context = results.map((r) => `${r.source}:\n${r.content}`).join("\n\n");
+  const prompt = `Based on the following context, answer the question. If the context doesn't contain enough information, say so.\n\nContext:\n${context}\n\nQuestion: ${question}`;
+  const answer = await llm.chat([{ role: "user", content: prompt }]) || "No answer generated.";
+  db.close();
+  console.log(answer);
+}
+
+/* ================== init-arch-guard ================== */
+
+async function runInitArchGuard(args: string[]) {
+  const { flags } = parseArgs(args, { out: "arch-guard.json", lang: "ts" });
+  const rootDir = ".";
+  const outPath = path.isAbsolute(flags.out) ? flags.out : path.join(rootDir, flags.out);
+  const langRaw = (flags.lang || "ts").toLowerCase();
+  const langMap: Record<string, "ts" | "js" | "php" | "python" | "go"> = {
+    ts: "ts",
+    typescript: "ts",
+    js: "js",
+    javascript: "js",
+    php: "php",
+    python: "python",
+    py: "python",
+    go: "go",
+    golang: "go",
+  };
+  const lang = langMap[langRaw] ?? "ts";
+  const { getDefaultArchGuardJson } = await import("./governance/archGuardBase.js");
+  const languages = lang === "ts" || lang === "js" ? (["ts", "js"] as const) : ([lang] as const);
+  const json = getDefaultArchGuardJson({
+    languages: [...languages],
+    layerBoundary: true,
+    forbiddenImport: true,
+    namingConvention: true,
+    metricRules: true,
+    maxComplexity: 10,
+    maxParameters: 5,
+    maxLines: 80,
+    requireReturnType: false,
+  });
+  fs.writeFileSync(outPath, json, "utf-8");
+  console.log(`Created ${outPath} with language-aware rules (${lang}).`);
+}
+
+/* ================== traceability-matrix (server: buildTraceabilityMatrix) ================== */
+
+async function runBuildTraceabilityMatrix(args: string[]) {
+  const { flags } = parseArgs(args, { docs: "docs", db: "" });
+  const rootDir = ".";
+  const config = await loadConfig(rootDir);
+  const dbPath = flags.db || config.dbPath;
+  const docsDir = flags.docs || "docs";
+  if (!fs.existsSync(dbPath)) {
+    console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
+    process.exit(1);
+  }
+  const db = new Database(dbPath);
+  const registry = createDocRegistry(db);
+  const contextMapper = createContextMapper();
+  await registry.rebuild(docsDir);
+  const refs = await contextMapper.extractRefs(config.projectRoot);
+  const rtm = await contextMapper.buildRTM(refs, registry);
+  db.close();
+  const report = rtm
+    .map(
+      (entry) =>
+        `**${entry.ticketId}**\n- Symbols: ${entry.symbols.join(", ") || "None"}\n- Tests: ${entry.tests.join(", ") || "None"}\n- Docs: ${entry.docs.join(", ") || "None"}`,
+    )
+    .join("\n\n");
+  console.log(report || "No traceability entries found.");
+}
+
+/* ================== describe-business (server: describeInBusinessTerms) ================== */
+
+async function runDescribeInBusinessTerms(args: string[]) {
+  const { positional, flags } = parseArgs(args, { docs: "docs", db: "" });
+  const symbolName = positional[0];
+  if (!symbolName) {
+    console.error("Usage: docs-kit describe-business <symbol> [--docs dir] [--db path]");
+    process.exit(1);
+  }
+  const rootDir = ".";
+  const config = await loadConfig(rootDir);
+  const dbPath = flags.db || config.dbPath;
+  const docsDir = flags.docs || "docs";
+  if (!fs.existsSync(dbPath)) {
+    console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
+    process.exit(1);
+  }
+  const db = new Database(dbPath);
+  const registry = createDocRegistry(db);
+  const symbolRepo = createSymbolRepository(db);
+  const llm = createLlmProvider(config);
+  const businessTranslator = createBusinessTranslator(llm);
+  await registry.rebuild(docsDir);
+  const symbols = symbolRepo.findByName(symbolName);
+  if (symbols.length === 0) {
+    db.close();
+    console.log(`No symbol found: ${symbolName}`);
+    return;
+  }
+  const sym = symbols[0];
+  const filePath = path.resolve(config.projectRoot, sym.file);
+  let sourceCode = "";
+  try {
+    sourceCode = fs.readFileSync(filePath, "utf-8").split("\n").slice(sym.startLine - 1, sym.endLine).join("\n");
+  } catch {
+    db.close();
+    console.error(`Could not read source for: ${sym.file}`);
+    process.exit(1);
+  }
+  let existingContext: string | undefined;
+  const mappings = await registry.findDocBySymbol(symbolName);
+  for (const m of mappings) {
+    try {
+      existingContext = fs.readFileSync(path.join(docsDir, m.docPath), "utf-8");
+      break;
+    } catch {
+      /* skip */
+    }
+  }
+  const description = await businessTranslator.describeInBusinessTerms(
+    { name: sym.name, kind: sym.kind },
+    sourceCode,
+    existingContext,
+  );
+  db.close();
+  console.log(description);
+}
+
+/* ================== validate-examples (server: validateExamples) ================== */
+
+async function runValidateExamples(args: string[]) {
+  const { positional, flags } = parseArgs(args, { docs: "docs", db: "" });
+  const docsDir = flags.docs || "docs";
+  const docPath = positional[0]; // optional: specific doc file
+  const rootDir = ".";
+  const config = await loadConfig(rootDir);
+  const dbPath = flags.db || config.dbPath;
+  if (!fs.existsSync(dbPath)) {
+    console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
+    process.exit(1);
+  }
+  const codeExampleValidator = createCodeExampleValidator();
+  let results: Awaited<ReturnType<typeof codeExampleValidator.validateAll>>;
+  if (docPath) {
+    results = await codeExampleValidator.validateDoc(path.join(docsDir, docPath));
+  } else {
+    results = await codeExampleValidator.validateAll(docsDir);
+  }
+  const report = results
+    .map((r) => {
+      const status = r.valid ? "OK" : "FAIL";
+      const error = r.error ? ` - ${r.error}` : "";
+      return `${status} ${r.docPath}:${r.example.lineStart}-${r.example.lineEnd} (${r.example.language})${error}`;
+    })
+    .join("\n");
+  const summary = `${results.filter((r) => r.valid).length}/${results.length} examples passed validation.`;
+  console.log(`${summary}\n\n${report || "No code examples found."}`);
+}
+
+/* ================== relevant-context (server: getRelevantContext) ================== */
+
+async function runGetRelevantContext(args: string[]) {
+  const { flags } = parseArgs(args, { docs: "docs", db: "", symbol: "", file: "" });
+  const symbolName = flags.symbol || undefined;
+  const filePath = flags.file || undefined;
+  if (!symbolName && !filePath) {
+    console.error("Usage: docs-kit relevant-context --symbol <name> OR --file <path> [--docs dir] [--db path]");
+    process.exit(1);
+  }
+  const rootDir = ".";
+  const config = await loadConfig(rootDir);
+  const dbPath = flags.db || config.dbPath;
+  const docsDir = flags.docs || "docs";
+  if (!fs.existsSync(dbPath)) {
+    console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
+    process.exit(1);
+  }
+  const db = new Database(dbPath);
+  const registry = createDocRegistry(db);
+  const symbolRepo = createSymbolRepository(db);
+  const graph = createKnowledgeGraph(db);
+  await registry.rebuild(docsDir);
+  const result = await buildRelevantContext(
+    { symbolName, filePath },
+    { projectRoot: config.projectRoot, docsDir, registry, symbolRepo, graph },
+  );
+  db.close();
+  console.log(result.text);
 }
 
 main().catch((err) => {
