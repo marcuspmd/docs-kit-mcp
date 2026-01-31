@@ -6,6 +6,12 @@ import { ConfigSchema } from "./config.js";
 import { analyzeChanges } from "./analyzer/changeAnalyzer.js";
 import { createDocUpdater } from "./docs/docUpdater.js";
 import { createDocRegistry } from "./docs/docRegistry.js";
+import { createKnowledgeGraph } from "./knowledge/graph.js";
+import { createSymbolRepository, createRelationshipRepository } from "./storage/db.js";
+import { createPatternAnalyzer } from "./patterns/patternAnalyzer.js";
+import { createEventFlowAnalyzer } from "./events/eventFlowAnalyzer.js";
+import { createRagIndex } from "./knowledge/rag.js";
+import OpenAI from "openai";
 import Parser from "tree-sitter";
 import TypeScript from "tree-sitter-typescript";
 import { indexFile } from "./indexer/indexer.js";
@@ -22,6 +28,19 @@ const config = ConfigSchema.parse({
 
 const db = new Database(config.dbPath);
 const registry = createDocRegistry(db);
+const symbolRepo = createSymbolRepository(db);
+const relRepo = createRelationshipRepository(db);
+const graph = createKnowledgeGraph(db);
+const patternAnalyzer = createPatternAnalyzer();
+const eventFlowAnalyzer = createEventFlowAnalyzer();
+const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const ragIndex = createRagIndex({
+  embeddingModel: "text-embedding-ada-002",
+  embedFn: async (texts: string[]) => {
+    const res = await openai.embeddings.create({ model: "text-embedding-ada-002", input: texts });
+    return res.data.map((d) => d.embedding);
+  },
+});
 
 const server = new McpServer({
   name: "docs-agent",
@@ -292,6 +311,221 @@ TODO: Add usage examples here.
         content: [
           { type: "text" as const, text: `Error scanning file: ${(err as Error).message}` },
         ],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  "impactAnalysis",
+  "Analyze what breaks if a symbol changes, using the Knowledge Graph",
+  {
+    symbol: z.string().describe("Symbol name (e.g. OrderService.createOrder)"),
+    maxDepth: z.number().default(3).describe("Maximum depth to traverse dependencies"),
+  },
+  async ({ symbol, maxDepth }) => {
+    try {
+      const symbols = symbolRepo.findByName(symbol);
+      if (symbols.length === 0) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `No symbol found with name: ${symbol}`,
+            },
+          ],
+        };
+      }
+
+      // For simplicity, take the first match
+      const targetSymbol = symbols[0];
+      const impactedIds = graph.getImpactRadius(targetSymbol.id, maxDepth);
+      const impactedSymbols = symbolRepo.findByIds(impactedIds);
+
+      const impactList = impactedSymbols
+        .map((s) => `- ${s.name} (${s.kind} in ${s.file})`)
+        .join("\n");
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Changing ${targetSymbol.name} (${targetSymbol.kind}) would impact:\n${impactList || "No other symbols."}`,
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  "analyzePatterns",
+  "Detect patterns and violations (SOLID, etc.), generate reports",
+  {},
+  async () => {
+    try {
+      const allSymbols = symbolRepo.findAll();
+      const allRels = relRepo.findAll().map((r) => ({
+        sourceId: r.source_id,
+        targetId: r.target_id,
+        type: r.type,
+      }));
+      const patterns = patternAnalyzer.analyze(allSymbols, allRels);
+
+      const report = patterns
+        .map((p) => {
+          const symbolNames = p.symbols
+            .map((id) => allSymbols.find((s) => s.id === id)?.name || id)
+            .join(", ");
+          const violations = p.violations.map((v) => `- ${v}`).join("\n");
+          return `**${p.kind.toUpperCase()}** (confidence: ${(p.confidence * 100).toFixed(0)}%)\nSymbols: ${symbolNames}\nViolations:\n${violations || "None"}`;
+        })
+        .join("\n\n");
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: report || "No patterns detected.",
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool("generateEventFlow", "Simulate event flows and listeners", {}, async () => {
+  try {
+    const allSymbols = symbolRepo.findAll();
+    const allRels = relRepo.findAll().map((r) => ({
+      sourceId: r.source_id,
+      targetId: r.target_id,
+      type: r.type,
+    }));
+    const flows = eventFlowAnalyzer.analyze(allSymbols, allRels);
+
+    const lines = ["sequenceDiagram"];
+    for (const flow of flows) {
+      lines.push(`    participant ${flow.event.name}`);
+      for (const emitter of flow.emitters) {
+        lines.push(`    participant ${emitter.name}`);
+      }
+      for (const listener of flow.listeners) {
+        lines.push(`    participant ${listener.name}`);
+      }
+
+      for (const emitter of flow.emitters) {
+        lines.push(`    ${emitter.name}->>+${flow.event.name}: emit`);
+        for (const listener of flow.listeners) {
+          lines.push(`    ${flow.event.name}->>+${listener.name}: notify`);
+          lines.push(`    ${listener.name}-->>-${flow.event.name}: handle`);
+        }
+        lines.push(`    ${flow.event.name}-->>-${emitter.name}: emitted`);
+      }
+    }
+
+    const diagram = lines.join("\n");
+
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `\`\`\`mermaid\n${diagram}\n\`\`\``,
+        },
+      ],
+    };
+  } catch (err) {
+    return {
+      content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }],
+      isError: true,
+    };
+  }
+});
+
+server.tool(
+  "createOnboarding",
+  "Generate learning paths using RAG",
+  {
+    topic: z.string().describe("Topic to generate learning path for"),
+    docsDir: z.string().default("docs").describe("Docs directory"),
+  },
+  async ({ topic, docsDir }) => {
+    try {
+      if (ragIndex.chunkCount() === 0) {
+        await ragIndex.indexDocs(docsDir);
+      }
+      const results = await ragIndex.search(topic, 10);
+
+      const path = results
+        .map(
+          (r, i) =>
+            `${i + 1}. ${r.source} (score: ${(r.score * 100).toFixed(0)}%)\n   ${r.content.slice(0, 200)}...`,
+        )
+        .join("\n\n");
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Learning path for "${topic}":\n\n${path}`,
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  "askKnowledgeBase",
+  "Conversational Q&A on code + docs",
+  {
+    question: z.string().describe("Question to ask the knowledge base"),
+    docsDir: z.string().default("docs").describe("Docs directory"),
+  },
+  async ({ question, docsDir }) => {
+    try {
+      if (ragIndex.chunkCount() === 0) {
+        await ragIndex.indexDocs(docsDir);
+      }
+      const results = await ragIndex.search(question, 5);
+      const context = results.map((r) => `${r.source}:\n${r.content}`).join("\n\n");
+
+      const prompt = `Based on the following context, answer the question. If the context doesn't contain enough information, say so.\n\nContext:\n${context}\n\nQuestion: ${question}`;
+
+      const res = await openai.chat.completions.create({
+        model: "gpt-4",
+        messages: [{ role: "user", content: prompt }],
+      });
+
+      const answer = res.choices[0]?.message?.content || "No answer generated.";
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: answer,
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }],
         isError: true,
       };
     }

@@ -1,16 +1,28 @@
 import { jest } from "@jest/globals";
 
 // Mock OpenAI
+const mockChatCreate = jest.fn();
+// @ts-expect-error Mocking OpenAI response
+mockChatCreate.mockResolvedValue({
+  choices: [{ message: { content: "Updated content from LLM" } }],
+});
+const mockEmbeddingsCreate = jest.fn();
+// @ts-expect-error Mocking OpenAI embeddings response
+mockEmbeddingsCreate.mockResolvedValue({
+  data: [{ embedding: [0.1, 0.2, 0.3] }],
+});
+
 jest.mock("openai", () => {
   return {
     __esModule: true,
     default: jest.fn().mockImplementation(() => ({
       chat: {
         completions: {
-          create: jest.fn().mockResolvedValue({
-            choices: [{ message: { content: "Updated content from LLM" } }],
-          }),
+          create: mockChatCreate,
         },
+      },
+      embeddings: {
+        create: mockEmbeddingsCreate,
       },
     })),
   };

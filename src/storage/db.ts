@@ -82,6 +82,9 @@ export function initializeSchema(db: Database.Database): void {
 export interface SymbolRepository {
   upsert(symbol: CodeSymbol): void;
   findById(id: string): CodeSymbol | undefined;
+  findByIds(ids: string[]): CodeSymbol[];
+  findByName(name: string): CodeSymbol[];
+  findAll(): CodeSymbol[];
   findByFile(file: string): CodeSymbol[];
   findByKind(kind: SymbolKind): CodeSymbol[];
   deleteByFile(file: string): void;
@@ -185,6 +188,11 @@ export function createSymbolRepository(db: Database.Database): SymbolRepository 
   `);
 
   const findByIdStmt = db.prepare("SELECT * FROM symbols WHERE id = ?");
+  const findByIdsStmt = db.prepare(
+    `SELECT * FROM symbols WHERE id IN (${Array.from({ length: 100 }, () => "?").join(",")})`,
+  );
+  const findByNameStmt = db.prepare("SELECT * FROM symbols WHERE name = ? OR qualified_name = ?");
+  const findAllStmt = db.prepare("SELECT * FROM symbols");
   const findByFileStmt = db.prepare("SELECT * FROM symbols WHERE file = ?");
   const findByKindStmt = db.prepare("SELECT * FROM symbols WHERE kind = ?");
   const deleteByFileStmt = db.prepare("DELETE FROM symbols WHERE file = ?");
@@ -235,6 +243,24 @@ export function createSymbolRepository(db: Database.Database): SymbolRepository 
       return row ? rowToSymbol(row) : undefined;
     },
 
+    findByIds(ids: string[]): CodeSymbol[] {
+      if (ids.length === 0) return [];
+      const placeholders = ids.map(() => "?").join(",");
+      const stmt = db.prepare(`SELECT * FROM symbols WHERE id IN (${placeholders})`);
+      const rows = stmt.all(...ids) as SymbolRow[];
+      return rows.map(rowToSymbol);
+    },
+
+    findByName(name: string): CodeSymbol[] {
+      const rows = findByNameStmt.all(name, name) as SymbolRow[];
+      return rows.map(rowToSymbol);
+    },
+
+    findAll(): CodeSymbol[] {
+      const rows = findAllStmt.all() as SymbolRow[];
+      return rows.map(rowToSymbol);
+    },
+
     findByFile(file: string): CodeSymbol[] {
       const rows = findByFileStmt.all(file) as SymbolRow[];
       return rows.map(rowToSymbol);
@@ -263,6 +289,7 @@ export interface RelationshipRepository {
   upsert(sourceId: string, targetId: string, type: string): void;
   findBySource(sourceId: string): RelationshipRow[];
   findByTarget(targetId: string): RelationshipRow[];
+  findAll(): RelationshipRow[];
   deleteBySource(sourceId: string): void;
 }
 
@@ -272,6 +299,7 @@ export function createRelationshipRepository(db: Database.Database): Relationshi
   );
   const findBySourceStmt = db.prepare("SELECT * FROM relationships WHERE source_id = ?");
   const findByTargetStmt = db.prepare("SELECT * FROM relationships WHERE target_id = ?");
+  const findAllStmt = db.prepare("SELECT * FROM relationships");
   const deleteBySourceStmt = db.prepare("DELETE FROM relationships WHERE source_id = ?");
 
   return {
@@ -283,6 +311,9 @@ export function createRelationshipRepository(db: Database.Database): Relationshi
     },
     findByTarget(targetId) {
       return findByTargetStmt.all(targetId) as RelationshipRow[];
+    },
+    findAll() {
+      return findAllStmt.all() as RelationshipRow[];
     },
     deleteBySource(sourceId) {
       deleteBySourceStmt.run(sourceId);
