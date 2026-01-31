@@ -244,15 +244,34 @@ export function renderDashboard(data: SiteData): string {
         renderResults(results);
       }
 
-      fetch('search.json').then(function(r){ return r.json(); }).then(function(data){
-        INDEX = data;
-        renderFacets(data.facets);
-        // Initialize Fuse
-        try {
-          FUSE = new Fuse(data.items, { keys: [{name:'name',weight:0.6},{name:'signature',weight:0.2},{name:'summary',weight:0.2}], includeMatches:true, threshold:0.35 });
-        } catch(e) { console.warn('Fuse init failed', e); FUSE = null; }
-        document.getElementById('search').addEventListener('input', function(e){ doSearch(e.target.value); });
-      });
+      fetch('search.json')
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          // Support two formats for search.json:
+          // - legacy: an array of items (tests and older sites)
+          // - current: { items: [], facets: { ... } }
+          if (Array.isArray(data)) {
+            INDEX = { items: data, facets: { kinds: {}, tags: {}, files: {} } };
+            // Build simple facets from items
+            for (const it of data) {
+              INDEX.facets.kinds[it.kind] = (INDEX.facets.kinds[it.kind] ?? 0) + 1;
+              const seg = it.file ? (typeof it.file === 'string' ? it.file.split('/')[0] || it.file : 'root') : 'root';
+              INDEX.facets.files[seg] = (INDEX.facets.files[seg] ?? 0) + 1;
+              if (Array.isArray(it.tags)) {
+                for (const t of it.tags) INDEX.facets.tags[t] = (INDEX.facets.tags[t] ?? 0) + 1;
+              }
+            }
+          } else {
+            INDEX = data;
+          }
+
+          renderFacets(INDEX.facets);
+          // Initialize Fuse
+          try {
+            FUSE = new Fuse(INDEX.items, { keys: [{ name: 'name', weight: 0.6 }, { name: 'signature', weight: 0.2 }, { name: 'summary', weight: 0.2 }], includeMatches: true, threshold: 0.35 });
+          } catch (e) { console.warn('Fuse init failed', e); FUSE = null; }
+          document.getElementById('search').addEventListener('input', function (e) { doSearch(e.target.value); });
+        });
     </script>
   `;
 
@@ -296,7 +315,7 @@ export function renderSymbolPage(
       ${symbol.signature ? `<p><strong>Signature:</strong> <code>${escapeHtml(symbol.signature)}</code></p>` : ""}
       ${symbol.pattern ? `<p><strong>Pattern:</strong> ${escapeHtml(symbol.pattern)}</p>` : ""}
       ${symbol.metrics ? `<p><strong>Metrics:</strong> LOC: ${symbol.metrics.linesOfCode ?? "-"}, Complexity: ${symbol.metrics.cyclomaticComplexity ?? "-"}, Params: ${symbol.metrics.parameterCount ?? "-"}</p>` : ""}
-      ${symbol.docRef ? `<p><strong>Docs:</strong> <a href="../${escapeHtml(symbol.docRef)}">${escapeHtml(symbol.docRef)}</a></p>` : ""}
+      ${symbol.docRef ? `<p><strong>Docs:</strong> <a href="../${escapeHtml(symbol.docRef.replace(/\.md$/, ".html"))}">${escapeHtml(symbol.docRef)}</a></p>` : ""}
       ${symbol.summary ? `<p><strong>Summary:</strong> ${escapeHtml(symbol.summary)}</p>` : ""}
       ${symbol.tags ? `<p><strong>Tags:</strong> ${symbol.tags.map((t) => `<span class='tag'>${escapeHtml(t)}</span>`).join(" ")}</p>` : ""}
       ${symbol.lastModified ? `<p><strong>Last Updated:</strong> ${escapeHtml(formatDate(symbol.lastModified) ?? "")}</p>` : ""}

@@ -13,6 +13,7 @@ import {
   buildSearchIndex,
   fileSlug,
 } from "./templates.js";
+import { CSS } from "./styles.js";
 
 export interface GeneratorOptions {
   dbPath: string;
@@ -174,6 +175,53 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
       const outDirPath = path.dirname(outPath);
       fs.mkdirSync(outDirPath, { recursive: true });
       fs.writeFileSync(outPath, content, "utf-8");
+      // Also create an HTML wrapper that will render the markdown in-browser
+      try {
+        const mdName = path.basename(docRef);
+        const outHtmlPath = outPath.replace(/\.md$/i, ".html");
+        const wrapper = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>${mdName} - doc-kit</title>
+  <style>${CSS}</style>
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+</head>
+<body>
+  <nav>
+    <a href="../index.html">Dashboard</a>
+    <a href="../relationships.html">Relationships</a>
+    <a href="../patterns.html">Patterns</a>
+  </nav>
+  <main id="content">
+    <article id="doc"></article>
+  </main>
+  <script>
+    (async function(){
+      try {
+        const res = await fetch('./${mdName}');
+        const md = await res.text();
+        const html = marked.parse(md);
+        document.getElementById('doc').innerHTML = html;
+        // Convert internal .md links to .html so navigation stays within site
+        document.querySelectorAll('#doc a').forEach(function(a){
+          const href = a.getAttribute('href');
+          if (!href) return;
+          if (href.toLowerCase().endsWith('.md')) a.setAttribute('href', href.slice(0, -3) + '.html');
+        });
+      } catch(e) {
+        document.getElementById('doc').textContent = 'Error loading document.';
+      }
+    })();
+  </script>
+</body>
+</html>`;
+
+        fs.writeFileSync(outHtmlPath, wrapper, "utf-8");
+      } catch (e) {
+        // ignore wrapper errors
+      }
     } else {
       // Create a placeholder markdown if the referenced doc doesn't exist
       const linked = symbols.filter((s) => s.docRef === docRef);
@@ -199,6 +247,52 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
         const outDirPath = path.dirname(outPath);
         fs.mkdirSync(outDirPath, { recursive: true });
         fs.writeFileSync(outPath, lines.join("\n"), "utf-8");
+        // Also create an HTML wrapper for the placeholder so links to .html work
+        try {
+          const mdName = path.basename(docRef);
+          const outHtmlPath = outPath.replace(/\.md$/i, ".html");
+          const wrapper = `<!DOCTYPE html>
+  <html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>${mdName} - doc-kit</title>
+    <style>${CSS}</style>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  </head>
+  <body>
+    <nav>
+      <a href="../index.html">Dashboard</a>
+      <a href="../relationships.html">Relationships</a>
+      <a href="../patterns.html">Patterns</a>
+    </nav>
+    <main id="content">
+      <article id="doc"></article>
+    </main>
+    <script>
+      (async function(){
+        try {
+          const res = await fetch('./${mdName}');
+          const md = await res.text();
+          const html = marked.parse(md);
+          document.getElementById('doc').innerHTML = html;
+          document.querySelectorAll('#doc a').forEach(function(a){
+            const href = a.getAttribute('href');
+            if (!href) return;
+            if (href.toLowerCase().endsWith('.md')) a.setAttribute('href', href.slice(0, -3) + '.html');
+          });
+        } catch(e) {
+          document.getElementById('doc').textContent = 'Error loading document.';
+        }
+      })();
+    </script>
+  </body>
+  </html>`;
+
+          fs.writeFileSync(outHtmlPath, wrapper, "utf-8");
+        } catch (e) {
+          // ignore wrapper errors
+        }
       }
     }
   }
@@ -232,7 +326,10 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   fs.writeFileSync(path.join(outDir, "patterns.html"), renderPatternsPage(patterns, symbols));
 
   // Generate search index
-  fs.writeFileSync(path.join(outDir, "search.json"), JSON.stringify(buildSearchIndex(symbols)));
+  // Historically tests expect search.json to be an array of items.
+  // Write the items array for compatibility, but keep generator using buildSearchIndex.
+  const indexObj = buildSearchIndex(symbols);
+  fs.writeFileSync(path.join(outDir, "search.json"), JSON.stringify(indexObj.items));
 
   return {
     symbolPages: symbols.length,

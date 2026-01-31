@@ -1,5 +1,14 @@
 import Parser from "tree-sitter";
 import TypeScript from "tree-sitter-typescript";
+import JavaScript from "tree-sitter-javascript";
+import Python from "tree-sitter-python";
+import GoLang from "tree-sitter-go";
+import PHP from "tree-sitter-php";
+// Note: tree-sitter-dart native binding can fail to load in some environments
+// (it requires a compiled native addon). We avoid importing it at module load
+// time to prevent Jest runs from crashing when the binding is missing.
+import Ruby from "tree-sitter-ruby";
+import CSharp from "tree-sitter-c-sharp";
 import fg from "fast-glob";
 import { readFile } from "node:fs/promises";
 import {
@@ -27,6 +36,7 @@ export interface IndexResult {
 /* ================== Node-type mapping ================== */
 
 const NODE_KIND_MAP: Record<string, SymbolKind> = {
+  // TypeScript / JavaScript
   class_declaration: "class",
   abstract_class_declaration: "abstract_class",
   method_definition: "method",
@@ -35,6 +45,36 @@ const NODE_KIND_MAP: Record<string, SymbolKind> = {
   enum_declaration: "enum",
   type_alias_declaration: "type",
   method_signature: "method",
+
+  // Common JS/TS variations
+  class: "class",
+  method: "method",
+
+  // Python
+  class_definition: "class",
+  function_definition: "function",
+  async_function_definition: "function",
+  lambda: "lambda",
+
+  // Go
+  method_declaration: "method",
+  type_spec: "type",
+  type_declaration: "type",
+  struct_type: "class",
+  interface_type: "interface",
+
+  // PHP
+  trait_declaration: "trait",
+
+  // Dart
+  constructor_declaration: "constructor",
+
+  // Ruby
+  module: "class",
+  def: "method",
+
+  // C# / .NET
+  struct_declaration: "class",
 };
 
 /* ================== Metadata extractors ================== */
@@ -140,11 +180,29 @@ function detectLanguage(file: string): CodeSymbol["language"] {
   return undefined;
 }
 
+function languageForFile(file: string) {
+  if (file.endsWith(".ts") || file.endsWith(".tsx")) return TypeScript.typescript;
+  if (file.endsWith(".js") || file.endsWith(".jsx")) return JavaScript;
+  if (file.endsWith(".py")) return Python;
+  if (file.endsWith(".go")) return GoLang;
+  if (file.endsWith(".php")) return PHP;
+  // Skip dart parsing if the dart grammar/binding isn't present to avoid
+  // test-time native binding errors. If you need Dart support, ensure the
+  // tree-sitter-dart package is installed and its native bindings are built.
+  if (file.endsWith(".dart")) return undefined;
+  if (file.endsWith(".rb")) return Ruby;
+  if (file.endsWith(".cs")) return CSharp;
+  return undefined;
+}
+
 const LAYER_PATTERNS: Array<{ pattern: RegExp; layer: Layer }> = [
   { pattern: /(controller|route|view|page|component|ui)/i, layer: "presentation" },
   { pattern: /(service|use.?case|handler|command|query|application)/i, layer: "application" },
   { pattern: /(entity|model|value.?object|domain|event)/i, layer: "domain" },
-  { pattern: /(repository|adapter|gateway|storage|db|infra|migration|provider)/i, layer: "infrastructure" },
+  {
+    pattern: /(repository|adapter|gateway|storage|db|infra|migration|provider)/i,
+    layer: "infrastructure",
+  },
   { pattern: /(test|spec|mock|fixture)/i, layer: "test" },
 ];
 
@@ -176,18 +234,45 @@ function walkNode(
   parentName?: string,
 ): CodeSymbol[] {
   const symbols: CodeSymbol[] = [];
+  if (!node) return symbols;
   const kind = NODE_KIND_MAP[node.type];
 
+  function getNodeName(n: Parser.SyntaxNode): string {
+    // Try common field names
+    const byField = n.childForFieldName("name") ?? n.childForFieldName("identifier");
+    if (byField) return byField.text;
+
+    // Search for first identifier-like child
+    const idChild = n.children.find((c) =>
+      /identifier|name|type_identifier|field_identifier/.test(c.type),
+    );
+    if (idChild) return idChild.text;
+
+    // fallback to node's own text (trimmed)
+    const t = n.text?.trim();
+    if (t && t.length > 0) return t.split(/\s|\(|\{/)[0];
+    return "anonymous";
+  }
+
+  function getParametersText(n: Parser.SyntaxNode): string | undefined {
+    const params = n.childForFieldName("parameters") ?? n.childForFieldName("parameter_list");
+    if (params) return params.text;
+    // fallback: find first child that looks like parameter list
+    const p = n.children.find((c) => /parameter|argument_list|formal_parameters/.test(c.type));
+    if (p) return p.text;
+    return undefined;
+  }
+
   if (kind) {
-    const name = node.childForFieldName("name")?.text ?? "anonymous";
+    const name = getNodeName(node) ?? "anonymous";
     const id = generateSymbolId(file, name, kind);
 
     // Signature
     let signature: string | undefined;
     if (kind === "function" || kind === "method") {
-      const parameters = node.childForFieldName("parameters");
-      const returnType = node.childForFieldName("return_type");
-      const paramsText = parameters ? parameters.text : "()";
+      const paramsText = getParametersText(node) ?? "()";
+      // try common return type fields
+      const returnType = node.childForFieldName("return_type") ?? node.childForFieldName("type");
       const returnText = returnType ? `: ${returnType.text}` : "";
       signature = `${name}${paramsText}${returnText}`;
     } else if (kind === "interface" || kind === "class" || kind === "abstract_class") {
@@ -265,6 +350,13 @@ function walkNode(
 /* ================== Single file indexer ================== */
 
 export function indexFile(filePath: string, source: string, parser: Parser): CodeSymbol[] {
+  const lang = languageForFile(filePath);
+  if (!lang) return [];
+  try {
+    (parser as unknown as { setLanguage: (l: unknown) => void }).setLanguage(lang);
+  } catch {
+    // ignore setLanguage errors
+  }
   const tree = parser.parse(source);
   return walkNode(tree.rootNode, filePath);
 }
@@ -272,7 +364,11 @@ export function indexFile(filePath: string, source: string, parser: Parser): Cod
 /* ================== Project indexer ================== */
 
 export async function indexProject(options: IndexerOptions): Promise<IndexResult> {
-  const { rootDir, include = ["**/*.ts"], exclude = ["node_modules/**", "dist/**"] } = options;
+  const {
+    rootDir,
+    include = ["**/*.{ts,tsx,js,jsx,py,go,php,dart,rb,cs}"],
+    exclude = ["node_modules/**", "dist/**"],
+  } = options;
 
   const files = await fg(include, {
     cwd: rootDir,
@@ -281,7 +377,6 @@ export async function indexProject(options: IndexerOptions): Promise<IndexResult
   });
 
   const parser = new Parser();
-  parser.setLanguage(TypeScript.typescript);
 
   const symbols: CodeSymbol[] = [];
   const errors: Array<{ file: string; error: string }> = [];

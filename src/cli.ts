@@ -4,7 +4,6 @@ import * as fs from "fs";
 import * as path from "path";
 import Database from "better-sqlite3";
 import Parser from "tree-sitter";
-import TypeScript from "tree-sitter-typescript";
 import { createDocRegistry } from "./docs/docRegistry.js";
 import { indexFile } from "./indexer/indexer.js";
 import { extractRelationships } from "./indexer/relationshipExtractor.js";
@@ -63,9 +62,7 @@ async function main() {
         args[1] || ".",
         args[2] || "docs",
         args[3] || ".doc-kit/registry.db",
-        (args[4] || "node_modules,dist,.git,docs,tests,.doc-kit")
-          .split(",")
-          .map((d) => d.trim()),
+        (args[4] || "node_modules,dist,.git,docs,tests,.doc-kit").split(",").map((d) => d.trim()),
       );
       break;
     default:
@@ -141,10 +138,9 @@ async function runIndex(args: string[]) {
   const relRepo = createRelationshipRepository(db);
 
   const parser = new Parser();
-  parser.setLanguage(TypeScript.typescript);
 
-  // Find all .ts files
-  step("Scanning for .ts files");
+  // Find source files (multiple extensions)
+  step("Scanning for source files");
   const tsFiles: string[] = [];
   function findTsFiles(dir: string) {
     const items = fs.readdirSync(dir);
@@ -155,8 +151,21 @@ async function runIndex(args: string[]) {
         if (!excludeDirs.includes(item)) {
           findTsFiles(fullPath);
         }
-      } else if (item.endsWith(".ts") && !item.endsWith(".d.ts")) {
-        tsFiles.push(fullPath);
+      } else {
+        if (
+          (item.endsWith(".ts") && !item.endsWith(".d.ts")) ||
+          item.endsWith(".tsx") ||
+          item.endsWith(".js") ||
+          item.endsWith(".jsx") ||
+          item.endsWith(".py") ||
+          item.endsWith(".go") ||
+          item.endsWith(".php") ||
+          item.endsWith(".dart") ||
+          item.endsWith(".rb") ||
+          item.endsWith(".cs")
+        ) {
+          tsFiles.push(fullPath);
+        }
       }
     }
   }
@@ -175,6 +184,7 @@ async function runIndex(args: string[]) {
       const source = fs.readFileSync(filePath, "utf-8");
       const relPath = path.relative(rootDir, filePath);
       const symbols = indexFile(relPath, source, parser);
+      // parser.setLanguage is done inside indexFile; parse again to store tree
       const tree = parser.parse(source);
       trees.set(relPath, tree);
       sources.set(relPath, source);
@@ -383,9 +393,8 @@ async function generateRepoDocumentation(
   done();
 
   const parser = new Parser();
-  parser.setLanguage(TypeScript.typescript);
 
-  step("Scanning for .ts files");
+  step("Scanning for source files");
   const tsFiles: string[] = [];
   function findTsFiles(dir: string) {
     const items = fs.readdirSync(dir);
@@ -396,8 +405,21 @@ async function generateRepoDocumentation(
         if (!excludeDirs.includes(item)) {
           findTsFiles(fullPath);
         }
-      } else if (item.endsWith(".ts") && !item.endsWith(".d.ts")) {
-        tsFiles.push(fullPath);
+      } else {
+        if (
+          (item.endsWith(".ts") && !item.endsWith(".d.ts")) ||
+          item.endsWith(".tsx") ||
+          item.endsWith(".js") ||
+          item.endsWith(".jsx") ||
+          item.endsWith(".py") ||
+          item.endsWith(".go") ||
+          item.endsWith(".php") ||
+          item.endsWith(".dart") ||
+          item.endsWith(".rb") ||
+          item.endsWith(".cs")
+        ) {
+          tsFiles.push(fullPath);
+        }
       }
     }
   }
