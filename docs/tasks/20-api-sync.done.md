@@ -1,6 +1,6 @@
 # Task 20 — API Sync (OpenAPI / GraphQL)
 
-> **Status:** pending
+> **Status:** done
 > **Layer:** Interface
 > **Priority:** Release 2
 > **Depends on:** 02, 07
