@@ -1,11 +1,6 @@
 import type { CodeSymbol } from "../indexer/symbol.types.js";
 
-export type AstChangeType =
-  | "added"
-  | "removed"
-  | "signature_changed"
-  | "body_changed"
-  | "moved";
+export type AstChangeType = "added" | "removed" | "signature_changed" | "body_changed" | "moved";
 
 export interface AstChange {
   symbol: CodeSymbol;
@@ -18,10 +13,7 @@ function makeKey(s: CodeSymbol): string {
   return `${s.name}:${s.kind}`;
 }
 
-function classifyChange(
-  oldSym: CodeSymbol,
-  newSym: CodeSymbol,
-): AstChangeType | null {
+function classifyChange(oldSym: CodeSymbol, newSym: CodeSymbol): AstChangeType | null {
   // Check signature change first (if signature field exists)
   if (
     oldSym.signature !== undefined &&
@@ -45,10 +37,7 @@ function classifyChange(
   return null;
 }
 
-export function diffSymbols(
-  oldSymbols: CodeSymbol[],
-  newSymbols: CodeSymbol[],
-): AstChange[] {
+export function diffSymbols(oldSymbols: CodeSymbol[], newSymbols: CodeSymbol[]): AstChange[] {
   const oldMap = new Map(oldSymbols.map((s) => [makeKey(s), s]));
   const newMap = new Map(newSymbols.map((s) => [makeKey(s), s]));
 
@@ -57,14 +46,22 @@ export function diffSymbols(
   // Added symbols
   for (const [key, sym] of newMap) {
     if (!oldMap.has(key)) {
-      changes.push({ symbol: sym, changeType: "added", details: `added ${sym.kind} "${sym.name}"` });
+      changes.push({
+        symbol: sym,
+        changeType: "added",
+        details: `added ${sym.kind} "${sym.name}"`,
+      });
     }
   }
 
   // Removed symbols
   for (const [key, sym] of oldMap) {
     if (!newMap.has(key)) {
-      changes.push({ symbol: sym, changeType: "removed", details: `removed ${sym.kind} "${sym.name}"` });
+      changes.push({
+        symbol: sym,
+        changeType: "removed",
+        details: `removed ${sym.kind} "${sym.name}"`,
+      });
     }
   }
 

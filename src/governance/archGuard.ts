@@ -80,9 +80,7 @@ function checkForbiddenImport(
   const severity = rule.severity ?? "error";
   const violations: ArchViolation[] = [];
 
-  const scopedSymbols = scope
-    ? symbols.filter((s) => matchGlob(scope, s.file))
-    : symbols;
+  const scopedSymbols = scope ? symbols.filter((s) => matchGlob(scope, s.file)) : symbols;
   const scopedIds = new Set(scopedSymbols.map((s) => s.id));
 
   for (const rel of relationships) {
@@ -104,10 +102,7 @@ function checkForbiddenImport(
   return violations;
 }
 
-function checkNamingConvention(
-  rule: ArchRule,
-  symbols: CodeSymbol[],
-): ArchViolation[] {
+function checkNamingConvention(rule: ArchRule, symbols: CodeSymbol[]): ArchViolation[] {
   const pattern = new RegExp(rule.config.pattern as string);
   const kind = rule.config.kind as string | undefined;
   const fileGlob = rule.config.file as string | undefined;

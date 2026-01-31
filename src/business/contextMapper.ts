@@ -97,7 +97,10 @@ export function createContextMapper(): ContextMapper {
     },
 
     async buildRTM(refs, registry) {
-      const map = new Map<string, { symbols: Set<string>; tests: Set<string>; docs: Set<string> }>();
+      const map = new Map<
+        string,
+        { symbols: Set<string>; tests: Set<string>; docs: Set<string> }
+      >();
 
       for (const ref of refs) {
         if (!map.has(ref.ticketId)) {

@@ -172,7 +172,11 @@ describe("Storage Layer", () => {
       expect(found.references).toEqual(["Role", "Permission"]);
       expect(found.referencedBy).toEqual(["AuthService"]);
       expect(found.layer).toBe("domain");
-      expect(found.metrics).toEqual({ linesOfCode: 50, cyclomaticComplexity: 3, parameterCount: 2 });
+      expect(found.metrics).toEqual({
+        linesOfCode: 50,
+        cyclomaticComplexity: 3,
+        parameterCount: 2,
+      });
       expect(found.pattern).toBe("entity");
       expect(found.violations).toEqual(["missing-doc", "no-test"]);
       expect(found.deprecated).toBe(false);

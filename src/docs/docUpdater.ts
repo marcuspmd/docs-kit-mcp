@@ -50,21 +50,14 @@ export function parseSections(markdown: string): MarkdownSection[] {
   for (let i = 0; i < sections.length; i++) {
     const next = sections[i + 1];
     sections[i].endLine = next ? next.startLine - 1 : lines.length - 1;
-    sections[i].content = lines
-      .slice(sections[i].startLine, sections[i].endLine + 1)
-      .join("\n");
+    sections[i].content = lines.slice(sections[i].startLine, sections[i].endLine + 1).join("\n");
   }
 
   return sections;
 }
 
-function findSection(
-  sections: MarkdownSection[],
-  symbolName: string,
-): MarkdownSection | undefined {
-  const baseName = symbolName.includes(".")
-    ? symbolName.split(".").pop()!
-    : symbolName;
+function findSection(sections: MarkdownSection[], symbolName: string): MarkdownSection | undefined {
+  const baseName = symbolName.includes(".") ? symbolName.split(".").pop()! : symbolName;
 
   return sections.find(
     (s) =>
@@ -88,7 +81,12 @@ export function removeSection(
   const after = lines.slice(section.endLine + 1);
 
   // Remove trailing blank line if both sides have one
-  if (before.length > 0 && before[before.length - 1] === "" && after.length > 0 && after[0] === "") {
+  if (
+    before.length > 0 &&
+    before[before.length - 1] === "" &&
+    after.length > 0 &&
+    after[0] === ""
+  ) {
     after.shift();
   }
 
@@ -105,9 +103,7 @@ export function updateSection(
 
   if (!section) {
     // Append new section at end
-    const baseName = symbolName.includes(".")
-      ? symbolName.split(".").pop()!
-      : symbolName;
+    const baseName = symbolName.includes(".") ? symbolName.split(".").pop()! : symbolName;
     const newSection = `\n## ${baseName}\n\n> TODO: Document \`${symbolName}\` (${impact.changeType}).`;
     return { result: markdown.trimEnd() + "\n" + newSection + "\n", heading: baseName };
   }
@@ -115,11 +111,7 @@ export function updateSection(
   // Replace existing section content, keeping heading
   const lines = markdown.split("\n");
   const headingLine = lines[section.startLine];
-  const replacement = [
-    headingLine,
-    "",
-    `> Updated: \`${symbolName}\` was ${impact.changeType}.`,
-  ];
+  const replacement = [headingLine, "", `> Updated: \`${symbolName}\` was ${impact.changeType}.`];
 
   const before = lines.slice(0, section.startLine);
   const after = lines.slice(section.endLine + 1);
@@ -130,9 +122,7 @@ export function updateSection(
   };
 }
 
-export function createDocUpdater(options?: {
-  dryRun?: boolean;
-}): DocUpdater {
+export function createDocUpdater(options?: { dryRun?: boolean }): DocUpdater {
   const dryRun = options?.dryRun ?? false;
 
   return {

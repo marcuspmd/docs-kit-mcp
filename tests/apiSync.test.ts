@@ -24,13 +24,19 @@ describe("ApiSync", () => {
       const symbols = [
         sym({ id: "c1", name: "OrderController", kind: "controller" }),
         sym({
-          id: "m1", name: "create", kind: "method", parent: "c1",
+          id: "m1",
+          name: "create",
+          kind: "method",
+          parent: "c1",
           tags: ["POST /orders"],
           signature: "body: CreateOrderDto",
           summary: "returns Order",
         }),
         sym({
-          id: "m2", name: "getById", kind: "method", parent: "c1",
+          id: "m2",
+          name: "getById",
+          kind: "method",
+          parent: "c1",
           tags: ["GET /orders/:id"],
           signature: "id: string",
         }),
@@ -139,7 +145,9 @@ describe("ApiSync", () => {
               operationId: "list",
               responses: {
                 "200": {
-                  content: { "application/json": { schema: { $ref: "#/components/schemas/OrderList" } } },
+                  content: {
+                    "application/json": { schema: { $ref: "#/components/schemas/OrderList" } },
+                  },
                 },
               },
             },
@@ -231,10 +239,20 @@ paths:
 
     it("detects parameter type mismatch", () => {
       const code: ApiEndpoint[] = [
-        { method: "GET", path: "/orders", parameters: [{ name: "limit", type: "number", required: true }], symbolId: "m1" },
+        {
+          method: "GET",
+          path: "/orders",
+          parameters: [{ name: "limit", type: "number", required: true }],
+          symbolId: "m1",
+        },
       ];
       const spec: ApiEndpoint[] = [
-        { method: "GET", path: "/orders", parameters: [{ name: "limit", type: "integer", required: false }], symbolId: "listOrders" },
+        {
+          method: "GET",
+          path: "/orders",
+          parameters: [{ name: "limit", type: "integer", required: false }],
+          symbolId: "listOrders",
+        },
       ];
 
       const d = sync.compare(code, spec);
@@ -243,14 +261,21 @@ paths:
 
     it("detects parameter missing in spec", () => {
       const code: ApiEndpoint[] = [
-        { method: "GET", path: "/orders", parameters: [{ name: "cursor", type: "string", required: false }], symbolId: "m1" },
+        {
+          method: "GET",
+          path: "/orders",
+          parameters: [{ name: "cursor", type: "string", required: false }],
+          symbolId: "m1",
+        },
       ];
       const spec: ApiEndpoint[] = [
         { method: "GET", path: "/orders", parameters: [], symbolId: "listOrders" },
       ];
 
       const d = sync.compare(code, spec);
-      expect(d.some((x) => x.details.includes("cursor") && x.details.includes("missing in spec"))).toBe(true);
+      expect(
+        d.some((x) => x.details.includes("cursor") && x.details.includes("missing in spec")),
+      ).toBe(true);
     });
 
     it("detects parameter missing in code", () => {
@@ -258,16 +283,29 @@ paths:
         { method: "GET", path: "/orders", parameters: [], symbolId: "m1" },
       ];
       const spec: ApiEndpoint[] = [
-        { method: "GET", path: "/orders", parameters: [{ name: "page", type: "integer", required: false }], symbolId: "list" },
+        {
+          method: "GET",
+          path: "/orders",
+          parameters: [{ name: "page", type: "integer", required: false }],
+          symbolId: "list",
+        },
       ];
 
       const d = sync.compare(code, spec);
-      expect(d.some((x) => x.details.includes("page") && x.details.includes("missing in code"))).toBe(true);
+      expect(
+        d.some((x) => x.details.includes("page") && x.details.includes("missing in code")),
+      ).toBe(true);
     });
 
     it("detects response type mismatch", () => {
       const code: ApiEndpoint[] = [
-        { method: "GET", path: "/orders", parameters: [], symbolId: "m1", responseType: "OrderList" },
+        {
+          method: "GET",
+          path: "/orders",
+          parameters: [],
+          symbolId: "m1",
+          responseType: "OrderList",
+        },
       ];
       const spec: ApiEndpoint[] = [
         { method: "GET", path: "/orders", parameters: [], symbolId: "list", responseType: "array" },
@@ -290,7 +328,12 @@ paths:
 
     it("reports no discrepancies when code and spec match", () => {
       const shared: ApiEndpoint[] = [
-        { method: "GET", path: "/orders", parameters: [{ name: "limit", type: "integer", required: false }], symbolId: "x" },
+        {
+          method: "GET",
+          path: "/orders",
+          parameters: [{ name: "limit", type: "integer", required: false }],
+          symbolId: "x",
+        },
       ];
 
       expect(sync.compare(shared, shared)).toHaveLength(0);

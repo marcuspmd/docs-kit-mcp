@@ -33,7 +33,11 @@ describe("RagIndex", () => {
     it("indexes symbols into searchable chunks", async () => {
       const rag = createRagIndex({ embeddingModel: "mock", embedFn: mockEmbedFn });
       const symbols = [
-        sym({ id: "s1", name: "calculatePrice", summary: "Calculates the total price for an order" }),
+        sym({
+          id: "s1",
+          name: "calculatePrice",
+          summary: "Calculates the total price for an order",
+        }),
         sym({ id: "s2", name: "sendEmail", summary: "Sends notification emails to users" }),
       ];
 
@@ -45,7 +49,10 @@ describe("RagIndex", () => {
     it("includes source code in the indexed text", async () => {
       const rag = createRagIndex({ embeddingModel: "mock", embedFn: mockEmbedFn });
       const sourceCode = new Map([
-        ["src/pricing.ts", "function calculatePrice(items) {\n  return items.reduce((sum, i) => sum + i.price, 0);\n}"],
+        [
+          "src/pricing.ts",
+          "function calculatePrice(items) {\n  return items.reduce((sum, i) => sum + i.price, 0);\n}",
+        ],
       ]);
       const symbols = [
         sym({ id: "s1", name: "calculatePrice", file: "src/pricing.ts", startLine: 1, endLine: 3 }),
@@ -65,8 +72,14 @@ describe("RagIndex", () => {
 
     beforeAll(async () => {
       await mkdir(tmpDir, { recursive: true });
-      await writeFile(join(tmpDir, "pricing.md"), "# Pricing\nThe pricing module calculates order totals.");
-      await writeFile(join(tmpDir, "auth.md"), "# Auth\nAuthentication handles user login and tokens.");
+      await writeFile(
+        join(tmpDir, "pricing.md"),
+        "# Pricing\nThe pricing module calculates order totals.",
+      );
+      await writeFile(
+        join(tmpDir, "auth.md"),
+        "# Auth\nAuthentication handles user login and tokens.",
+      );
     });
 
     afterAll(async () => {

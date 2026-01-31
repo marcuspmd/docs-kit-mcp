@@ -33,15 +33,11 @@ export function createDocRegistry(db: Database.Database): DocRegistry {
   const insertStmt = db.prepare(
     "INSERT OR REPLACE INTO doc_mappings (symbol_name, doc_path, section) VALUES (?, ?, ?)",
   );
-  const deleteStmt = db.prepare(
-    "DELETE FROM doc_mappings WHERE symbol_name = ?",
-  );
+  const deleteStmt = db.prepare("DELETE FROM doc_mappings WHERE symbol_name = ?");
   const findBySymbolStmt = db.prepare(
     "SELECT symbol_name, doc_path, section FROM doc_mappings WHERE symbol_name = ?",
   );
-  const findByDocStmt = db.prepare(
-    "SELECT symbol_name FROM doc_mappings WHERE doc_path = ?",
-  );
+  const findByDocStmt = db.prepare("SELECT symbol_name FROM doc_mappings WHERE doc_path = ?");
 
   return {
     async rebuild(docsDir: string): Promise<void> {

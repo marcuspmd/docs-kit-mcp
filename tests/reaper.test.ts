@@ -30,10 +30,7 @@ describe("Reaper", () => {
   describe("dead_code", () => {
     it("flags symbols with no incoming references", () => {
       const graph = createKnowledgeGraph(db);
-      const symbols = [
-        sym({ id: "a", name: "UsedService" }),
-        sym({ id: "b", name: "DeadUtil" }),
-      ];
+      const symbols = [sym({ id: "a", name: "UsedService" }), sym({ id: "b", name: "DeadUtil" })];
       graph.addRelationship({ sourceId: "x", targetId: "a", type: "calls" });
 
       const reaper = createReaper();
@@ -110,9 +107,7 @@ describe("Reaper", () => {
     it("matches by symbol id as well", () => {
       const graph = createKnowledgeGraph(db);
       const symbols = [sym({ id: "abc123", name: "Foo" })];
-      const mappings: DocMapping[] = [
-        { symbolName: "abc123", docPath: "docs/foo.md" },
-      ];
+      const mappings: DocMapping[] = [{ symbolName: "abc123", docPath: "docs/foo.md" }];
 
       const reaper = createReaper();
       const findings = reaper.scan(symbols, graph, mappings);
@@ -122,10 +117,7 @@ describe("Reaper", () => {
 
     it("returns empty when all mappings are valid", () => {
       const graph = createKnowledgeGraph(db);
-      const symbols = [
-        sym({ id: "a", name: "ServiceA" }),
-        sym({ id: "b", name: "ServiceB" }),
-      ];
+      const symbols = [sym({ id: "a", name: "ServiceA" }), sym({ id: "b", name: "ServiceB" })];
       const mappings: DocMapping[] = [
         { symbolName: "ServiceA", docPath: "docs/a.md" },
         { symbolName: "ServiceB", docPath: "docs/b.md" },
@@ -162,9 +154,7 @@ describe("Reaper", () => {
     it("returns empty when codebase is clean", () => {
       const graph = createKnowledgeGraph(db);
       const symbols = [sym({ id: "a", name: "Svc", kind: "controller" })];
-      const mappings: DocMapping[] = [
-        { symbolName: "Svc", docPath: "docs/svc.md" },
-      ];
+      const mappings: DocMapping[] = [{ symbolName: "Svc", docPath: "docs/svc.md" }];
 
       const reaper = createReaper();
       const findings = reaper.scan(symbols, graph, mappings);

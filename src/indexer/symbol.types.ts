@@ -55,11 +55,7 @@ export const LayerSchema = z.enum([
 ]);
 export type Layer = z.infer<typeof LayerSchema>;
 
-export const StabilitySchema = z.enum([
-  "experimental",
-  "stable",
-  "deprecated",
-]);
+export const StabilitySchema = z.enum(["experimental", "stable", "deprecated"]);
 export type Stability = z.infer<typeof StabilitySchema>;
 
 /* ================== Metrics ================== */
@@ -157,14 +153,7 @@ export type EmbeddingPayload = z.infer<typeof EmbeddingPayloadSchema>;
 /* ================== Relationships ================== */
 
 export const RelationshipTypeSchema = z.union([
-  z.enum([
-    "calls",
-    "inherits",
-    "implements",
-    "instantiates",
-    "uses",
-    "contains",
-  ]),
+  z.enum(["calls", "inherits", "implements", "instantiates", "uses", "contains"]),
   z.string().min(1),
 ]);
 
@@ -226,13 +215,6 @@ export type ChangeImpact = z.infer<typeof ChangeImpactSchema>;
 
 /* ================== Deterministic ID ================== */
 
-export function generateSymbolId(
-  file: string,
-  name: string,
-  kind: SymbolKind,
-): string {
-  return createHash("sha256")
-    .update(`${file}::${name}::${kind}`)
-    .digest("hex")
-    .slice(0, 16);
+export function generateSymbolId(file: string, name: string, kind: SymbolKind): string {
+  return createHash("sha256").update(`${file}::${name}::${kind}`).digest("hex").slice(0, 16);
 }

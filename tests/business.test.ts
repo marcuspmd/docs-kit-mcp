@@ -35,9 +35,7 @@ describe("ContextMapper", () => {
     });
 
     it("extracts multiple tickets from one commit", () => {
-      const commits = [
-        { message: "PROJ-1 and PROJ-2 combined", files: ["src/app.ts"] },
-      ];
+      const commits = [{ message: "PROJ-1 and PROJ-2 combined", files: ["src/app.ts"] }];
 
       const refs = mapper.extractRefsFromCommits(commits);
       expect(refs).toHaveLength(2);
@@ -45,17 +43,13 @@ describe("ContextMapper", () => {
     });
 
     it("returns empty for commits without tickets", () => {
-      const commits = [
-        { message: "chore: update deps", files: ["package.json"] },
-      ];
+      const commits = [{ message: "chore: update deps", files: ["package.json"] }];
 
       expect(mapper.extractRefsFromCommits(commits)).toHaveLength(0);
     });
 
     it("handles various ticket formats", () => {
-      const commits = [
-        { message: "ABC-1 DEV2-999 X-0", files: ["f.ts"] },
-      ];
+      const commits = [{ message: "ABC-1 DEV2-999 X-0", files: ["f.ts"] }];
 
       const refs = mapper.extractRefsFromCommits(commits);
       const tickets = refs.map((r) => r.ticketId);
@@ -85,9 +79,7 @@ describe("ContextMapper", () => {
     });
 
     it("returns empty when no refs in lines", () => {
-      const lines = [
-        { file: "src/a.ts", line: 1, text: "// just a comment" },
-      ];
+      const lines = [{ file: "src/a.ts", line: 1, text: "// just a comment" }];
 
       expect(mapper.extractRefsFromLines(lines)).toHaveLength(0);
     });
@@ -133,7 +125,13 @@ describe("ContextMapper", () => {
 
     it("includes symbolId refs in symbols", async () => {
       const refs = [
-        { ticketId: "T-1", source: "comment" as const, file: "src/a.ts", symbolId: "OrderService", line: 5 },
+        {
+          ticketId: "T-1",
+          source: "comment" as const,
+          file: "src/a.ts",
+          symbolId: "OrderService",
+          line: 5,
+        },
       ];
 
       const rtm = await mapper.buildRTM(refs, mockRegistry({}));
@@ -144,7 +142,12 @@ describe("ContextMapper", () => {
 
 describe("RTM", () => {
   const entries = [
-    { ticketId: "PROJ-1", symbols: ["OrderService"], tests: ["order.test.ts"], docs: ["docs/orders.md"] },
+    {
+      ticketId: "PROJ-1",
+      symbols: ["OrderService"],
+      tests: ["order.test.ts"],
+      docs: ["docs/orders.md"],
+    },
     { ticketId: "PROJ-2", symbols: ["PayService"], tests: [], docs: [] },
   ];
 

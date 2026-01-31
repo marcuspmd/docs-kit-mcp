@@ -18,36 +18,40 @@ const PromptRuleSchema = z
 export const ConfigSchema = z.object({
   projectRoot: z.string(),
 
-  include: z.array(z.string()).default([
-    "**/*.ts",
-    "**/*.tsx",
-    "**/*.js",
-    "**/*.jsx",
-    "**/*.py",
-    "**/*.java",
-    "**/*.go",
-    "**/*.rs",
-  ]),
+  include: z
+    .array(z.string())
+    .default([
+      "**/*.ts",
+      "**/*.tsx",
+      "**/*.js",
+      "**/*.jsx",
+      "**/*.py",
+      "**/*.java",
+      "**/*.go",
+      "**/*.rs",
+    ]),
 
-  exclude: z.array(z.string()).default([
-    "**/node_modules/**",
-    "**/dist/**",
-    "**/build/**",
-    "**/out/**",
-    "**/.next/**",
-    "**/vendor/**",
-    "**/__pycache__/**",
-    "**/target/**",
-    "**/.git/**",
-    "**/coverage/**",
-    "**/*.min.js",
-    "**/*.bundle.js",
-    "**/*.map",
-    "**/*.d.ts",
-    "**/package-lock.json",
-    "**/yarn.lock",
-    "**/pnpm-lock.yaml",
-  ]),
+  exclude: z
+    .array(z.string())
+    .default([
+      "**/node_modules/**",
+      "**/dist/**",
+      "**/build/**",
+      "**/out/**",
+      "**/.next/**",
+      "**/vendor/**",
+      "**/__pycache__/**",
+      "**/target/**",
+      "**/.git/**",
+      "**/coverage/**",
+      "**/*.min.js",
+      "**/*.bundle.js",
+      "**/*.map",
+      "**/*.d.ts",
+      "**/package-lock.json",
+      "**/yarn.lock",
+      "**/pnpm-lock.yaml",
+    ]),
 
   respectGitignore: z.boolean().default(true),
 
@@ -67,9 +71,7 @@ export const ConfigSchema = z.object({
         .default(
           "Update the relevant documentation section to reflect the code change. Preserve existing structure.",
         ),
-      changePrompt: z
-        .string()
-        .default("Summarize what changed semantically, not line-by-line."),
+      changePrompt: z.string().default("Summarize what changed semantically, not line-by-line."),
     })
     .default({}),
 });

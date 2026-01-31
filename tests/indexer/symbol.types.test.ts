@@ -53,9 +53,7 @@ describe("CodeSymbolSchema", () => {
   });
 
   it("rejects endLine < startLine", () => {
-    const result = CodeSymbolSchema.safeParse(
-      validSymbol({ startLine: 10, endLine: 5 }),
-    );
+    const result = CodeSymbolSchema.safeParse(validSymbol({ startLine: 10, endLine: 5 }));
     expect(result.success).toBe(false);
     if (!result.success) {
       expect(result.error.issues[0].path).toContain("endLine");
@@ -78,9 +76,7 @@ describe("CodeSymbolSchema", () => {
   });
 
   it("accepts startLine equal to endLine", () => {
-    const result = CodeSymbolSchema.safeParse(
-      validSymbol({ startLine: 5, endLine: 5 }),
-    );
+    const result = CodeSymbolSchema.safeParse(validSymbol({ startLine: 5, endLine: 5 }));
     expect(result.success).toBe(true);
   });
 });
@@ -88,12 +84,38 @@ describe("CodeSymbolSchema", () => {
 describe("SymbolKindSchema", () => {
   it("accepts all defined kinds", () => {
     const kinds = [
-      "class", "abstract_class", "interface", "enum", "type", "trait",
-      "method", "function", "constructor", "lambda", "dto", "entity",
-      "value_object", "event", "listener", "service", "repository",
-      "use_case", "controller", "command", "query", "handler", "factory",
-      "builder", "model", "schema", "migration", "middleware", "provider",
-      "component", "test", "mock",
+      "class",
+      "abstract_class",
+      "interface",
+      "enum",
+      "type",
+      "trait",
+      "method",
+      "function",
+      "constructor",
+      "lambda",
+      "dto",
+      "entity",
+      "value_object",
+      "event",
+      "listener",
+      "service",
+      "repository",
+      "use_case",
+      "controller",
+      "command",
+      "query",
+      "handler",
+      "factory",
+      "builder",
+      "model",
+      "schema",
+      "migration",
+      "middleware",
+      "provider",
+      "component",
+      "test",
+      "mock",
     ];
     for (const kind of kinds) {
       expect(SymbolKindSchema.safeParse(kind).success).toBe(true);
@@ -162,9 +184,7 @@ describe("ChangeImpactSchema", () => {
       docUpdateRequired: true,
       breakingChange: true,
       severity: "high",
-      suggestedActions: [
-        { type: "update_doc", description: "Update API docs" },
-      ],
+      suggestedActions: [{ type: "update_doc", description: "Update API docs" }],
     });
     expect(result.success).toBe(true);
   });

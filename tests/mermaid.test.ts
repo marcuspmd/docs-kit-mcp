@@ -76,11 +76,7 @@ describe("MermaidGenerator", () => {
         sym({ id: "m3", name: "prot", kind: "method", parent: "c1", visibility: "protected" }),
       ];
 
-      const result = generateMermaid(
-        { symbols: ["Foo"], type: "classDiagram" },
-        symbols,
-        [],
-      );
+      const result = generateMermaid({ symbols: ["Foo"], type: "classDiagram" }, symbols, []);
 
       expect(result).toContain("+pub()");
       expect(result).toContain("-priv()");
@@ -111,10 +107,7 @@ describe("MermaidGenerator", () => {
         sym({ id: "s2", name: "PaymentService", kind: "service" }),
         sym({ id: "s3", name: "EmailService", kind: "service" }),
       ];
-      const rels = [
-        rel("s1", "s2", "calls"),
-        rel("s2", "s3", "calls"),
-      ];
+      const rels = [rel("s1", "s2", "calls"), rel("s2", "s3", "calls")];
 
       const result = generateMermaid(
         { symbols: ["OrderService"], type: "sequenceDiagram", maxDepth: 2 },
@@ -131,11 +124,7 @@ describe("MermaidGenerator", () => {
     it("returns header only when no relationships", () => {
       const symbols = [sym({ id: "c1", name: "Lonely", kind: "class" })];
 
-      const result = generateMermaid(
-        { symbols: ["Lonely"], type: "sequenceDiagram" },
-        symbols,
-        [],
-      );
+      const result = generateMermaid({ symbols: ["Lonely"], type: "sequenceDiagram" }, symbols, []);
 
       expect(result.trim()).toBe("sequenceDiagram");
     });
@@ -148,10 +137,7 @@ describe("MermaidGenerator", () => {
         sym({ id: "c2", name: "Service", kind: "class" }),
         sym({ id: "c3", name: "Repository", kind: "class" }),
       ];
-      const rels = [
-        rel("c1", "c2", "calls"),
-        rel("c2", "c3", "uses"),
-      ];
+      const rels = [rel("c1", "c2", "calls"), rel("c2", "c3", "uses")];
 
       const result = generateMermaid(
         { symbols: ["Controller"], type: "flowchart", maxDepth: 2 },
@@ -191,10 +177,7 @@ describe("MermaidGenerator", () => {
         sym({ id: "c2", name: "B", kind: "class" }),
         sym({ id: "c3", name: "C", kind: "class" }),
       ];
-      const rels = [
-        rel("c1", "c2", "calls"),
-        rel("c2", "c3", "calls"),
-      ];
+      const rels = [rel("c1", "c2", "calls"), rel("c2", "c3", "calls")];
 
       const depth0 = generateMermaid(
         { symbols: ["A"], type: "flowchart", maxDepth: 0 },

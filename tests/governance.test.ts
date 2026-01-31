@@ -60,11 +60,9 @@ describe("runDocGuard", () => {
   });
 
   test("fails when doc not updated for impacted symbol", async () => {
-    const deps = makeDeps(
-      [impact("createOrder", "signature_changed")],
-      ["src/order.ts"],
-      { createOrder: [{ symbolName: "createOrder", docPath: "docs/domain/orders.md" }] },
-    );
+    const deps = makeDeps([impact("createOrder", "signature_changed")], ["src/order.ts"], {
+      createOrder: [{ symbolName: "createOrder", docPath: "docs/domain/orders.md" }],
+    });
 
     const result = await runDocGuard(baseOpts, deps);
     expect(result.passed).toBe(false);
@@ -74,11 +72,7 @@ describe("runDocGuard", () => {
   });
 
   test("fails when symbol has no linked doc", async () => {
-    const deps = makeDeps(
-      [impact("PaymentGateway", "added")],
-      ["src/payment.ts"],
-      {},
-    );
+    const deps = makeDeps([impact("PaymentGateway", "added")], ["src/payment.ts"], {});
 
     const result = await runDocGuard(baseOpts, deps);
     expect(result.passed).toBe(false);
@@ -86,11 +80,7 @@ describe("runDocGuard", () => {
   });
 
   test("skips impacts where docUpdateRequired is false", async () => {
-    const deps = makeDeps(
-      [impact("helper", "modified", false)],
-      ["src/helper.ts"],
-      {},
-    );
+    const deps = makeDeps([impact("helper", "modified", false)], ["src/helper.ts"], {});
 
     const result = await runDocGuard(baseOpts, deps);
     expect(result.passed).toBe(true);
@@ -98,11 +88,7 @@ describe("runDocGuard", () => {
   });
 
   test("strict=false passes even with violations", async () => {
-    const deps = makeDeps(
-      [impact("createOrder", "added")],
-      ["src/order.ts"],
-      {},
-    );
+    const deps = makeDeps([impact("createOrder", "added")], ["src/order.ts"], {});
 
     const result = await runDocGuard({ ...baseOpts, strict: false }, deps);
     expect(result.passed).toBe(true);
@@ -132,22 +118,16 @@ describe("runDocGuard", () => {
   });
 
   test("violation includes docPath when mapping exists", async () => {
-    const deps = makeDeps(
-      [impact("createOrder", "modified")],
-      ["src/order.ts"],
-      { createOrder: [{ symbolName: "createOrder", docPath: "docs/domain/orders.md" }] },
-    );
+    const deps = makeDeps([impact("createOrder", "modified")], ["src/order.ts"], {
+      createOrder: [{ symbolName: "createOrder", docPath: "docs/domain/orders.md" }],
+    });
 
     const result = await runDocGuard(baseOpts, deps);
     expect(result.uncoveredChanges[0].docPath).toBe("docs/domain/orders.md");
   });
 
   test("violation has undefined docPath when no mapping", async () => {
-    const deps = makeDeps(
-      [impact("Unknown", "added")],
-      ["src/x.ts"],
-      {},
-    );
+    const deps = makeDeps([impact("Unknown", "added")], ["src/x.ts"], {});
 
     const result = await runDocGuard(baseOpts, deps);
     expect(result.uncoveredChanges[0].docPath).toBeUndefined();

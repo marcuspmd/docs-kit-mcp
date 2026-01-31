@@ -113,7 +113,13 @@ describe("PatternAnalyzer", () => {
     it("detects class with private constructor and static instance", () => {
       const symbols = [
         sym({ id: "s1", name: "AppConfig", kind: "class" }),
-        sym({ id: "c1", name: "constructor", kind: "constructor", parent: "s1", visibility: "private" }),
+        sym({
+          id: "c1",
+          name: "constructor",
+          kind: "constructor",
+          parent: "s1",
+          visibility: "private",
+        }),
         sym({ id: "g1", name: "getInstance", kind: "method", parent: "s1" }),
       ];
       const results = analyzer.analyze(symbols, []);
@@ -127,7 +133,13 @@ describe("PatternAnalyzer", () => {
     it("flags private constructor without static instance", () => {
       const symbols = [
         sym({ id: "s1", name: "Locked", kind: "class" }),
-        sym({ id: "c1", name: "constructor", kind: "constructor", parent: "s1", visibility: "private" }),
+        sym({
+          id: "c1",
+          name: "constructor",
+          kind: "constructor",
+          parent: "s1",
+          visibility: "private",
+        }),
       ];
       const results = analyzer.analyze(symbols, []);
       const singleton = results.find((r) => r.kind === "singleton");

@@ -93,9 +93,7 @@ server.tool(
         const content = await readFile(join(docsDir, mapping.docPath), "utf-8");
         const sections = parseSections(content);
         const baseName = symbol.includes(".") ? symbol.split(".").pop()! : symbol;
-        const section = sections.find(
-          (s) => s.heading === symbol || s.heading === baseName,
-        );
+        const section = sections.find((s) => s.heading === symbol || s.heading === baseName);
         if (section) {
           parts.push(`From \`${mapping.docPath}\`:\n\n${section.content}`);
         } else {
@@ -127,7 +125,10 @@ server.tool(
   },
   async ({ symbols: symbolsStr, type: diagramType }) => {
     try {
-      const symbolNames = symbolsStr.split(",").map((s) => s.trim()).filter(Boolean);
+      const symbolNames = symbolsStr
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
 
       let diagram: string;
 

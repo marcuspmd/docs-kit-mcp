@@ -35,7 +35,10 @@ interface OpenApiParameter {
 interface OpenApiOperation {
   operationId?: string;
   parameters?: OpenApiParameter[];
-  responses?: Record<string, { content?: Record<string, { schema?: { type?: string; $ref?: string } }> }>;
+  responses?: Record<
+    string,
+    { content?: Record<string, { schema?: { type?: string; $ref?: string } }> }
+  >;
   deprecated?: boolean;
 }
 
@@ -225,7 +228,11 @@ export function createApiSync(): ApiSync {
           }
         }
 
-        if (codeEp.responseType && specEp.responseType && codeEp.responseType !== specEp.responseType) {
+        if (
+          codeEp.responseType &&
+          specEp.responseType &&
+          codeEp.responseType !== specEp.responseType
+        ) {
           discrepancies.push({
             type: "type_mismatch",
             endpoint: key,

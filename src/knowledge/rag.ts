@@ -94,11 +94,7 @@ export function createRagIndex(options: RagOptions): RagIndex {
   const store: StoredChunk[] = [];
   const indexedHashes = new Set<string>();
 
-  async function addChunks(
-    texts: string[],
-    source: string,
-    symbolId?: string,
-  ): Promise<void> {
+  async function addChunks(texts: string[], source: string, symbolId?: string): Promise<void> {
     const newTexts: Array<{ text: string; hash: string }> = [];
 
     for (const text of texts) {

@@ -62,10 +62,7 @@ symbols:
   test("parses valid frontmatter with symbols", () => {
     const result = parseFrontmatter(fixture1);
     expect(result.frontmatter.title).toBe("User Service");
-    expect(result.frontmatter.symbols).toEqual([
-      "UserService",
-      "UserService.findById",
-    ]);
+    expect(result.frontmatter.symbols).toEqual(["UserService", "UserService.findById"]);
     expect(result.frontmatter.lastUpdated).toBe("2025-01-15");
     expect(result.content).toContain("# User Service");
   });
@@ -111,10 +108,7 @@ symbols:
     const parsed = parseFrontmatter(updated);
     expect(parsed.frontmatter.lastUpdated).toBe("2025-06-01");
     expect(parsed.frontmatter.title).toBe("User Service");
-    expect(parsed.frontmatter.symbols).toEqual([
-      "UserService",
-      "UserService.findById",
-    ]);
+    expect(parsed.frontmatter.symbols).toEqual(["UserService", "UserService.findById"]);
     expect(parsed.content).toContain("# User Service");
   });
 
@@ -177,10 +171,7 @@ symbols:
 # User Service`,
     );
 
-    await writeFile(
-      join(tmpDir, "no-frontmatter.md"),
-      `# Plain Doc\n\nNo frontmatter here.`,
-    );
+    await writeFile(join(tmpDir, "no-frontmatter.md"), `# Plain Doc\n\nNo frontmatter here.`);
   });
 
   afterEach(async () => {
@@ -193,9 +184,7 @@ symbols:
     await registry.rebuild(tmpDir);
 
     const docs = await registry.findDocBySymbol("OrderService");
-    expect(docs).toEqual([
-      { symbolName: "OrderService", docPath: "domain/orders.md" },
-    ]);
+    expect(docs).toEqual([{ symbolName: "OrderService", docPath: "domain/orders.md" }]);
   });
 
   test("findDocBySymbol returns correct mappings", async () => {
@@ -309,7 +298,14 @@ describe("updateSection", () => {
   const md = `# Orders\n\n## createOrder\n\nCreates an order.\n\n## cancelOrder\n\nCancels an order.\n`;
 
   const impact = {
-    symbol: { id: "x", name: "createOrder", kind: "function", file: "f.ts", startLine: 0, endLine: 5 },
+    symbol: {
+      id: "x",
+      name: "createOrder",
+      kind: "function",
+      file: "f.ts",
+      startLine: 0,
+      endLine: 5,
+    },
     changeType: "modified",
     diff: "",
     docUpdateRequired: true,
@@ -326,7 +322,11 @@ describe("updateSection", () => {
 
   test("appends new section when not found", () => {
     const sections = parseSections(md);
-    const newImpact = { ...impact, symbol: { ...impact.symbol, name: "processOrder" }, changeType: "added" } as unknown as ChangeImpact;
+    const newImpact = {
+      ...impact,
+      symbol: { ...impact.symbol, name: "processOrder" },
+      changeType: "added",
+    } as unknown as ChangeImpact;
     const { result } = updateSection(md, sections, "processOrder", newImpact);
     expect(result).toContain("## processOrder");
     expect(result).toContain("TODO: Document");
@@ -383,7 +383,11 @@ Old deprecated method.
     const registry = createDocRegistry(db);
     await registry.rebuild(tmpDir);
     const updater = createDocUpdater();
-    const results = await updater.applyChanges([makeImpact("createOrder", "modified")], registry, tmpDir);
+    const results = await updater.applyChanges(
+      [makeImpact("createOrder", "modified")],
+      registry,
+      tmpDir,
+    );
 
     expect(results).toHaveLength(1);
     expect(results[0].action).toBe("updated");
@@ -399,7 +403,11 @@ Old deprecated method.
     const registry = createDocRegistry(db);
     await registry.rebuild(tmpDir);
     const updater = createDocUpdater();
-    const results = await updater.applyChanges([makeImpact("legacyMethod", "removed")], registry, tmpDir);
+    const results = await updater.applyChanges(
+      [makeImpact("legacyMethod", "removed")],
+      registry,
+      tmpDir,
+    );
 
     expect(results).toHaveLength(1);
     expect(results[0].action).toBe("removed");
@@ -434,7 +442,11 @@ Old deprecated method.
     const registry = createDocRegistry(db);
     await registry.rebuild(tmpDir);
     const updater = createDocUpdater({ dryRun: true });
-    const results = await updater.applyChanges([makeImpact("createOrder", "modified")], registry, tmpDir);
+    const results = await updater.applyChanges(
+      [makeImpact("createOrder", "modified")],
+      registry,
+      tmpDir,
+    );
 
     expect(results[0].diff).toBeDefined();
     expect(results[0].diff!.length).toBeGreaterThan(0);
@@ -458,7 +470,11 @@ Old deprecated method.
     const registry = createDocRegistry(db);
     await registry.rebuild(tmpDir);
     const updater = createDocUpdater();
-    const results = await updater.applyChanges([makeImpact("UnknownSymbol", "modified")], registry, tmpDir);
+    const results = await updater.applyChanges(
+      [makeImpact("UnknownSymbol", "modified")],
+      registry,
+      tmpDir,
+    );
     expect(results).toHaveLength(1);
     expect(results[0].action).toBe("skipped");
   });

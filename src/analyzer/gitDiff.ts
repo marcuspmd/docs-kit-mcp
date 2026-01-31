@@ -44,10 +44,16 @@ export function parseGitDiff(rawDiff: string): FileDiff[] {
     let status: FileDiff["status"] = "modified";
     let isBinary = false;
 
-    while (i < lines.length && !lines[i].startsWith("---") && !lines[i].startsWith("diff --git") && !BINARY_MARKER.test(lines[i])) {
+    while (
+      i < lines.length &&
+      !lines[i].startsWith("---") &&
+      !lines[i].startsWith("diff --git") &&
+      !BINARY_MARKER.test(lines[i])
+    ) {
       if (lines[i].startsWith("new file")) status = "added";
       else if (lines[i].startsWith("deleted file")) status = "deleted";
-      else if (lines[i].startsWith("similarity index") || lines[i].startsWith("rename from")) status = "renamed";
+      else if (lines[i].startsWith("similarity index") || lines[i].startsWith("rename from"))
+        status = "renamed";
       i++;
     }
 
@@ -78,7 +84,11 @@ export function parseGitDiff(rawDiff: string): FileDiff[] {
       i++;
 
       const contentLines: string[] = [];
-      while (i < lines.length && !lines[i].startsWith("diff --git") && !HUNK_HEADER.test(lines[i])) {
+      while (
+        i < lines.length &&
+        !lines[i].startsWith("diff --git") &&
+        !HUNK_HEADER.test(lines[i])
+      ) {
         contentLines.push(lines[i]);
         i++;
       }

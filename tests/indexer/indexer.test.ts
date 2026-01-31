@@ -84,9 +84,7 @@ describe("indexFile", () => {
 
     it("interface methods are extracted with parent", () => {
       const repo = symbols.find((s) => s.name === "UserRepository")!;
-      const methods = symbols.filter(
-        (s) => s.kind === "method" && s.parent === repo.id,
-      );
+      const methods = symbols.filter((s) => s.kind === "method" && s.parent === repo.id);
       expect(methods.length).toBeGreaterThanOrEqual(1);
     });
   });
@@ -114,9 +112,7 @@ describe("indexProject", () => {
     expect(result.symbols.length).toBeGreaterThan(0);
     expect(result.errors).toHaveLength(0);
 
-    const classNames = result.symbols
-      .filter((s) => s.kind === "class")
-      .map((s) => s.name);
+    const classNames = result.symbols.filter((s) => s.kind === "class").map((s) => s.name);
     expect(classNames).toContain("UserService");
   });
 

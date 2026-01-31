@@ -68,9 +68,12 @@ function sanitize(name: string): string {
 
 function visibilityPrefix(sym: CodeSymbol): string {
   switch (sym.visibility) {
-    case "private": return "-";
-    case "protected": return "#";
-    default: return "+";
+    case "private":
+      return "-";
+    case "protected":
+      return "#";
+    default:
+      return "+";
   }
 }
 
@@ -83,7 +86,11 @@ function generateClassDiagram(
 ): string {
   const lines: string[] = ["classDiagram"];
   const classSymbols = included.filter(
-    (s) => s.kind === "class" || s.kind === "abstract_class" || s.kind === "interface" || s.kind === "enum",
+    (s) =>
+      s.kind === "class" ||
+      s.kind === "abstract_class" ||
+      s.kind === "interface" ||
+      s.kind === "enum",
   );
   const classIds = new Set(classSymbols.map((s) => s.id));
 

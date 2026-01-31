@@ -1,7 +1,9 @@
 import { diffSymbols } from "../src/analyzer/astDiff.js";
 import type { CodeSymbol } from "../src/indexer/symbol.types.js";
 
-function sym(overrides: Partial<CodeSymbol> & Pick<CodeSymbol, "name" | "kind" | "startLine" | "endLine">): CodeSymbol {
+function sym(
+  overrides: Partial<CodeSymbol> & Pick<CodeSymbol, "name" | "kind" | "startLine" | "endLine">,
+): CodeSymbol {
   return {
     id: `test:${overrides.name}:${overrides.kind}`,
     file: "src/test.ts",
@@ -56,8 +58,24 @@ describe("diffSymbols", () => {
   });
 
   it("detects signature_changed when signature field differs", () => {
-    const oldSyms = [sym({ name: "greet", kind: "function", startLine: 1, endLine: 3, signature: "greet(name: string): void" })];
-    const newSyms = [sym({ name: "greet", kind: "function", startLine: 1, endLine: 3, signature: "greet(name: string, age: number): void" })];
+    const oldSyms = [
+      sym({
+        name: "greet",
+        kind: "function",
+        startLine: 1,
+        endLine: 3,
+        signature: "greet(name: string): void",
+      }),
+    ];
+    const newSyms = [
+      sym({
+        name: "greet",
+        kind: "function",
+        startLine: 1,
+        endLine: 3,
+        signature: "greet(name: string, age: number): void",
+      }),
+    ];
 
     const changes = diffSymbols(oldSyms, newSyms);
     expect(changes).toHaveLength(1);

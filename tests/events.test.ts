@@ -25,11 +25,7 @@ describe("EventFlowAnalyzer", () => {
       sym({ id: "l1", name: "InventoryListener", kind: "listener" }),
       sym({ id: "l2", name: "EmailListener", kind: "listener" }),
     ];
-    const rels = [
-      rel("s1", "e1", "uses"),
-      rel("l1", "e1", "uses"),
-      rel("l2", "e1", "uses"),
-    ];
+    const rels = [rel("s1", "e1", "uses"), rel("l1", "e1", "uses"), rel("l2", "e1", "uses")];
 
     const flows = analyzer.analyze(symbols, rels);
 
@@ -144,9 +140,7 @@ describe("EventFlowAnalyzer", () => {
   });
 
   it("returns empty array when no events exist", () => {
-    const symbols = [
-      sym({ id: "c1", name: "SomeClass", kind: "class" }),
-    ];
+    const symbols = [sym({ id: "c1", name: "SomeClass", kind: "class" })];
     const flows = analyzer.analyze(symbols, []);
     expect(flows).toHaveLength(0);
   });

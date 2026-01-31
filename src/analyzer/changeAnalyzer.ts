@@ -42,7 +42,11 @@ export function extractRelevantDiff(fileDiff: FileDiff, symbol: CodeSymbol): str
     .join("\n");
 }
 
-async function defaultGetFileAtRef(repoPath: string, filePath: string, ref: string): Promise<string | null> {
+async function defaultGetFileAtRef(
+  repoPath: string,
+  filePath: string,
+  ref: string,
+): Promise<string | null> {
   try {
     const { stdout } = await execFileAsync("git", ["show", `${ref}:${filePath}`], {
       cwd: repoPath,
@@ -68,19 +72,24 @@ function createDefaultDeps(): AnalyzeDeps {
   };
 }
 
-export async function analyzeChanges(options: AnalyzeOptions, deps?: AnalyzeDeps): Promise<ChangeImpact[]> {
+export async function analyzeChanges(
+  options: AnalyzeOptions,
+  deps?: AnalyzeDeps,
+): Promise<ChangeImpact[]> {
   const { getFileDiffs, getFileAtRef, indexSource } = deps ?? createDefaultDeps();
   const diffs = await getFileDiffs(options);
   const impacts: ChangeImpact[] = [];
   const head = options.head ?? "HEAD";
 
   for (const fileDiff of diffs) {
-    const oldSource = fileDiff.status !== "added"
-      ? await getFileAtRef(options.repoPath, fileDiff.oldPath, options.base)
-      : null;
-    const newSource = fileDiff.status !== "deleted"
-      ? await getFileAtRef(options.repoPath, fileDiff.newPath, head)
-      : null;
+    const oldSource =
+      fileDiff.status !== "added"
+        ? await getFileAtRef(options.repoPath, fileDiff.oldPath, options.base)
+        : null;
+    const newSource =
+      fileDiff.status !== "deleted"
+        ? await getFileAtRef(options.repoPath, fileDiff.newPath, head)
+        : null;
 
     const oldSymbols = oldSource ? indexSource(fileDiff.oldPath, oldSource) : [];
     const newSymbols = newSource ? indexSource(fileDiff.newPath, newSource) : [];

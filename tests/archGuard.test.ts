@@ -69,7 +69,10 @@ describe("ArchGuard", () => {
         {
           name: "domain-isolation",
           type: "layer_boundary",
-          config: { source: "src/domain/**", forbidden: ["src/infrastructure/**", "src/controllers/**"] },
+          config: {
+            source: "src/domain/**",
+            forbidden: ["src/infrastructure/**", "src/controllers/**"],
+          },
         },
       ]);
 
@@ -159,7 +162,10 @@ describe("ArchGuard", () => {
         sym({ id: "db1", name: "Db", file: "src/db/client.ts" }),
       ];
 
-      const violations = guard.analyze(symbols, [rel("c1", "db1", "uses"), rel("s1", "db1", "uses")]);
+      const violations = guard.analyze(symbols, [
+        rel("c1", "db1", "uses"),
+        rel("s1", "db1", "uses"),
+      ]);
       expect(violations).toHaveLength(1);
       expect(violations[0].file).toBe("src/controllers/foo.ts");
     });
@@ -232,9 +238,12 @@ describe("ArchGuard", () => {
   describe("loadRules", () => {
     it("loads rules from JSON config file", async () => {
       const tmpFile = join(tmpdir(), `arch-guard-test-${Date.now()}.json`);
-      await writeFile(tmpFile, JSON.stringify({
-        rules: [{ name: "test-rule", type: "naming_convention", config: { pattern: "^[A-Z]" } }],
-      }));
+      await writeFile(
+        tmpFile,
+        JSON.stringify({
+          rules: [{ name: "test-rule", type: "naming_convention", config: { pattern: "^[A-Z]" } }],
+        }),
+      );
 
       try {
         const guard = createArchGuard();

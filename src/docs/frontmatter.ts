@@ -31,10 +31,7 @@ export function serializeFrontmatter(doc: ParsedDoc): string {
   return `---\n${yaml}\n---\n${doc.content}`;
 }
 
-export function updateFrontmatter(
-  markdown: string,
-  update: Partial<DocFrontmatter>,
-): string {
+export function updateFrontmatter(markdown: string, update: Partial<DocFrontmatter>): string {
   const doc = parseFrontmatter(markdown);
   doc.frontmatter = { ...doc.frontmatter, ...update };
   return serializeFrontmatter(doc);

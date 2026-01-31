@@ -10,16 +10,10 @@ export interface ReaperFinding {
 }
 
 export interface Reaper {
-  scan(
-    symbols: CodeSymbol[],
-    graph: KnowledgeGraph,
-    docMappings: DocMapping[],
-  ): ReaperFinding[];
+  scan(symbols: CodeSymbol[], graph: KnowledgeGraph, docMappings: DocMapping[]): ReaperFinding[];
 }
 
-const ENTRY_KINDS = new Set([
-  "test", "mock", "migration", "middleware", "controller", "listener",
-]);
+const ENTRY_KINDS = new Set(["test", "mock", "migration", "middleware", "controller", "listener"]);
 
 export function createReaper(): Reaper {
   return {
@@ -36,9 +30,7 @@ export function createReaper(): Reaper {
 
 function findDeadCode(symbols: CodeSymbol[], graph: KnowledgeGraph): ReaperFinding[] {
   const findings: ReaperFinding[] = [];
-  const childIds = new Set(
-    symbols.filter((s) => s.parent).map((s) => s.parent!),
-  );
+  const childIds = new Set(symbols.filter((s) => s.parent).map((s) => s.parent!));
 
   for (const sym of symbols) {
     if (sym.parent) continue;

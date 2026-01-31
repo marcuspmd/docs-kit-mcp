@@ -14,9 +14,7 @@ export function createKnowledgeGraph(db: Database.Database): KnowledgeGraph {
   const insertStmt = db.prepare(
     "INSERT OR REPLACE INTO relationships (source_id, target_id, type) VALUES (?, ?, ?)",
   );
-  const deleteStmt = db.prepare(
-    "DELETE FROM relationships WHERE source_id = ? AND target_id = ?",
-  );
+  const deleteStmt = db.prepare("DELETE FROM relationships WHERE source_id = ? AND target_id = ?");
   const dependentsStmt = db.prepare(
     "SELECT source_id, target_id, type FROM relationships WHERE target_id = ?",
   );
@@ -39,12 +37,20 @@ export function createKnowledgeGraph(db: Database.Database): KnowledgeGraph {
     },
 
     getDependents(symbolId) {
-      const rows = dependentsStmt.all(symbolId) as Array<{ source_id: string; target_id: string; type: string }>;
+      const rows = dependentsStmt.all(symbolId) as Array<{
+        source_id: string;
+        target_id: string;
+        type: string;
+      }>;
       return rows.map(toRel);
     },
 
     getDependencies(symbolId) {
-      const rows = dependenciesStmt.all(symbolId) as Array<{ source_id: string; target_id: string; type: string }>;
+      const rows = dependenciesStmt.all(symbolId) as Array<{
+        source_id: string;
+        target_id: string;
+        type: string;
+      }>;
       return rows.map(toRel);
     },
 
@@ -59,7 +65,11 @@ export function createKnowledgeGraph(db: Database.Database): KnowledgeGraph {
 
         if (depth >= maxDepth) continue;
 
-        const dependents = dependentsStmt.all(id) as Array<{ source_id: string; target_id: string; type: string }>;
+        const dependents = dependentsStmt.all(id) as Array<{
+          source_id: string;
+          target_id: string;
+          type: string;
+        }>;
         for (const row of dependents) {
           if (!visited.has(row.source_id)) {
             queue.push({ id: row.source_id, depth: depth + 1 });

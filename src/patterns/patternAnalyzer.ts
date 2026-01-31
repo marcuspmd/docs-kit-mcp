@@ -13,14 +13,19 @@ export interface PatternAnalyzer {
   analyze(symbols: CodeSymbol[], relationships: SymbolRelationship[]): DetectedPattern[];
 }
 
-function detectObserver(symbols: CodeSymbol[], relationships: SymbolRelationship[]): DetectedPattern[] {
+function detectObserver(
+  symbols: CodeSymbol[],
+  relationships: SymbolRelationship[],
+): DetectedPattern[] {
   const events = symbols.filter((s) => s.kind === "event");
   const listeners = symbols.filter((s) => s.kind === "listener");
   const results: DetectedPattern[] = [];
 
   for (const event of events) {
     const matchedListeners = listeners.filter((l) => {
-      const byName = l.name.toLowerCase().includes(event.name.replace(/Events?$/, "").toLowerCase());
+      const byName = l.name
+        .toLowerCase()
+        .includes(event.name.replace(/Events?$/, "").toLowerCase());
       const byRel = relationships.some(
         (r) =>
           (r.sourceId === l.id && r.targetId === event.id) ||
@@ -47,21 +52,21 @@ function detectObserver(symbols: CodeSymbol[], relationships: SymbolRelationship
   return results;
 }
 
-function detectFactory(symbols: CodeSymbol[], relationships: SymbolRelationship[]): DetectedPattern[] {
+function detectFactory(
+  symbols: CodeSymbol[],
+  relationships: SymbolRelationship[],
+): DetectedPattern[] {
   const results: DetectedPattern[] = [];
   const classes = symbols.filter((s) => s.kind === "class" || s.kind === "abstract_class");
 
   for (const cls of classes) {
     const methods = symbols.filter((s) => s.parent === cls.id && s.kind === "method");
-    const factoryMethods = methods.filter((m) =>
-      /^(create|build|make|from|of|new)/.test(m.name),
-    );
+    const factoryMethods = methods.filter((m) => /^(create|build|make|from|of|new)/.test(m.name));
 
     if (factoryMethods.length === 0) continue;
 
     const producedTypes = relationships.filter(
-      (r) =>
-        factoryMethods.some((m) => m.id === r.sourceId) && r.type === "instantiates",
+      (r) => factoryMethods.some((m) => m.id === r.sourceId) && r.type === "instantiates",
     );
 
     const involvedIds = [cls.id, ...factoryMethods.map((m) => m.id)];
@@ -101,7 +106,9 @@ function detectSingleton(symbols: CodeSymbol[]): DetectedPattern[] {
 
     const violations: string[] = [];
     if (hasPrivateConstructor && !hasStaticInstance) {
-      violations.push(`Singleton '${cls.name}' has private constructor but no static instance accessor`);
+      violations.push(
+        `Singleton '${cls.name}' has private constructor but no static instance accessor`,
+      );
     }
     if (!hasPrivateConstructor && hasStaticInstance) {
       violations.push(`Singleton '${cls.name}' has static instance but constructor is not private`);
@@ -120,7 +127,10 @@ function detectSingleton(symbols: CodeSymbol[]): DetectedPattern[] {
   return results;
 }
 
-function detectStrategy(symbols: CodeSymbol[], relationships: SymbolRelationship[]): DetectedPattern[] {
+function detectStrategy(
+  symbols: CodeSymbol[],
+  relationships: SymbolRelationship[],
+): DetectedPattern[] {
   const results: DetectedPattern[] = [];
   const interfaces = symbols.filter((s) => s.kind === "interface");
 
@@ -131,9 +141,7 @@ function detectStrategy(symbols: CodeSymbol[], relationships: SymbolRelationship
 
     if (implementors.length < 2) continue;
 
-    const hasRelConsumer = relationships.some(
-      (r) => r.targetId === iface.id && r.type === "uses",
-    );
+    const hasRelConsumer = relationships.some((r) => r.targetId === iface.id && r.type === "uses");
 
     const violations: string[] = [];
     if (!hasRelConsumer) {
@@ -151,7 +159,10 @@ function detectStrategy(symbols: CodeSymbol[], relationships: SymbolRelationship
   return results;
 }
 
-function detectRepository(symbols: CodeSymbol[], relationships: SymbolRelationship[]): DetectedPattern[] {
+function detectRepository(
+  symbols: CodeSymbol[],
+  relationships: SymbolRelationship[],
+): DetectedPattern[] {
   const results: DetectedPattern[] = [];
   const repoCandidates = symbols.filter(
     (s) => s.kind === "repository" || (s.kind === "class" && /Repository$/i.test(s.name)),
