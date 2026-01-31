@@ -3,6 +3,11 @@ import {
   serializeFrontmatter,
   updateFrontmatter,
 } from "../src/docs/frontmatter.js";
+import Database from "better-sqlite3";
+import { createDocRegistry } from "../src/docs/docRegistry.js";
+import { mkdtemp, writeFile, mkdir, rm } from "node:fs/promises";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 
 describe("frontmatter parser", () => {
   const fixture1 = `---
@@ -125,5 +130,120 @@ Content after empty frontmatter.`;
     const result = parseFrontmatter(md);
     expect(result.frontmatter.symbols).toEqual([]);
     expect(result.content).toContain("Content after empty frontmatter.");
+  });
+});
+
+describe("doc registry", () => {
+  let db: Database.Database;
+  let tmpDir: string;
+
+  beforeEach(async () => {
+    db = new Database(":memory:");
+    tmpDir = await mkdtemp(join(tmpdir(), "dockit-test-"));
+
+    await mkdir(join(tmpDir, "domain"), { recursive: true });
+
+    await writeFile(
+      join(tmpDir, "domain", "orders.md"),
+      `---
+title: Order Service
+symbols:
+  - OrderService
+  - OrderService.createOrder
+  - OrderService.cancelOrder
+---
+
+# Order Service
+
+Content here.`,
+    );
+
+    await writeFile(
+      join(tmpDir, "domain", "users.md"),
+      `---
+title: User Service
+symbols:
+  - UserService
+  - UserService.findById
+---
+
+# User Service`,
+    );
+
+    await writeFile(
+      join(tmpDir, "no-frontmatter.md"),
+      `# Plain Doc\n\nNo frontmatter here.`,
+    );
+  });
+
+  afterEach(async () => {
+    db.close();
+    await rm(tmpDir, { recursive: true, force: true });
+  });
+
+  test("rebuild populates registry from frontmatter", async () => {
+    const registry = createDocRegistry(db);
+    await registry.rebuild(tmpDir);
+
+    const docs = await registry.findDocBySymbol("OrderService");
+    expect(docs).toEqual([
+      { symbolName: "OrderService", docPath: "domain/orders.md" },
+    ]);
+  });
+
+  test("findDocBySymbol returns correct mappings", async () => {
+    const registry = createDocRegistry(db);
+    await registry.rebuild(tmpDir);
+
+    const docs = await registry.findDocBySymbol("UserService.findById");
+    expect(docs).toHaveLength(1);
+    expect(docs[0].docPath).toBe("domain/users.md");
+  });
+
+  test("findSymbolsByDoc returns all symbols for a file", async () => {
+    const registry = createDocRegistry(db);
+    await registry.rebuild(tmpDir);
+
+    const symbols = await registry.findSymbolsByDoc("domain/orders.md");
+    expect(symbols.sort()).toEqual([
+      "OrderService",
+      "OrderService.cancelOrder",
+      "OrderService.createOrder",
+    ]);
+  });
+
+  test("skips docs without frontmatter", async () => {
+    const registry = createDocRegistry(db);
+    await registry.rebuild(tmpDir);
+
+    const symbols = await registry.findSymbolsByDoc("no-frontmatter.md");
+    expect(symbols).toEqual([]);
+  });
+
+  test("register adds a new mapping", async () => {
+    const registry = createDocRegistry(db);
+    await registry.register({
+      symbolName: "PaymentService",
+      docPath: "domain/payments.md",
+    });
+
+    const docs = await registry.findDocBySymbol("PaymentService");
+    expect(docs).toHaveLength(1);
+    expect(docs[0].docPath).toBe("domain/payments.md");
+  });
+
+  test("unregister removes mappings for a symbol", async () => {
+    const registry = createDocRegistry(db);
+    await registry.rebuild(tmpDir);
+
+    await registry.unregister("OrderService");
+    const docs = await registry.findDocBySymbol("OrderService");
+    expect(docs).toEqual([]);
+  });
+
+  test("findDocBySymbol returns empty for unknown symbol", async () => {
+    const registry = createDocRegistry(db);
+    const docs = await registry.findDocBySymbol("NonExistent");
+    expect(docs).toEqual([]);
   });
 });

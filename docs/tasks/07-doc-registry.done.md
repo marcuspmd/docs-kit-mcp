@@ -1,6 +1,6 @@
 # Task 07 — Doc Registry
 
-> **Status:** pending
+> **Status:** done
 > **Layer:** Documentation
 > **Priority:** MVP
 > **Depends on:** 01, 06, 11
