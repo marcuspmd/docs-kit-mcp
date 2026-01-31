@@ -1,6 +1,6 @@
 # Task 14 — Mermaid Diagram Generator
 
-> **Status:** pending
+> **Status:** done
 > **Layer:** Documentation
 > **Priority:** Release 1
 > **Depends on:** 02, 13, 15
