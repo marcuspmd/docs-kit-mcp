@@ -59,13 +59,15 @@ describe("PatternAnalyzer", () => {
   });
 
   describe("Factory", () => {
-    it("detects class with create methods", () => {
+    it("detects class with create methods that instantiate", () => {
       const symbols = [
         sym({ id: "f1", name: "UserFactory", kind: "class" }),
         sym({ id: "m1", name: "createAdmin", kind: "method", parent: "f1" }),
         sym({ id: "m2", name: "createGuest", kind: "method", parent: "f1" }),
+        sym({ id: "u1", name: "User", kind: "class" }),
       ];
-      const results = analyzer.analyze(symbols, []);
+      const rels = [rel("m1", "u1", "instantiates")];
+      const results = analyzer.analyze(symbols, rels);
       const factory = results.find((r) => r.kind === "factory");
 
       expect(factory).toBeDefined();
@@ -88,7 +90,7 @@ describe("PatternAnalyzer", () => {
       expect(factory!.violations).toHaveLength(0);
     });
 
-    it("flags factory without instantiations", () => {
+    it("omits factory when create/build methods do not instantiate", () => {
       const symbols = [
         sym({ id: "f1", name: "ThingFactory", kind: "class" }),
         sym({ id: "m1", name: "buildThing", kind: "method", parent: "f1" }),
@@ -96,7 +98,7 @@ describe("PatternAnalyzer", () => {
       const results = analyzer.analyze(symbols, []);
       const factory = results.find((r) => r.kind === "factory");
 
-      expect(factory!.violations[0]).toMatch(/no detected instantiations/);
+      expect(factory).toBeUndefined();
     });
 
     it("ignores classes without factory methods", () => {
@@ -199,6 +201,22 @@ describe("PatternAnalyzer", () => {
       ];
       const results = analyzer.analyze(symbols, []);
       expect(results.find((r) => r.kind === "strategy")).toBeUndefined();
+    });
+
+    it("deduplicates strategy by interface name and treats consumer when any same-name interface has uses", () => {
+      const symbols = [
+        sym({ id: "i1", name: "ValidatorStrategy", kind: "interface" }),
+        sym({ id: "i2", name: "ValidatorStrategy", kind: "interface" }),
+        sym({ id: "c1", name: "TsValidator", kind: "class", implements: ["i1"] }),
+        sym({ id: "c2", name: "JsValidator", kind: "class", implements: ["i2"] }),
+      ];
+      const rels = [rel("consumer", "i2", "uses")];
+      const results = analyzer.analyze(symbols, rels);
+      const strategies = results.filter((r) => r.kind === "strategy");
+
+      expect(strategies).toHaveLength(1);
+      expect(strategies[0]!.confidence).toBe(0.85);
+      expect(strategies[0]!.violations).toHaveLength(0);
     });
   });
 

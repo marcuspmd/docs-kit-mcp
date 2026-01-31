@@ -69,14 +69,13 @@ function detectFactory(
       (r) => factoryMethods.some((m) => m.id === r.sourceId) && r.type === "instantiates",
     );
 
+    // Only report factory pattern when at least one factory method actually instantiates something.
+    // Avoids false positives for e.g. buildQualifiedName / buildKey that return primitives.
+    if (producedTypes.length === 0) continue;
+
     const involvedIds = [cls.id, ...factoryMethods.map((m) => m.id)];
     const violations: string[] = [];
-
-    if (producedTypes.length === 0) {
-      violations.push(`Factory '${cls.name}' has create methods but no detected instantiations`);
-    }
-
-    const confidence = producedTypes.length > 0 ? 0.9 : 0.7;
+    const confidence = 0.9;
 
     results.push({
       kind: "factory",
@@ -134,23 +133,39 @@ function detectStrategy(
   const results: DetectedPattern[] = [];
   const interfaces = symbols.filter((s) => s.kind === "interface");
 
+  // Group interfaces by name to avoid duplicate strategy entries (e.g. ValidatorStrategy in many files)
+  const byName = new Map<string, CodeSymbol[]>();
   for (const iface of interfaces) {
+    const list = byName.get(iface.name) ?? [];
+    list.push(iface);
+    byName.set(iface.name, list);
+  }
+
+  for (const [ifaceName, ifacesWithSameName] of byName) {
     const implementors = symbols.filter(
-      (s) => s.implements?.includes(iface.id) || s.implements?.includes(iface.name),
+      (s) =>
+        s.implements &&
+        (ifacesWithSameName.some((i) => s.implements!.includes(i.id)) ||
+          s.implements.includes(ifaceName)),
     );
 
     if (implementors.length < 2) continue;
 
-    const hasRelConsumer = relationships.some((r) => r.targetId === iface.id && r.type === "uses");
+    // Consumer if any interface with this name has an incoming "uses"
+    const hasRelConsumer = ifacesWithSameName.some((i) =>
+      relationships.some((r) => r.targetId === i.id && r.type === "uses"),
+    );
 
     const violations: string[] = [];
     if (!hasRelConsumer) {
-      violations.push(`Strategy interface '${iface.name}' has no detected consumer using it`);
+      violations.push(`Strategy interface '${ifaceName}' has no detected consumer using it`);
     }
 
+    // One pattern per interface name; use first interface id for symbols list
+    const primaryId = ifacesWithSameName[0]!.id;
     results.push({
       kind: "strategy",
-      symbols: [iface.id, ...implementors.map((s) => s.id)],
+      symbols: [primaryId, ...implementors.map((s) => s.id)],
       confidence: hasRelConsumer ? 0.85 : 0.6,
       violations,
     });

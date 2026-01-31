@@ -182,6 +182,7 @@ function layout(
 
         <h3 class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mt-8 mb-2">Quick Links</h3>
         <nav class="space-y-1">
+          <a href="${prefix}index.html#architecture-overview" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-gray-50 hover:text-gray-900">Architecture</a>
           <a href="${prefix}index.html#architecture-layers" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900">Layers</a>
           <a href="${prefix}index.html#top-complex-symbols" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900">Complexity</a>
           <a href="${prefix}relationships.html" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900">All Relationships</a>
@@ -217,6 +218,20 @@ function layout(
         html += '<a href="#' + id + '" class="block px-3 py-1 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900' + indent + '">' + (h.textContent || '').replace(/</g, '&lt;') + '</a>';
       });
       nav.innerHTML = html;
+    })();
+
+    // Deep link to folder in File Explorer: open ancestor details and scroll
+    (function() {
+      var hash = location.hash;
+      if (!hash || !hash.startsWith('#dir-')) return;
+      var el = document.getElementById(hash.slice(1));
+      if (!el) return;
+      var p = el.parentElement;
+      while (p) {
+        if (p.tagName === 'DETAILS') p.setAttribute('open', '');
+        p = p.parentElement;
+      }
+      el.scrollIntoView({ behavior: 'smooth', block: 'center' });
     })();
   </script>
 
@@ -420,6 +435,7 @@ export function renderDashboard(data: SiteData): string {
 
   // Group files by directory
   const dirGroups: Record<string, { files: string[]; symbols: number }> = {};
+  const dirKindBreakdown: Record<string, Record<string, number>> = {};
   for (const file of files) {
     const dir = file.split("/")[0] || "root";
     if (!dirGroups[dir]) dirGroups[dir] = { files: [], symbols: 0 };
@@ -428,6 +444,8 @@ export function renderDashboard(data: SiteData): string {
   for (const symbol of symbols) {
     const dir = symbol.file.split("/")[0] || "root";
     if (dirGroups[dir]) dirGroups[dir].symbols++;
+    if (!dirKindBreakdown[dir]) dirKindBreakdown[dir] = {};
+    dirKindBreakdown[dir][symbol.kind] = (dirKindBreakdown[dir][symbol.kind] ?? 0) + 1;
   }
 
   // Overview graph
@@ -624,15 +642,64 @@ export function renderDashboard(data: SiteData): string {
       </div>
     </div>
 
-    ${overviewGraph
-      ? `
-    <div class="mb-12">
-      <h2 class="text-2xl font-bold text-gray-900 mb-6">Architecture Overview</h2>
-      <div class="bg-white shadow rounded-lg p-6 overflow-x-auto border border-gray-200">
-        <div class="mermaid">${overviewGraph}</div>
+    <div class="mb-12" id="architecture-overview">
+      <h2 class="text-2xl font-bold text-gray-900 mb-4">Architecture Overview</h2>
+      ${overviewGraph ? `
+      <div class="flex gap-2 mb-4" role="tablist" aria-label="Overview view">
+        <button type="button" id="arch-tab-graph" role="tab" aria-selected="true" aria-controls="arch-panel-graph" class="arch-tab px-4 py-2 rounded-md text-sm font-medium bg-blue-100 text-blue-800 border border-blue-200">Graph</button>
+        <button type="button" id="arch-tab-dirs" role="tab" aria-selected="false" aria-controls="arch-panel-dirs" class="arch-tab px-4 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 border border-transparent">Directory map</button>
       </div>
-    </div>`
-      : ""}
+      <div id="arch-panel-graph" role="tabpanel" class="arch-panel bg-white shadow rounded-lg p-6 overflow-x-auto border border-gray-200">
+        <div class="mermaid">${overviewGraph}</div>
+      </div>` : ""}
+      <div id="arch-panel-dirs" role="tabpanel" class="arch-panel grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 ${overviewGraph ? "hidden" : ""}" aria-hidden="${overviewGraph ? "true" : "false"}">
+        ${Object.entries(dirGroups)
+          .sort((a, b) => b[1].symbols - a[1].symbols)
+          .map(([dir, { files: dirFiles, symbols: dirSymbols }]) => {
+            const kinds = dirKindBreakdown[dir] ?? {};
+            const kindLabels = Object.entries(kinds)
+              .sort((a, b) => b[1] - a[1])
+              .slice(0, 5)
+              .map(([k, n]) => `${k}: ${n}`)
+              .join(", ");
+            const dirSlug = dir.replace(/\//g, "-");
+            return `
+        <a href="files.html#dir-${escapeHtml(dirSlug)}" class="block bg-white shadow rounded-lg border border-gray-200 p-4 hover:border-blue-300 hover:shadow-md transition-all group">
+          <div class="flex items-start justify-between">
+            <span class="text-lg font-semibold text-gray-900 group-hover:text-blue-600">${escapeHtml(dir)}</span>
+            <svg class="h-5 w-5 text-gray-400 group-hover:text-blue-500 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 5l7 7-7 7" /></svg>
+          </div>
+          <dl class="mt-3 space-y-1 text-sm">
+            <div class="flex justify-between"><dt class="text-gray-500">Symbols</dt><dd class="font-medium text-gray-900">${dirSymbols}</dd></div>
+            <div class="flex justify-between"><dt class="text-gray-500">Files</dt><dd class="font-medium text-gray-900">${dirFiles.length}</dd></div>
+          </dl>
+          ${kindLabels ? `<p class="mt-2 text-xs text-gray-500 truncate" title="${escapeHtml(kindLabels)}">${escapeHtml(kindLabels)}</p>` : ""}
+        </a>`;
+          })
+          .join("")}
+      </div>
+      <script>
+        (function(){
+          var tabGraph = document.getElementById('arch-tab-graph');
+          var tabDirs = document.getElementById('arch-tab-dirs');
+          var panelGraph = document.getElementById('arch-panel-graph');
+          var panelDirs = document.getElementById('arch-panel-dirs');
+          if (!tabGraph || !tabDirs || !panelGraph || !panelDirs) return;
+          function showGraph() {
+            tabGraph.setAttribute('aria-selected', 'true'); tabGraph.classList.add('bg-blue-100', 'text-blue-800', 'border-blue-200'); tabGraph.classList.remove('text-gray-600', 'border-transparent');
+            tabDirs.setAttribute('aria-selected', 'false'); tabDirs.classList.remove('bg-blue-100', 'text-blue-800', 'border-blue-200'); tabDirs.classList.add('text-gray-600', 'border-transparent');
+            panelGraph.classList.remove('hidden'); panelDirs.classList.add('hidden'); panelDirs.setAttribute('aria-hidden', 'true');
+          }
+          function showDirs() {
+            tabDirs.setAttribute('aria-selected', 'true'); tabDirs.classList.add('bg-blue-100', 'text-blue-800', 'border-blue-200'); tabDirs.classList.remove('text-gray-600', 'border-transparent');
+            tabGraph.setAttribute('aria-selected', 'false'); tabGraph.classList.remove('bg-blue-100', 'text-blue-800', 'border-blue-200'); tabGraph.classList.add('text-gray-600', 'border-transparent');
+            panelDirs.classList.remove('hidden'); panelGraph.classList.add('hidden'); panelDirs.setAttribute('aria-hidden', 'false');
+          }
+          tabGraph.addEventListener('click', showGraph);
+          tabDirs.addEventListener('click', showDirs);
+        })();
+      </script>
+    </div>
 
     <div id="top-complex-symbols" class="mb-12">
       <h2 class="text-2xl font-bold text-gray-900 mb-6">Top Complex Symbols</h2>
@@ -916,8 +983,9 @@ export function renderFilesPage(files: string[], symbols: CodeSymbol[]): string 
       // Don't render root wrapper if it's the top-level container call
       if (node.name === "root") return inner;
 
+      const dirId = "dir-" + node.path.replace(/\//g, "-");
       return `
-        <details class="group/folder" open>
+        <details class="group/folder" open id="${escapeHtml(dirId)}">
           <summary class="flex items-center py-1 hover:bg-gray-50 cursor-pointer select-none rounded-md px-2 -mx-2 transition-colors">
             <div style="width: ${indent}rem" class="flex-shrink-0"></div>
             <svg class="h-4 w-4 text-gray-400 mr-2 flex-shrink-0 group-open/folder:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">

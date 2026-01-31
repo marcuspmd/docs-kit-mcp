@@ -131,13 +131,11 @@ export class TypeScriptStrategy implements LanguageStrategy {
     const importClause = node.children.find((c) => c.type === "import_clause");
     if (importClause) {
       const namedImports = importClause.descendantsOfType("import_specifier");
+      const source = symsInFile.find((s) => !s.parent) ?? syntheticModuleSymbol(file);
       for (const spec of namedImports) {
         const nameNode = spec.childForFieldName("name");
         if (nameNode) {
-          const topLevel = symsInFile.find((s) => !s.parent);
-          if (topLevel) {
-            addRel(topLevel.id, nameNode.text, "uses", file, node.startPosition.row + 1);
-          }
+          addRel(source.id, nameNode.text, "uses", file, node.startPosition.row + 1);
         }
       }
     }
@@ -153,11 +151,11 @@ export class TypeScriptStrategy implements LanguageStrategy {
     if (node.type === "call_expression") {
       const functionNode = node.childForFieldName("function");
       if (functionNode?.type === "identifier") {
-        const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
-        if (enclosing) {
-          // Add relation for any function call to a known symbol
-          addRel(enclosing.id, functionNode.text, "calls", file, node.startPosition.row + 1);
-        }
+        const enclosing =
+          findEnclosingSymbol(node.startPosition.row, symsInFile) ??
+          symsInFile.find((s) => !s.parent) ??
+          syntheticModuleSymbol(file);
+        addRel(enclosing.id, functionNode.text, "calls", file, node.startPosition.row + 1);
       }
     }
   }
@@ -173,4 +171,9 @@ function findEnclosingSymbol(line: number, symsInFile: CodeSymbol[]): CodeSymbol
     }
   }
   return best;
+}
+
+/** Synthetic "module" id for files with no top-level symbols (e.g. server.ts with only callbacks). */
+function syntheticModuleSymbol(file: string): { id: string } {
+  return { id: `module::${file}` };
 }

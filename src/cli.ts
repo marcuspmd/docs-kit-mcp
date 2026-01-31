@@ -224,6 +224,7 @@ async function runIndex(args: string[]) {
       removedFiles.push(knownPath);
       symbolRepo.deleteByFile(knownPath);
       relRepo.deleteBySource(knownPath);
+      relRepo.deleteBySource(`module::${knownPath}`);
       fileHashRepo.delete(knownPath);
     }
   }

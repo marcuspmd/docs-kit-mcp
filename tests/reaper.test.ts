@@ -83,6 +83,22 @@ describe("Reaper", () => {
 
       expect(findings.filter((f) => f.type === "dead_code")).toHaveLength(0);
     });
+
+    it("skips symbols under tests/ and site/shared (fixtures and shared helpers)", () => {
+      const graph = createKnowledgeGraph(db);
+      const symbols = [
+        sym({ id: "a", name: "DeadUtil", file: "src/lib.ts" }),
+        sym({ id: "b", name: "createOrderRepository", file: "tests/indexer/fixtures/relationships.ts" }),
+        sym({ id: "c", name: "buildMermaidForFile", file: "src/site/shared.ts" }),
+      ];
+
+      const reaper = createReaper();
+      const findings = reaper.scan(symbols, graph, []);
+
+      const dead = findings.filter((f) => f.type === "dead_code");
+      expect(dead).toHaveLength(1);
+      expect(dead[0].target).toBe("a");
+    });
   });
 
   describe("orphan_doc", () => {

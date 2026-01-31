@@ -72,6 +72,10 @@ function findDeadCode(symbols: CodeSymbol[], graph: KnowledgeGraph): ReaperFindi
     if (sym.exported === false) continue;
     if (ENTRY_KINDS.has(sym.kind)) continue;
     if (!executableKinds.has(sym.kind)) continue; // Skip non-executable symbols
+    // Skip test fixtures and test helpers (they are referenced by tests, not by app code)
+    if (sym.file.includes("tests/") || sym.file.includes("/fixtures/")) continue;
+    // Skip site shared helpers (used by templates.ts; call relationships may not resolve across files)
+    if (sym.file.includes("site/shared")) continue;
 
     const dependents = graph.getDependents(sym.id);
     if (dependents.length > 0) continue;
