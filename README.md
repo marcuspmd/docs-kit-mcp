@@ -235,6 +235,11 @@ npx doc-guard --base origin/main
 3. Adicione/atualize testes e rode `npm run test`
 4. Formate com `npm run format` e submeta um pull request
 
+  CLI usage:
+  doc-kit index [dir] [--exclude dirs] [--db path]
+  doc-kit build-site [--out dir] [--db path]
+  doc-kit generate-repo-docs [repo-dir] [docs-dir]
+  doc-kit build-docs [--out dir] [--db path] [--root dir]
 ---
 
 ## Licença

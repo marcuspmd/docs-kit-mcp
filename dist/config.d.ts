@@ -114,10 +114,10 @@ export declare const ConfigSchema: z.ZodObject<{
 }, "strip", z.ZodTypeAny, {
     include: string[];
     exclude: string[];
+    dbPath: string;
     projectRoot: string;
     respectGitignore: boolean;
     maxFileSize: number;
-    dbPath: string;
     promptRules: {
         name: string;
         language?: string | undefined;
@@ -137,9 +137,9 @@ export declare const ConfigSchema: z.ZodObject<{
     projectRoot: string;
     include?: string[] | undefined;
     exclude?: string[] | undefined;
+    dbPath?: string | undefined;
     respectGitignore?: boolean | undefined;
     maxFileSize?: number | undefined;
-    dbPath?: string | undefined;
     promptRules?: {
         name: string;
         language?: string | undefined;

@@ -25,8 +25,8 @@ describe("indexFile", () => {
       const cls = symbols.find((s) => s.kind === "class");
       expect(cls).toBeDefined();
       expect(cls!.name).toBe("UserService");
-      expect(cls!.startLine).toBe(1);
-      expect(cls!.endLine).toBe(15);
+      expect(cls!.startLine).toBe(2);
+      expect(cls!.endLine).toBe(17);
       expect(cls!.parent).toBeUndefined();
     });
 
@@ -46,8 +46,45 @@ describe("indexFile", () => {
 
     it("computes correct line ranges for methods", () => {
       const findById = symbols.find((s) => s.name === "findById")!;
-      expect(findById.startLine).toBeGreaterThanOrEqual(8);
+      expect(findById.startLine).toBeGreaterThanOrEqual(10);
       expect(findById.endLine).toBeGreaterThanOrEqual(findById.startLine);
+    });
+
+    it("extracts exported flag", () => {
+      const cls = symbols.find((s) => s.name === "UserService")!;
+      expect(cls.exported).toBe(true);
+    });
+
+    it("extracts language", () => {
+      for (const s of symbols) {
+        expect(s.language).toBe("ts");
+      }
+    });
+
+    it("extracts visibility from methods", () => {
+      const create = symbols.find((s) => s.name === "create")!;
+      expect(create.visibility).toBe("public");
+    });
+
+    it("extracts JSDoc summary", () => {
+      const cls = symbols.find((s) => s.name === "UserService")!;
+      expect(cls.summary).toBe("User service handles database operations");
+
+      const findById = symbols.find((s) => s.name === "findById")!;
+      expect(findById.summary).toBe("Find a user by their ID");
+    });
+
+    it("extracts qualifiedName", () => {
+      const findById = symbols.find((s) => s.name === "findById")!;
+      expect(findById.qualifiedName).toBe("UserService.findById");
+
+      const cls = symbols.find((s) => s.name === "UserService")!;
+      expect(cls.qualifiedName).toBe("UserService");
+    });
+
+    it("detects layer from name", () => {
+      const cls = symbols.find((s) => s.name === "UserService")!;
+      expect(cls.layer).toBe("application");
     });
   });
 
@@ -68,6 +105,14 @@ describe("indexFile", () => {
         expect(s.parent).toBeUndefined();
       }
     });
+
+    it("detects exported functions", () => {
+      const add = symbols.find((s) => s.name === "add")!;
+      expect(add.exported).toBe(true);
+
+      const helper = symbols.find((s) => s.name === "privateHelper")!;
+      expect(helper.exported).toBe(false);
+    });
   });
 
   describe("interfaces", () => {
@@ -87,13 +132,30 @@ describe("indexFile", () => {
       const methods = symbols.filter((s) => s.kind === "method" && s.parent === repo.id);
       expect(methods.length).toBeGreaterThanOrEqual(1);
     });
+
+    it("interfaces have exported flag", () => {
+      const user = symbols.find((s) => s.name === "User")!;
+      expect(user.exported).toBe(true);
+    });
+  });
+
+  describe("relationships fixture", () => {
+    const symbols = parseFixture("relationships.ts");
+
+    it("extracts extends from class", () => {
+      const orderRepo = symbols.find((s) => s.name === "OrderRepository")!;
+      expect(orderRepo.extends).toBe("BaseRepository");
+    });
+
+    it("extracts implements from class", () => {
+      const orderRepo = symbols.find((s) => s.name === "OrderRepository")!;
+      expect(orderRepo.implements).toEqual(["Serializable", "Cacheable"]);
+    });
   });
 
   describe("syntax error handling", () => {
     it("returns empty array for severely broken files without crashing", () => {
       const symbols = parseFixture("syntax-error.ts");
-      // tree-sitter is error-tolerant but severely broken syntax
-      // may not produce recognizable nodes — the key is no crash
       expect(Array.isArray(symbols)).toBe(true);
     });
   });
