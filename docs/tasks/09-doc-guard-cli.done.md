@@ -1,6 +1,6 @@
 # Task 09 — Doc-Guard CLI
 
-> **Status:** pending
+> **Status:** done
 > **Layer:** Governance
 > **Priority:** MVP
 > **Depends on:** 05, 08

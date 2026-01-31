@@ -1,7 +1,7 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { ChangeImpact } from "../indexer/symbol.types.js";
-import { DocRegistry, DocMapping } from "./docRegistry.js";
+import { DocRegistry } from "./docRegistry.js";
 import { updateFrontmatter } from "./frontmatter.js";
 
 export interface MarkdownSection {
