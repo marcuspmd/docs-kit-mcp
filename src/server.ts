@@ -16,6 +16,7 @@ import { createReaper } from "./governance/reaper.js";
 import { createContextMapper } from "./business/contextMapper.js";
 import { createCodeExampleValidator, ValidationResult } from "./docs/codeExampleValidator.js";
 import { generateProjectStatus, formatProjectStatus } from "./governance/projectStatus.js";
+import { performSmartCodeReview } from "./governance/smartCodeReview.js";
 import OpenAI from "openai";
 import Parser from "tree-sitter";
 import TypeScript from "tree-sitter-typescript";
@@ -712,6 +713,51 @@ server.tool(
     } catch (err) {
       return {
         content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  "smartCodeReview",
+  "Perform comprehensive code review combining architecture analysis, pattern detection, dead code scanning, and documentation validation",
+  {
+    docsDir: z.string().default("docs").describe("Docs directory"),
+    includeExamples: z.boolean().default(true).describe("Include code example validation"),
+  },
+  async ({ docsDir, includeExamples }) => {
+    try {
+      const result = await performSmartCodeReview(
+        { docsDir, includeExamples },
+        {
+          symbolRepo,
+          relRepo,
+          registry,
+          patternAnalyzer,
+          archGuard,
+          reaper,
+          graph,
+          codeExampleValidator,
+        },
+      );
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: result,
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Error performing smart code review: ${(err as Error).message}`,
+          },
+        ],
         isError: true,
       };
     }

@@ -73,15 +73,15 @@ function walkForRelationships(
   ) => void,
   strategy: ReturnType<typeof getStrategy>,
 ) {
-  if (
-    node.type === "class_declaration" ||
-    node.type === "abstract_class_declaration"
-  ) {
+  if (node.type === "class_declaration" || node.type === "abstract_class_declaration") {
     const className = node.childForFieldName("name")?.text;
     const classSymbol = symsInFile.find(
-      (s) => s.name === className && (s.kind === "class" || s.kind === "abstract_class" ||
-        // Also match refined kinds (event, service, etc.)
-        s.name === className),
+      (s) =>
+        s.name === className &&
+        (s.kind === "class" ||
+          s.kind === "abstract_class" ||
+          // Also match refined kinds (event, service, etc.)
+          s.name === className),
     );
 
     if (classSymbol) {
@@ -91,6 +91,7 @@ function walkForRelationships(
 
   strategy.extractInstantiationRelationships(node, symsInFile, addRel, file);
   strategy.extractImportRelationships(node, symsInFile, addRel, file);
+  strategy.extractCallRelationships(node, symsInFile, addRel, file);
   strategy.extractEventListenerRelationships?.(node, symsInFile, addRel, file);
 
   for (const child of node.children) {

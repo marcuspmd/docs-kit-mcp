@@ -58,7 +58,12 @@ export class PhpStrategy implements LanguageStrategy {
     return undefined;
   }
 
-  refineKind(kind: SymbolKind, name: string, extendsName?: string, implementsNames?: string[]): SymbolKind {
+  refineKind(
+    kind: SymbolKind,
+    name: string,
+    extendsName?: string,
+    implementsNames?: string[],
+  ): SymbolKind {
     if (kind !== "class" && kind !== "abstract_class") return kind;
 
     const n = name.toLowerCase();
@@ -89,7 +94,12 @@ export class PhpStrategy implements LanguageStrategy {
     return false;
   }
 
-  extractClassRelationships(node: Parser.SyntaxNode, classSymbol: CodeSymbol, addRel: AddRelFn, file: string): void {
+  extractClassRelationships(
+    node: Parser.SyntaxNode,
+    classSymbol: CodeSymbol,
+    addRel: AddRelFn,
+    file: string,
+  ): void {
     // extends via base_clause
     const baseClause = node.children.find((c) => c.type === "base_clause");
     if (baseClause) {
@@ -126,12 +136,15 @@ export class PhpStrategy implements LanguageStrategy {
     }
   }
 
-  extractInstantiationRelationships(node: Parser.SyntaxNode, symsInFile: CodeSymbol[], addRel: AddRelFn, file: string): void {
+  extractInstantiationRelationships(
+    node: Parser.SyntaxNode,
+    symsInFile: CodeSymbol[],
+    addRel: AddRelFn,
+    file: string,
+  ): void {
     // object_creation_expression → instantiates
     if (node.type === "object_creation_expression") {
-      const nameNode = node.children.find(
-        (c) => c.type === "name" || c.type === "qualified_name",
-      );
+      const nameNode = node.children.find((c) => c.type === "name" || c.type === "qualified_name");
       if (nameNode) {
         const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
         if (enclosing) {
@@ -156,7 +169,12 @@ export class PhpStrategy implements LanguageStrategy {
     }
   }
 
-  extractEventListenerRelationships(node: Parser.SyntaxNode, symsInFile: CodeSymbol[], addRel: AddRelFn, file: string): void {
+  extractEventListenerRelationships(
+    node: Parser.SyntaxNode,
+    symsInFile: CodeSymbol[],
+    addRel: AddRelFn,
+    file: string,
+  ): void {
     if (node.type !== "method_declaration") return;
     const methodName = node.childForFieldName("name")?.text;
     if (methodName !== "handle") return;
@@ -168,14 +186,20 @@ export class PhpStrategy implements LanguageStrategy {
     if (!firstParam) return;
 
     const typeNode = firstParam.children.find(
-      (c) => c.type === "name" || c.type === "qualified_name" || c.type === "named_type" || c.type === "union_type",
+      (c) =>
+        c.type === "name" ||
+        c.type === "qualified_name" ||
+        c.type === "named_type" ||
+        c.type === "union_type",
     );
     if (!typeNode) return;
 
     // For union_type, take the first type; for qualified_name, take last segment
     let typeName = typeNode.text;
     if (typeNode.type === "union_type") {
-      const first = typeNode.children.find((c) => c.type === "name" || c.type === "qualified_name" || c.type === "named_type");
+      const first = typeNode.children.find(
+        (c) => c.type === "name" || c.type === "qualified_name" || c.type === "named_type",
+      );
       if (first) typeName = first.text;
     }
     const parts = typeName.split("\\");
@@ -183,14 +207,22 @@ export class PhpStrategy implements LanguageStrategy {
 
     // Find the enclosing class symbol
     const enclosingClass = symsInFile.find(
-      (s) => !s.parent && s.startLine <= node.startPosition.row + 1 && s.endLine >= node.endPosition.row + 1,
+      (s) =>
+        !s.parent &&
+        s.startLine <= node.startPosition.row + 1 &&
+        s.endLine >= node.endPosition.row + 1,
     );
     if (enclosingClass) {
       addRel(enclosingClass.id, shortName, "listens_to", file, node.startPosition.row + 1);
     }
   }
 
-  extractImportRelationships(node: Parser.SyntaxNode, symsInFile: CodeSymbol[], addRel: AddRelFn, file: string): void {
+  extractImportRelationships(
+    node: Parser.SyntaxNode,
+    symsInFile: CodeSymbol[],
+    addRel: AddRelFn,
+    file: string,
+  ): void {
     if (node.type !== "namespace_use_declaration") return;
     for (const child of node.children) {
       if (child.type === "namespace_use_clause") {
@@ -208,13 +240,56 @@ export class PhpStrategy implements LanguageStrategy {
       }
     }
   }
+
+  extractCallRelationships(
+    node: Parser.SyntaxNode,
+    symsInFile: CodeSymbol[],
+    addRel: AddRelFn,
+    file: string,
+  ): void {
+    // Extract function calls
+    if (node.type === "function_call_expression") {
+      const functionNode = node.childForFieldName("function");
+      if (functionNode?.type === "name" || functionNode?.type === "qualified_name") {
+        const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
+        if (enclosing) {
+          const parts = functionNode.text.split("\\");
+          const shortName = parts[parts.length - 1];
+          const symbol = symsInFile.find((s) => s.name === shortName);
+          if (symbol && enclosing.id !== symbol.id) {
+            addRel(enclosing.id, shortName, "calls", file, node.startPosition.row + 1);
+          }
+        }
+      }
+    }
+
+    // Extract member access
+    if (node.type === "member_access_expression" || node.type === "member_call_expression") {
+      const object = node.childForFieldName("object");
+      if (object?.type === "variable_name" && object.text.startsWith("$")) {
+        // Skip variable access for now
+        return;
+      }
+      if (object?.type === "name" || object?.type === "qualified_name") {
+        const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
+        if (enclosing) {
+          const parts = object.text.split("\\");
+          const shortName = parts[parts.length - 1];
+          const symbol = symsInFile.find((s) => s.name === shortName);
+          if (symbol) {
+            addRel(enclosing.id, shortName, "uses", file, node.startPosition.row + 1);
+          }
+        }
+      }
+    }
+  }
 }
 
 function findEnclosingSymbol(line: number, symsInFile: CodeSymbol[]): CodeSymbol | undefined {
   let best: CodeSymbol | undefined;
   for (const s of symsInFile) {
     if (s.startLine <= line + 1 && s.endLine >= line + 1) {
-      if (!best || (s.endLine - s.startLine) < (best.endLine - best.startLine)) {
+      if (!best || s.endLine - s.startLine < best.endLine - best.startLine) {
         best = s;
       }
     }

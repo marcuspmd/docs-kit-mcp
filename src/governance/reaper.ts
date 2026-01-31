@@ -1,6 +1,7 @@
 import type { CodeSymbol } from "../indexer/symbol.types.js";
 import type { KnowledgeGraph } from "../knowledge/graph.js";
 import type { DocMapping } from "../docs/docRegistry.js";
+import type { SymbolRepository } from "../storage/db.js";
 
 export interface ReaperFinding {
   type: "dead_code" | "orphan_doc" | "broken_link";
@@ -11,6 +12,7 @@ export interface ReaperFinding {
 
 export interface Reaper {
   scan(symbols: CodeSymbol[], graph: KnowledgeGraph, docMappings: DocMapping[]): ReaperFinding[];
+  markDeadCode(symbolRepo: SymbolRepository, findings: ReaperFinding[]): void;
 }
 
 const ENTRY_KINDS = new Set(["test", "mock", "migration", "middleware", "controller", "listener"]);
@@ -25,6 +27,23 @@ export function createReaper(): Reaper {
 
       return findings;
     },
+
+    markDeadCode(symbolRepo, findings) {
+      for (const finding of findings) {
+        if (finding.type === "dead_code") {
+          const symbol = symbolRepo.findById(finding.target);
+          if (symbol) {
+            // Add "dead_code" to violations
+            const violations = symbol.violations || [];
+            if (!violations.includes("dead_code")) {
+              violations.push("dead_code");
+              symbol.violations = violations;
+              symbolRepo.upsert(symbol);
+            }
+          }
+        }
+      }
+    },
   };
 }
 
@@ -32,10 +51,27 @@ function findDeadCode(symbols: CodeSymbol[], graph: KnowledgeGraph): ReaperFindi
   const findings: ReaperFinding[] = [];
   const childIds = new Set(symbols.filter((s) => s.parent).map((s) => s.parent!));
 
+  // Only consider executable symbols for dead code analysis
+  // Types, interfaces, enums are often used implicitly
+  const executableKinds = new Set([
+    "function",
+    "method",
+    "class",
+    "abstract_class",
+    "constructor",
+    "getter",
+    "setter",
+    "event",
+    "service",
+    "controller",
+    "listener",
+  ]);
+
   for (const sym of symbols) {
     if (sym.parent) continue;
     if (sym.exported === false) continue;
     if (ENTRY_KINDS.has(sym.kind)) continue;
+    if (!executableKinds.has(sym.kind)) continue; // Skip non-executable symbols
 
     const dependents = graph.getDependents(sym.id);
     if (dependents.length > 0) continue;

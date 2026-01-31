@@ -16,10 +16,41 @@ export interface LanguageStrategy {
   extractImplements(node: Parser.SyntaxNode): string[] | undefined;
   extractTraits(node: Parser.SyntaxNode): string[] | undefined;
   extractVisibility(node: Parser.SyntaxNode): Visibility | undefined;
-  refineKind(kind: SymbolKind, name: string, extendsName?: string, implementsNames?: string[]): SymbolKind;
+  refineKind(
+    kind: SymbolKind,
+    name: string,
+    extendsName?: string,
+    implementsNames?: string[],
+  ): SymbolKind;
   detectDeprecated(node: Parser.SyntaxNode): boolean;
-  extractClassRelationships(node: Parser.SyntaxNode, classSymbol: CodeSymbol, addRel: AddRelFn, file: string): void;
-  extractInstantiationRelationships(node: Parser.SyntaxNode, symsInFile: CodeSymbol[], addRel: AddRelFn, file: string): void;
-  extractImportRelationships(node: Parser.SyntaxNode, symsInFile: CodeSymbol[], addRel: AddRelFn, file: string): void;
-  extractEventListenerRelationships?(node: Parser.SyntaxNode, symsInFile: CodeSymbol[], addRel: AddRelFn, file: string): void;
+  extractClassRelationships(
+    node: Parser.SyntaxNode,
+    classSymbol: CodeSymbol,
+    addRel: AddRelFn,
+    file: string,
+  ): void;
+  extractInstantiationRelationships(
+    node: Parser.SyntaxNode,
+    symsInFile: CodeSymbol[],
+    addRel: AddRelFn,
+    file: string,
+  ): void;
+  extractImportRelationships(
+    node: Parser.SyntaxNode,
+    symsInFile: CodeSymbol[],
+    addRel: AddRelFn,
+    file: string,
+  ): void;
+  extractCallRelationships(
+    node: Parser.SyntaxNode,
+    symsInFile: CodeSymbol[],
+    addRel: AddRelFn,
+    file: string,
+  ): void;
+  extractEventListenerRelationships?(
+    node: Parser.SyntaxNode,
+    symsInFile: CodeSymbol[],
+    addRel: AddRelFn,
+    file: string,
+  ): void;
 }

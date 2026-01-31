@@ -46,7 +46,12 @@ export class TypeScriptStrategy implements LanguageStrategy {
     return undefined;
   }
 
-  refineKind(kind: SymbolKind, _name: string, _extendsName?: string, _implementsNames?: string[]): SymbolKind {
+  refineKind(
+    kind: SymbolKind,
+    _name: string,
+    _extendsName?: string,
+    _implementsNames?: string[],
+  ): SymbolKind {
     return kind;
   }
 
@@ -60,7 +65,12 @@ export class TypeScriptStrategy implements LanguageStrategy {
     return false;
   }
 
-  extractClassRelationships(node: Parser.SyntaxNode, classSymbol: CodeSymbol, addRel: AddRelFn, file: string): void {
+  extractClassRelationships(
+    node: Parser.SyntaxNode,
+    classSymbol: CodeSymbol,
+    addRel: AddRelFn,
+    file: string,
+  ): void {
     const heritage = node.children.filter((c) => c.type === "class_heritage");
     for (const h of heritage) {
       for (const child of h.children) {
@@ -75,7 +85,13 @@ export class TypeScriptStrategy implements LanguageStrategy {
         if (child.type === "implements_clause") {
           for (const typeChild of child.children) {
             if (typeChild.type === "type_identifier" || typeChild.type === "identifier") {
-              addRel(classSymbol.id, typeChild.text, "implements", file, node.startPosition.row + 1);
+              addRel(
+                classSymbol.id,
+                typeChild.text,
+                "implements",
+                file,
+                node.startPosition.row + 1,
+              );
             }
           }
         }
@@ -83,18 +99,34 @@ export class TypeScriptStrategy implements LanguageStrategy {
     }
   }
 
-  extractInstantiationRelationships(node: Parser.SyntaxNode, symsInFile: CodeSymbol[], addRel: AddRelFn, file: string): void {
+  extractInstantiationRelationships(
+    node: Parser.SyntaxNode,
+    symsInFile: CodeSymbol[],
+    addRel: AddRelFn,
+    file: string,
+  ): void {
     if (node.type !== "new_expression") return;
     const constructorNode = node.childForFieldName("constructor");
     if (constructorNode?.type === "identifier") {
       const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
       if (enclosing) {
-        addRel(enclosing.id, constructorNode.text, "instantiates", file, node.startPosition.row + 1);
+        addRel(
+          enclosing.id,
+          constructorNode.text,
+          "instantiates",
+          file,
+          node.startPosition.row + 1,
+        );
       }
     }
   }
 
-  extractImportRelationships(node: Parser.SyntaxNode, symsInFile: CodeSymbol[], addRel: AddRelFn, file: string): void {
+  extractImportRelationships(
+    node: Parser.SyntaxNode,
+    symsInFile: CodeSymbol[],
+    addRel: AddRelFn,
+    file: string,
+  ): void {
     if (node.type !== "import_statement") return;
     const importClause = node.children.find((c) => c.type === "import_clause");
     if (importClause) {
@@ -110,13 +142,32 @@ export class TypeScriptStrategy implements LanguageStrategy {
       }
     }
   }
+
+  extractCallRelationships(
+    node: Parser.SyntaxNode,
+    symsInFile: CodeSymbol[],
+    addRel: AddRelFn,
+    file: string,
+  ): void {
+    // Extract function calls
+    if (node.type === "call_expression") {
+      const functionNode = node.childForFieldName("function");
+      if (functionNode?.type === "identifier") {
+        const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
+        if (enclosing) {
+          // Add relation for any function call to a known symbol
+          addRel(enclosing.id, functionNode.text, "calls", file, node.startPosition.row + 1);
+        }
+      }
+    }
+  }
 }
 
 function findEnclosingSymbol(line: number, symsInFile: CodeSymbol[]): CodeSymbol | undefined {
   let best: CodeSymbol | undefined;
   for (const s of symsInFile) {
     if (s.startLine <= line + 1 && s.endLine >= line + 1) {
-      if (!best || (s.endLine - s.startLine) < (best.endLine - best.startLine)) {
+      if (!best || s.endLine - s.startLine < best.endLine - best.startLine) {
         best = s;
       }
     }

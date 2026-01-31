@@ -17,6 +17,8 @@ import {
 import { generateSite } from "./site/generator.js";
 import { generateDocs } from "./site/mdGenerator.js";
 import { generateProjectStatus, formatProjectStatus } from "./governance/projectStatus.js";
+import { performSmartCodeReview } from "./governance/smartCodeReview.js";
+import { createCodeExampleValidator } from "./docs/codeExampleValidator.js";
 import { createKnowledgeGraph } from "./knowledge/graph.js";
 import { createArchGuard } from "./governance/archGuard.js";
 import { createReaper } from "./governance/reaper.js";
@@ -72,7 +74,12 @@ async function main() {
     case "project-status":
       await runProjectStatus(args.slice(1));
       break;
-    default:
+    case "smart-code-review":
+      await runSmartCodeReview(args.slice(1));
+      break;
+    case "dead-code":
+      await runDeadCodeScan(args.slice(1));
+      break;
       printHelp();
       process.exit(command === "--help" || command === "-h" ? 0 : 1);
   }
@@ -90,6 +97,9 @@ Usage:
                                                         Generate Markdown documentation
   doc-kit generate-repo-docs [repo-dir] [docs-dir]     Generate markdown docs
   doc-kit project-status [--db path] [--docs dir]      Generate project status report
+  doc-kit smart-code-review [--db path] [--docs dir] [--no-examples]
+                                                        Perform comprehensive code review
+  doc-kit dead-code [--db path] [--docs dir]            Scan and mark dead code in database
   doc-kit --help                                        Show this help
 
 Commands:
@@ -98,6 +108,7 @@ Commands:
   build-docs         Generate structured Markdown documentation from index
   generate-repo-docs Create markdown doc stubs for undocumented symbols
   project-status     Generate comprehensive project status report
+  smart-code-review  Perform comprehensive code review with multiple analyses
 `);
 }
 
@@ -108,9 +119,15 @@ function parseArgs(
   const positional: string[] = [];
   const result = { ...flags };
   for (let i = 0; i < args.length; i++) {
-    if (args[i].startsWith("--") && i + 1 < args.length) {
+    if (args[i].startsWith("--")) {
       const key = args[i].slice(2);
-      result[key] = args[++i];
+      // Check if next arg exists and doesn't start with --
+      if (i + 1 < args.length && !args[i + 1].startsWith("--")) {
+        result[key] = args[++i];
+      } else {
+        // Boolean flag - set to empty string to indicate presence
+        result[key] = "";
+      }
     } else {
       positional.push(args[i]);
     }
@@ -287,6 +304,11 @@ async function runIndex(args: string[]) {
 
   // Phase 5: Persist to SQLite
   step("Persisting to SQLite");
+
+  // Clear existing data for this project
+  db.prepare("DELETE FROM symbols").run();
+  db.prepare("DELETE FROM relationships").run();
+
   const upsertSymbols = db.transaction(() => {
     for (const symbol of allSymbols) {
       symbolRepo.upsert(symbol);
@@ -661,6 +683,114 @@ async function runProjectStatus(args: string[]) {
   db.close();
 
   console.log(formatProjectStatus(result));
+}
+
+async function runSmartCodeReview(args: string[]) {
+  const { flags } = parseArgs(args, {
+    db: ".doc-kit/index.db",
+    docs: "docs",
+  });
+
+  const dbPath = flags.db;
+  const docsDir = flags.docs;
+  const includeExamples = !("no-examples" in flags);
+
+  if (!fs.existsSync(dbPath)) {
+    console.error(`Error: Database not found at ${dbPath}`);
+    console.error(`Run "doc-kit index" first to create the index.`);
+    process.exit(1);
+  }
+
+  header("Performing Smart Code Review");
+
+  step("Reading data from database");
+  const db = new Database(dbPath);
+  const registry = createDocRegistry(db);
+  const symbolRepo = createSymbolRepository(db);
+  const relRepo = createRelationshipRepository(db);
+  const graph = createKnowledgeGraph(db);
+  const patternAnalyzer = createPatternAnalyzer();
+  const archGuard = createArchGuard();
+  const reaper = createReaper();
+  done();
+
+  step("Running comprehensive code review");
+  const codeExampleValidator = includeExamples ? createCodeExampleValidator() : undefined;
+  const result = await performSmartCodeReview(
+    { docsDir, includeExamples },
+    {
+      symbolRepo,
+      relRepo,
+      registry,
+      patternAnalyzer,
+      archGuard,
+      reaper,
+      graph,
+      codeExampleValidator,
+    },
+  );
+  done();
+
+  db.close();
+
+  console.log(result);
+}
+
+async function runDeadCodeScan(args: string[]) {
+  const { flags } = parseArgs(args, {
+    db: ".doc-kit/index.db",
+    docs: "docs",
+  });
+
+  const dbPath = flags.db;
+  const docsDir = flags.docs;
+
+  if (!fs.existsSync(dbPath)) {
+    console.error(`Error: Database not found at ${dbPath}`);
+    console.error(`Run "doc-kit index" first to create the index.`);
+    process.exit(1);
+  }
+
+  header("Scanning for Dead Code");
+
+  step("Reading data from database");
+  const db = new Database(dbPath);
+  const registry = createDocRegistry(db);
+  const symbolRepo = createSymbolRepository(db);
+  const graph = createKnowledgeGraph(db);
+  const reaper = createReaper();
+  done();
+
+  step("Rebuilding registry");
+  await registry.rebuild(docsDir);
+  done();
+
+  const allSymbols = symbolRepo.findAll();
+  const mappings = await registry.findAllMappings();
+
+  // Debug: Check relationships
+  const relCount = db.prepare("SELECT COUNT(*) as count FROM relationships").get() as { count: number };
+  console.log(`Found ${relCount.count} relationships in database`);
+
+  step("Scanning for dead code");
+  const findings = reaper.scan(allSymbols, graph, mappings);
+  const deadCodeFindings = findings.filter(f => f.type === "dead_code");
+  done(`${deadCodeFindings.length} dead code issues found`);
+
+  if (deadCodeFindings.length > 0) {
+    step("Marking dead code in database");
+    reaper.markDeadCode(symbolRepo, deadCodeFindings);
+    done();
+
+    console.log("\nDead Code Findings:");
+    for (const finding of deadCodeFindings) {
+      console.log(`- ${finding.target}: ${finding.reason}`);
+    }
+  } else {
+    console.log("\nNo dead code found.");
+  }
+
+  db.close();
 }
 
 main().catch((err) => {

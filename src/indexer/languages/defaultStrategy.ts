@@ -34,7 +34,12 @@ export class DefaultStrategy implements LanguageStrategy {
     return undefined;
   }
 
-  refineKind(kind: SymbolKind, _name: string, _extendsName?: string, _implementsNames?: string[]): SymbolKind {
+  refineKind(
+    kind: SymbolKind,
+    _name: string,
+    _extendsName?: string,
+    _implementsNames?: string[],
+  ): SymbolKind {
     return kind;
   }
 
@@ -44,15 +49,39 @@ export class DefaultStrategy implements LanguageStrategy {
     return false;
   }
 
-  extractClassRelationships(_node: Parser.SyntaxNode, _classSymbol: CodeSymbol, _addRel: AddRelFn, _file: string): void {
+  extractClassRelationships(
+    _node: Parser.SyntaxNode,
+    _classSymbol: CodeSymbol,
+    _addRel: AddRelFn,
+    _file: string,
+  ): void {
     // No-op for unsupported languages
   }
 
-  extractInstantiationRelationships(_node: Parser.SyntaxNode, _symsInFile: CodeSymbol[], _addRel: AddRelFn, _file: string): void {
+  extractInstantiationRelationships(
+    _node: Parser.SyntaxNode,
+    _symsInFile: CodeSymbol[],
+    _addRel: AddRelFn,
+    _file: string,
+  ): void {
     // No-op for unsupported languages
   }
 
-  extractImportRelationships(_node: Parser.SyntaxNode, _symsInFile: CodeSymbol[], _addRel: AddRelFn, _file: string): void {
+  extractImportRelationships(
+    _node: Parser.SyntaxNode,
+    _symsInFile: CodeSymbol[],
+    _addRel: AddRelFn,
+    _file: string,
+  ): void {
+    // No-op for unsupported languages
+  }
+
+  extractCallRelationships(
+    _node: Parser.SyntaxNode,
+    _symsInFile: CodeSymbol[],
+    _addRel: AddRelFn,
+    _file: string,
+  ): void {
     // No-op for unsupported languages
   }
 }

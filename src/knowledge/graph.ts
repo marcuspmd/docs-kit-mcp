@@ -82,6 +82,7 @@ export function createKnowledgeGraph(db: Database.Database): KnowledgeGraph {
     },
 
     async rebuild(symbols) {
+      console.log("KnowledgeGraph.rebuild() called - clearing relationships table");
       clearStmt.run();
 
       const relTypes: Array<{ field: keyof CodeSymbol; type: string }> = [

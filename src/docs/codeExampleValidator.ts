@@ -123,11 +123,15 @@ export function createCodeExampleValidator(): CodeExampleValidator {
     },
 
     async validateDoc(docPath: string): Promise<ValidationResult[]> {
+      console.log(`Extracting examples from ${docPath}...`);
       const examples = await this.extractExamples(docPath);
+      console.log(`Found ${examples.length} examples in ${docPath}`);
       const results: ValidationResult[] = [];
 
       for (const example of examples) {
+        console.log(`Validating example ${example.language} (${example.lineStart}-${example.lineEnd})...`);
         const result = await this.validateExample(example, docPath);
+        console.log(`Example validation result: ${result.valid ? 'valid' : 'invalid'}`);
         results.push(result);
       }
 
@@ -135,14 +139,19 @@ export function createCodeExampleValidator(): CodeExampleValidator {
     },
 
     async validateAll(docsDir: string): Promise<ValidationResult[]> {
+      console.log(`Finding markdown files in ${docsDir}...`);
       const mdFiles = await fastGlob("**/*.md", { cwd: docsDir });
+      console.log(`Found ${mdFiles.length} markdown files`);
       const allResults: ValidationResult[] = [];
 
       for (const file of mdFiles) {
+        console.log(`Validating file: ${file}`);
         const results = await this.validateDoc(join(docsDir, file));
+        console.log(`File ${file} has ${results.length} examples`);
         allResults.push(...results);
       }
 
+      console.log(`Total validation results: ${allResults.length}`);
       return allResults;
     },
   };
