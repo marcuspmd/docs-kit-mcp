@@ -5,6 +5,7 @@ import { DocRegistry } from "./docRegistry.js";
 import { updateFrontmatter } from "./frontmatter.js";
 import { buildUpdateSectionPrompt } from "../prompts/updateSection.prompt.js";
 import { Config } from "../config.js";
+import type { LlmProvider } from "../llm/provider.js";
 
 export interface MarkdownSection {
   heading: string;
@@ -102,8 +103,9 @@ export function updateSection(
   symbolName: string,
   impact: ChangeImpact,
   config: Config,
+  llm?: LlmProvider,
 ): Promise<{ result: string; heading?: string }> {
-  return updateSectionAsync(markdown, sections, symbolName, impact, config);
+  return updateSectionAsync(markdown, sections, symbolName, impact, config, llm);
 }
 
 async function updateSectionAsync(
@@ -112,6 +114,7 @@ async function updateSectionAsync(
   symbolName: string,
   impact: ChangeImpact,
   config: Config,
+  llm?: LlmProvider,
 ): Promise<{ result: string; heading?: string }> {
   const section = findSection(sections, symbolName);
 
@@ -131,6 +134,7 @@ async function updateSectionAsync(
       currentSection: section.content,
     },
     config,
+    llm,
   );
 
   // Replace existing section content, keeping heading
@@ -147,7 +151,7 @@ async function updateSectionAsync(
   };
 }
 
-export function createDocUpdater(options?: { dryRun?: boolean }): DocUpdater {
+export function createDocUpdater(options?: { dryRun?: boolean; llm?: LlmProvider }): DocUpdater {
   const dryRun = options?.dryRun ?? false;
 
   return {
@@ -203,6 +207,7 @@ export function createDocUpdater(options?: { dryRun?: boolean }): DocUpdater {
               impact.symbol.name,
               impact,
               config,
+              options?.llm,
             );
 
             const diff = dryRun ? diffText(markdown, updated) : undefined;

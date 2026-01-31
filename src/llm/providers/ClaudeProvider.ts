@@ -1,16 +1,21 @@
 import type { Config } from "../../config.js";
 import type { LlmProvider } from "../provider.js";
+import Anthropic from "@anthropic-ai/sdk";
 
-type AnthropicClient = InstanceType<typeof import("@anthropic-ai/sdk").default>;
+type AnthropicClient = InstanceType<typeof Anthropic>;
 
 export class ClaudeProvider implements LlmProvider {
   private client: AnthropicClient | undefined;
 
-  constructor(private config: Config) {}
+  constructor(
+    private config: Config,
+    client?: AnthropicClient,
+  ) {
+    if (client) this.client = client;
+  }
 
-  private async getClient() {
+  private getClient() {
     if (!this.client) {
-      const Anthropic = (await import("@anthropic-ai/sdk")).default;
       this.client = new Anthropic({
         apiKey: this.config.llm.apiKey || process.env.ANTHROPIC_API_KEY,
       });
@@ -22,7 +27,7 @@ export class ClaudeProvider implements LlmProvider {
     messages: Array<{ role: string; content: string }>,
     opts?: { maxTokens?: number; temperature?: number },
   ): Promise<string> {
-    const client = await this.getClient();
+    const client = this.getClient();
 
     // Separate system message from the rest
     const systemMessages = messages.filter((m) => m.role === "system");

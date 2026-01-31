@@ -1,32 +1,33 @@
 import { jest } from "@jest/globals";
 
 // Mock OpenAI
-const mockChatCreate = jest.fn();
-// @ts-expect-error Mocking OpenAI response
-mockChatCreate.mockResolvedValue({
-  choices: [{ message: { content: "Updated content from LLM" } }],
-});
-const mockEmbeddingsCreate = jest.fn();
-// @ts-expect-error Mocking OpenAI embeddings response
-mockEmbeddingsCreate.mockResolvedValue({
-  data: [{ embedding: [0.1, 0.2, 0.3] }],
+const mockEmbeddingsCreate = jest
+  .fn<(texts: string[]) => Promise<number[][]>>()
+  .mockResolvedValue([[0.1, 0.2, 0.3]]);
+
+// Mock Anthropic
+const mockAnthropicCreate = jest.fn();
+// @ts-expect-error Mocking Anthropic response
+mockAnthropicCreate.mockResolvedValue({
+  content: [{ type: "text", text: "Updated content from LLM" }],
 });
 
-jest.mock("openai", () => {
+jest.mock("@anthropic-ai/sdk", () => {
   return {
     __esModule: true,
     default: jest.fn().mockImplementation(() => ({
-      chat: {
-        completions: {
-          create: mockChatCreate,
-        },
-      },
-      embeddings: {
-        create: mockEmbeddingsCreate,
+      messages: {
+        create: mockAnthropicCreate,
       },
     })),
   };
 });
+
+// Mock the provider factory
+const mockCreateLlmProvider = jest.fn();
+jest.mock("../src/llm/provider.js", () => ({
+  createLlmProvider: mockCreateLlmProvider,
+}));
 
 import {
   parseFrontmatter,
@@ -353,12 +354,17 @@ describe("updateSection", () => {
 
   test("updates existing section content", async () => {
     const sections = parseSections(md);
+    const mockProvider = {
+      chat: async () => "Updated content from LLM",
+      embed: mockEmbeddingsCreate,
+    };
     const { result, heading } = await updateSection(
       md,
       sections,
       "createOrder",
       impact,
       mockConfig,
+      mockProvider,
     );
     expect(result).toContain("## createOrder");
     expect(result).toContain("Updated content from LLM");
@@ -373,7 +379,18 @@ describe("updateSection", () => {
       symbol: { ...impact.symbol, name: "processOrder" },
       changeType: "added",
     } as unknown as ChangeImpact;
-    const { result } = await updateSection(md, sections, "processOrder", newImpact, mockConfig);
+    const mockProvider = {
+      chat: async () => "Updated content from LLM",
+      embed: mockEmbeddingsCreate,
+    };
+    const { result } = await updateSection(
+      md,
+      sections,
+      "processOrder",
+      newImpact,
+      mockConfig,
+      mockProvider,
+    );
     expect(result).toContain("## processOrder");
     expect(result).toContain("TODO: Document");
   });
@@ -385,6 +402,7 @@ describe("docUpdater", () => {
   let db: Database.Database;
   let tmpDir: string;
   let mockConfig: Config;
+  let updater: ReturnType<typeof createDocUpdater>;
 
   const ordersDoc = `---
 title: Order Service
@@ -406,6 +424,12 @@ Old deprecated method.
 `;
 
   beforeEach(async () => {
+    // Create mock provider
+    const mockProvider = {
+      chat: async () => "Updated content from LLM",
+      embed: mockEmbeddingsCreate,
+    };
+
     db = new Database(":memory:");
     tmpDir = await mkdtemp(join(tmpdir(), "dockit-updater-"));
     await mkdir(join(tmpDir, "domain"), { recursive: true });
@@ -417,6 +441,9 @@ Old deprecated method.
         apiKey: "test-key",
       },
     });
+
+    // Create updater with mock provider
+    updater = createDocUpdater({ llm: mockProvider });
   });
 
   afterEach(async () => {
@@ -436,7 +463,6 @@ Old deprecated method.
   test("updates correct section for modified symbol", async () => {
     const registry = createDocRegistry(db);
     await registry.rebuild(tmpDir);
-    const updater = createDocUpdater();
     const results = await updater.applyChanges(
       [makeImpact("createOrder", "modified")],
       registry,
@@ -457,7 +483,6 @@ Old deprecated method.
   test("removes correct section for deleted symbol", async () => {
     const registry = createDocRegistry(db);
     await registry.rebuild(tmpDir);
-    const updater = createDocUpdater();
     const results = await updater.applyChanges(
       [makeImpact("legacyMethod", "removed")],
       registry,
@@ -476,8 +501,6 @@ Old deprecated method.
 
   test("never creates new files", async () => {
     const registry = createDocRegistry(db);
-    const updater = createDocUpdater();
-    // Symbol with no mapping — should skip, not create
     const results = await updater.applyChanges(
       [makeImpact("BrandNew", "added")],
       registry,
@@ -491,7 +514,6 @@ Old deprecated method.
   test("does not modify unrelated sections", async () => {
     const registry = createDocRegistry(db);
     await registry.rebuild(tmpDir);
-    const updater = createDocUpdater();
     await updater.applyChanges(
       [makeImpact("createOrder", "modified")],
       registry,
@@ -507,8 +529,11 @@ Old deprecated method.
   test("dryRun returns diff without writing", async () => {
     const registry = createDocRegistry(db);
     await registry.rebuild(tmpDir);
-    const updater = createDocUpdater({ dryRun: true });
-    const results = await updater.applyChanges(
+    const dryRunUpdater = createDocUpdater({
+      dryRun: true,
+      llm: { chat: async () => "Updated content from LLM", embed: mockEmbeddingsCreate },
+    });
+    const results = await dryRunUpdater.applyChanges(
       [makeImpact("createOrder", "modified")],
       registry,
       tmpDir,
@@ -526,7 +551,6 @@ Old deprecated method.
   test("skips impacts where docUpdateRequired is false", async () => {
     const registry = createDocRegistry(db);
     await registry.rebuild(tmpDir);
-    const updater = createDocUpdater();
     const impact = makeImpact("createOrder", "modified");
     impact.docUpdateRequired = false;
     const results = await updater.applyChanges([impact], registry, tmpDir, mockConfig);
@@ -536,7 +560,6 @@ Old deprecated method.
   test("returns skipped for symbol with no doc mapping", async () => {
     const registry = createDocRegistry(db);
     await registry.rebuild(tmpDir);
-    const updater = createDocUpdater();
     const results = await updater.applyChanges(
       [makeImpact("UnknownSymbol", "modified")],
       registry,
