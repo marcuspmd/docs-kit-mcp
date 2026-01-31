@@ -127,15 +127,66 @@ export class PhpStrategy implements LanguageStrategy {
   }
 
   extractInstantiationRelationships(node: Parser.SyntaxNode, symsInFile: CodeSymbol[], addRel: AddRelFn, file: string): void {
-    if (node.type !== "object_creation_expression") return;
-    const nameNode = node.children.find(
-      (c) => c.type === "name" || c.type === "qualified_name",
-    );
-    if (nameNode) {
-      const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
-      if (enclosing) {
-        addRel(enclosing.id, nameNode.text, "instantiates", file, node.startPosition.row + 1);
+    // object_creation_expression → instantiates
+    if (node.type === "object_creation_expression") {
+      const nameNode = node.children.find(
+        (c) => c.type === "name" || c.type === "qualified_name",
+      );
+      if (nameNode) {
+        const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
+        if (enclosing) {
+          addRel(enclosing.id, nameNode.text, "instantiates", file, node.startPosition.row + 1);
+        }
       }
+      return;
+    }
+
+    // scoped_call_expression where method = "dispatch" → dispatches
+    if (node.type === "scoped_call_expression") {
+      const scope = node.children.find((c) => c.type === "name" || c.type === "qualified_name");
+      const methodName = node.childForFieldName("name")?.text;
+      if (scope && methodName === "dispatch") {
+        const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
+        if (enclosing) {
+          const parts = scope.text.split("\\");
+          const shortName = parts[parts.length - 1];
+          addRel(enclosing.id, shortName, "dispatches", file, node.startPosition.row + 1);
+        }
+      }
+    }
+  }
+
+  extractEventListenerRelationships(node: Parser.SyntaxNode, symsInFile: CodeSymbol[], addRel: AddRelFn, file: string): void {
+    if (node.type !== "method_declaration") return;
+    const methodName = node.childForFieldName("name")?.text;
+    if (methodName !== "handle") return;
+
+    const params = node.children.find((c) => c.type === "formal_parameters");
+    if (!params) return;
+
+    const firstParam = params.children.find((c) => c.type === "simple_parameter");
+    if (!firstParam) return;
+
+    const typeNode = firstParam.children.find(
+      (c) => c.type === "name" || c.type === "qualified_name" || c.type === "named_type" || c.type === "union_type",
+    );
+    if (!typeNode) return;
+
+    // For union_type, take the first type; for qualified_name, take last segment
+    let typeName = typeNode.text;
+    if (typeNode.type === "union_type") {
+      const first = typeNode.children.find((c) => c.type === "name" || c.type === "qualified_name" || c.type === "named_type");
+      if (first) typeName = first.text;
+    }
+    const parts = typeName.split("\\");
+    const shortName = parts[parts.length - 1];
+
+    // Find the enclosing class symbol
+    const enclosingClass = symsInFile.find(
+      (s) => !s.parent && s.startLine <= node.startPosition.row + 1 && s.endLine >= node.endPosition.row + 1,
+    );
+    if (enclosingClass) {
+      addRel(enclosingClass.id, shortName, "listens_to", file, node.startPosition.row + 1);
     }
   }
 

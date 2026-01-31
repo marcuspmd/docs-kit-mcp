@@ -91,6 +91,7 @@ function walkForRelationships(
 
   strategy.extractInstantiationRelationships(node, symsInFile, addRel, file);
   strategy.extractImportRelationships(node, symsInFile, addRel, file);
+  strategy.extractEventListenerRelationships?.(node, symsInFile, addRel, file);
 
   for (const child of node.children) {
     walkForRelationships(child, file, symsInFile, addRel, strategy);

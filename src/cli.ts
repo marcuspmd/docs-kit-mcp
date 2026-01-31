@@ -178,6 +178,7 @@ async function runIndex(args: string[]) {
   const trees = new Map<string, Parser.Tree>();
   const sources = new Map<string, string>();
   let errorCount = 0;
+  const indexErrors: Array<{ file: string; error: string }> = [];
 
   for (const filePath of tsFiles) {
     try {
@@ -195,11 +196,35 @@ async function runIndex(args: string[]) {
         sym.source = "human";
       }
       allSymbols.push(...symbols);
-    } catch {
+    } catch (err) {
       errorCount++;
+      const msg = err instanceof Error ? err.message : String(err);
+      const rel = path.relative(rootDir, filePath);
+      indexErrors.push({ file: rel, error: msg });
     }
   }
   done(`${allSymbols.length} symbols${errorCount > 0 ? ` (${errorCount} errors)` : ""}`);
+
+  if (indexErrors.length > 0) {
+    // Group errors by message to avoid flooding the output
+    const grouped = new Map<string, string[]>();
+    for (const { file, error } of indexErrors) {
+      const list = grouped.get(error) ?? [];
+      list.push(file);
+      grouped.set(error, list);
+    }
+    console.error(`\n  Index errors (${indexErrors.length} files):`);
+    for (const [error, files] of grouped) {
+      console.error(`    [${files.length}x] ${error}`);
+      for (const f of files.slice(0, 5)) {
+        console.error(`         ${f}`);
+      }
+      if (files.length > 5) {
+        console.error(`         ... and ${files.length - 5} more`);
+      }
+    }
+    console.error();
+  }
 
   // Phase 2: Extract relationships
   step("Extracting relationships");

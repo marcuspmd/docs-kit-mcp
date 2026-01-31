@@ -41,6 +41,8 @@ export function buildMermaidForSymbol(
     instantiates: "-.->|instantiates|",
     calls: "-->|calls|",
     contains: "-->|contains|",
+    listens_to: "-.->|listens to|",
+    dispatches: "-->|dispatches|",
   };
 
   for (const rel of relevantRels) {

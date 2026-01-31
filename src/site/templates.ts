@@ -348,6 +348,46 @@ export function renderSymbolPage(
         : ""
     }
 
+    ${(() => {
+      const listeners = incoming.filter((r) => r.type === "listens_to");
+      if (symbol.kind === "event" && listeners.length > 0) {
+        return `<h2>Listeners</h2>
+    <table>
+      <thead><tr><th scope="col">Listener</th><th scope="col">File</th></tr></thead>
+      <tbody>
+        ${listeners.map((r) => {
+          const source = allSymbols.find((s) => s.id === r.source_id);
+          return `<tr>
+          <td>${source ? `<a href="${source.id}.html">${escapeHtml(source.name)}</a>` : r.source_id}</td>
+          <td>${source ? `<a href="../files/${fileSlug(source.file)}.html">${escapeHtml(source.file)}</a>` : "-"}</td>
+        </tr>`;
+        }).join("")}
+      </tbody>
+    </table>`;
+      }
+      return "";
+    })()}
+
+    ${(() => {
+      const listensTo = outgoing.filter((r) => r.type === "listens_to");
+      if (symbol.kind === "listener" && listensTo.length > 0) {
+        return `<h2>Listens to</h2>
+    <table>
+      <thead><tr><th scope="col">Event</th><th scope="col">File</th></tr></thead>
+      <tbody>
+        ${listensTo.map((r) => {
+          const target = allSymbols.find((s) => s.id === r.target_id);
+          return `<tr>
+          <td>${target ? `<a href="${target.id}.html">${escapeHtml(target.name)}</a>` : r.target_id}</td>
+          <td>${target ? `<a href="../files/${fileSlug(target.file)}.html">${escapeHtml(target.file)}</a>` : "-"}</td>
+        </tr>`;
+        }).join("")}
+      </tbody>
+    </table>`;
+      }
+      return "";
+    })()}
+
     ${
       depGraph
         ? `<h2>Dependencies</h2>
