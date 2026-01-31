@@ -1,14 +1,14 @@
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 
-const execAsync = promisify(exec);
-
 export interface ValidatorStrategy {
   canValidate(language: string): boolean;
   validate(code: string): Promise<{ valid: boolean; error?: string }>;
 }
 
 export class BashValidator implements ValidatorStrategy {
+  static execAsync = promisify(exec);
+
   canValidate(language: string): boolean {
     return language === "bash" || language === "sh";
   }
@@ -19,7 +19,7 @@ export class BashValidator implements ValidatorStrategy {
     }
 
     try {
-      await execAsync(`bash -n <<< '${code.replace(/'/g, "'\\''")}'`);
+      await BashValidator.execAsync(`bash -n <<< '${code.replace(/'/g, "'\\''")}'`);
       return { valid: true };
     } catch (error: unknown) {
       const execError = error as { stderr?: string; message?: string };

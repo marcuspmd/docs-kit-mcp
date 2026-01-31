@@ -2,14 +2,14 @@ import { writeFile } from "node:fs/promises";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 
-const execAsync = promisify(exec);
-
 export interface ValidatorStrategy {
   canValidate(language: string): boolean;
   validate(code: string): Promise<{ valid: boolean; error?: string }>;
 }
 
 export class GoValidator implements ValidatorStrategy {
+  static execAsync = promisify(exec);
+
   canValidate(language: string): boolean {
     return language === "go" || language === "golang";
   }
@@ -22,7 +22,7 @@ export class GoValidator implements ValidatorStrategy {
     const tempFile = `/tmp/example-${Date.now()}.go`;
     try {
       await writeFile(tempFile, code);
-      await execAsync(`go build -o /dev/null ${tempFile}`);
+      await GoValidator.execAsync(`go build -o /dev/null ${tempFile}`);
       return { valid: true };
     } catch (error: unknown) {
       const execError = error as { stderr?: string; message?: string };
@@ -39,7 +39,7 @@ export class GoValidator implements ValidatorStrategy {
       };
     } finally {
       try {
-        await execAsync(`rm -f ${tempFile}`);
+        await GoValidator.execAsync(`rm -f ${tempFile}`);
       } catch {
         // Ignore cleanup errors
       }

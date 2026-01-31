@@ -4,6 +4,8 @@ import {
   analyzeChanges,
   isSymbolImpacted,
   requiresDocUpdate,
+  extractRelevantDiff,
+  createDefaultDeps,
   type AnalyzeDeps,
 } from "../src/analyzer/changeAnalyzer.js";
 
@@ -196,5 +198,100 @@ describe("analyzeChanges", () => {
     expect(impacts).toHaveLength(2);
     expect(impacts.every((i) => i.changeType === "added")).toBe(true);
     expect(impacts.every((i) => i.docUpdateRequired === true)).toBe(true);
+  });
+
+  it("handles moved symbols that overlap hunks", async () => {
+    const deps = makeDeps(
+      [
+        {
+          oldPath: "src/f.ts",
+          newPath: "src/f.ts",
+          status: "modified",
+          hunks: [{ oldStart: 5, oldLines: 3, newStart: 5, newLines: 5, content: "+new" }],
+        },
+      ],
+      {
+        "src/f.ts": {
+          old: [sym({ name: "Far", kind: "function", startLine: 1, endLine: 10 })],
+          new: [sym({ name: "Far", kind: "function", startLine: 3, endLine: 12 })],
+        },
+      },
+    );
+
+    const impacts = await analyzeChanges({ repoPath: ".", base: "main" }, deps);
+    expect(impacts).toHaveLength(1);
+    expect(impacts[0].changeType).toBe("moved");
+  });
+});
+
+describe("extractRelevantDiff", () => {
+  it("extracts diff content that overlaps with symbol", () => {
+    const symbol = sym({ name: "Test", kind: "function", startLine: 10, endLine: 20 });
+    const fileDiff: FileDiff = {
+      oldPath: "src/test.ts",
+      newPath: "src/test.ts",
+      status: "modified",
+      hunks: [
+        { oldStart: 1, oldLines: 5, newStart: 1, newLines: 5, content: "line1\nline2" },
+        { oldStart: 10, oldLines: 3, newStart: 10, newLines: 5, content: "line10\nline11\n+new" },
+        { oldStart: 25, oldLines: 2, newStart: 25, newLines: 2, content: "line25" },
+      ],
+    };
+
+    const result = extractRelevantDiff(fileDiff, symbol);
+    expect(result).toBe("line10\nline11\n+new");
+  });
+
+  it("returns empty string when no hunks overlap", () => {
+    const symbol = sym({ name: "Test", kind: "function", startLine: 50, endLine: 60 });
+    const fileDiff: FileDiff = {
+      oldPath: "src/test.ts",
+      newPath: "src/test.ts",
+      status: "modified",
+      hunks: [{ oldStart: 1, oldLines: 5, newStart: 1, newLines: 5, content: "content" }],
+    };
+
+    const result = extractRelevantDiff(fileDiff, symbol);
+    expect(result).toBe("");
+  });
+
+  it("combines multiple overlapping hunks", () => {
+    const symbol = sym({ name: "Test", kind: "function", startLine: 1, endLine: 20 });
+    const fileDiff: FileDiff = {
+      oldPath: "src/test.ts",
+      newPath: "src/test.ts",
+      status: "modified",
+      hunks: [
+        { oldStart: 5, oldLines: 3, newStart: 5, newLines: 3, content: "hunk1" },
+        { oldStart: 10, oldLines: 3, newStart: 10, newLines: 3, content: "hunk2" },
+      ],
+    };
+
+    const result = extractRelevantDiff(fileDiff, symbol);
+    expect(result).toBe("hunk1\nhunk2");
+  });
+});
+
+describe("default dependencies", () => {
+  it("creates default deps with expected structure", () => {
+    const deps = createDefaultDeps();
+    expect(typeof deps.getFileDiffs).toBe("function");
+    expect(typeof deps.getFileAtRef).toBe("function");
+    expect(typeof deps.indexSource).toBe("function");
+  });
+
+  it("getFileAtRef returns file content when git command succeeds", async () => {
+    const deps = createDefaultDeps();
+    // Test with a valid ref and existing file
+    const result = await deps.getFileAtRef(".", "package.json", "HEAD");
+    expect(result).toContain('"name": "doc-kit"');
+    expect(typeof result).toBe("string");
+  });
+
+  it("getFileAtRef returns null when git command fails", async () => {
+    const deps = createDefaultDeps();
+    // Test with a non-existent ref to trigger the catch block
+    const result = await deps.getFileAtRef(".", "nonexistent.ts", "nonexistent-ref");
+    expect(result).toBeNull();
   });
 });

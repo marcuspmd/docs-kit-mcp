@@ -2,14 +2,13 @@ import { writeFile } from "node:fs/promises";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 
-const execAsync = promisify(exec);
-
 export interface ValidatorStrategy {
   canValidate(language: string): boolean;
   validate(code: string): Promise<{ valid: boolean; error?: string }>;
 }
 
 export class PHPValidator implements ValidatorStrategy {
+  static execAsync = promisify(exec);
   canValidate(language: string): boolean {
     return language === "php";
   }
@@ -22,7 +21,7 @@ export class PHPValidator implements ValidatorStrategy {
     const tempFile = `/tmp/example-${Date.now()}.php`;
     try {
       await writeFile(tempFile, code);
-      await execAsync(`php -l ${tempFile}`);
+      await PHPValidator.execAsync(`php -l ${tempFile}`);
       return { valid: true };
     } catch (error: unknown) {
       const execError = error as { stderr?: string; message?: string };
@@ -31,7 +30,7 @@ export class PHPValidator implements ValidatorStrategy {
         error: `PHP syntax error: ${execError.stderr || execError.message || "Unknown error"}`,
       };
     } finally {
-      await execAsync(`rm -f ${tempFile}`);
+      await PHPValidator.execAsync(`rm -f ${tempFile}`);
     }
   }
 }

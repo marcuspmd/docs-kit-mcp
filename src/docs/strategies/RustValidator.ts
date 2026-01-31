@@ -2,14 +2,13 @@ import { writeFile } from "node:fs/promises";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 
-const execAsync = promisify(exec);
-
 export interface ValidatorStrategy {
   canValidate(language: string): boolean;
   validate(code: string): Promise<{ valid: boolean; error?: string }>;
 }
 
 export class RustValidator implements ValidatorStrategy {
+  static execAsync = promisify(exec);
   canValidate(language: string): boolean {
     return language === "rust" || language === "rs";
   }
@@ -22,7 +21,7 @@ export class RustValidator implements ValidatorStrategy {
     const tempFile = `/tmp/example-${Date.now()}.rs`;
     try {
       await writeFile(tempFile, code);
-      await execAsync(`rustc --emit=dep-info --out-dir=/tmp ${tempFile}`);
+      await RustValidator.execAsync(`rustc --emit=dep-info --out-dir=/tmp ${tempFile}`);
       return { valid: true };
     } catch (error: unknown) {
       const execError = error as { stderr?: string; message?: string };
@@ -39,7 +38,7 @@ export class RustValidator implements ValidatorStrategy {
       };
     } finally {
       try {
-        await execAsync(`rm -f ${tempFile}`);
+        await RustValidator.execAsync(`rm -f ${tempFile}`);
       } catch {
         // Ignore cleanup errors
       }

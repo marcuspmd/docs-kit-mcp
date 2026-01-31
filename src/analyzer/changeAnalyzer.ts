@@ -64,7 +64,7 @@ function defaultIndexSource(): (filePath: string, source: string) => CodeSymbol[
   return (filePath, source) => indexFile(filePath, source, parser);
 }
 
-function createDefaultDeps(): AnalyzeDeps {
+export function createDefaultDeps(): AnalyzeDeps {
   return {
     getFileDiffs: getGitDiff,
     getFileAtRef: defaultGetFileAtRef,

@@ -117,3 +117,5 @@ function minimatch(path: string, pattern: string): boolean {
     .replace(/\{\{GLOBSTAR\}\}/g, ".*");
   return new RegExp(`^${regex}$`).test(path);
 }
+
+export { minimatch };

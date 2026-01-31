@@ -2,14 +2,14 @@ import { writeFile } from "node:fs/promises";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 
-const execAsync = promisify(exec);
-
 export interface ValidatorStrategy {
   canValidate(language: string): boolean;
   validate(code: string): Promise<{ valid: boolean; error?: string }>;
 }
 
 export class JavaScriptValidator implements ValidatorStrategy {
+  static execAsync = promisify(exec);
+
   canValidate(language: string): boolean {
     return language === "javascript" || language === "js";
   }
@@ -22,7 +22,7 @@ export class JavaScriptValidator implements ValidatorStrategy {
     const tempFile = `/tmp/example-${Date.now()}.js`;
     try {
       await writeFile(tempFile, code);
-      await execAsync(`node --check ${tempFile}`);
+      await JavaScriptValidator.execAsync(`node --check ${tempFile}`);
       return { valid: true };
     } catch (error: unknown) {
       const execError = error as { stderr?: string; message?: string };
@@ -31,7 +31,7 @@ export class JavaScriptValidator implements ValidatorStrategy {
         error: `JavaScript syntax error: ${execError.stderr || execError.message || "Unknown error"}`,
       };
     } finally {
-      await execAsync(`rm -f ${tempFile}`);
+      await JavaScriptValidator.execAsync(`rm -f ${tempFile}`);
     }
   }
 }

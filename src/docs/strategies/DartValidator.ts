@@ -2,14 +2,14 @@ import { writeFile } from "node:fs/promises";
 import { exec } from "node:child_process";
 import { promisify } from "node:util";
 
-const execAsync = promisify(exec);
-
 export interface ValidatorStrategy {
   canValidate(language: string): boolean;
   validate(code: string): Promise<{ valid: boolean; error?: string }>;
 }
 
 export class DartValidator implements ValidatorStrategy {
+  static execAsync = promisify(exec);
+
   canValidate(language: string): boolean {
     return language === "dart";
   }
@@ -22,7 +22,7 @@ export class DartValidator implements ValidatorStrategy {
     const tempFile = `/tmp/example-${Date.now()}.dart`;
     try {
       await writeFile(tempFile, code);
-      await execAsync(`dart analyze ${tempFile}`);
+      await DartValidator.execAsync(`dart analyze ${tempFile}`);
       return { valid: true };
     } catch (error: unknown) {
       const execError = error as { stderr?: string; message?: string };
@@ -31,7 +31,7 @@ export class DartValidator implements ValidatorStrategy {
         error: `Dart analysis error: ${execError.stderr || execError.message || "Unknown error"}`,
       };
     } finally {
-      await execAsync(`rm -f ${tempFile}`);
+      await DartValidator.execAsync(`rm -f ${tempFile}`);
     }
   }
 }

@@ -174,4 +174,40 @@ index abc..def 100644
     expect(diffs[0].hunks[0].oldLines).toBe(1);
     expect(diffs[0].hunks[0].newLines).toBe(1);
   });
+
+  it("handles empty hunks", () => {
+    const raw = `diff --git a/f.ts b/f.ts
+index abc..def 100644
+--- a/f.ts
++++ b/f.ts
+@@ -1,3 +1,3 @@
+line1
+line2
+line3`;
+
+    const diffs = parseGitDiff(raw);
+    expect(diffs[0].hunks[0].content).toBe("line1\nline2\nline3");
+  });
+
+  it("handles multiple consecutive diff headers", () => {
+    const raw = `diff --git a/a.ts b/a.ts
+index abc..def 100644
+--- a/a.ts
++++ b/a.ts
+@@ -1 +1,2 @@
+ a
++b
+diff --git a/b.ts b/b.ts
+index abc..def 100644
+--- a/b.ts
++++ b/b.ts
+@@ -1 +1,2 @@
+ c
++d`;
+
+    const diffs = parseGitDiff(raw);
+    expect(diffs).toHaveLength(2);
+    expect(diffs[0].newPath).toBe("a.ts");
+    expect(diffs[1].newPath).toBe("b.ts");
+  });
 });
