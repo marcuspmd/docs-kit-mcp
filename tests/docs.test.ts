@@ -1,3 +1,21 @@
+import { jest } from "@jest/globals";
+
+// Mock OpenAI
+jest.mock("openai", () => {
+  return {
+    __esModule: true,
+    default: jest.fn().mockImplementation(() => ({
+      chat: {
+        completions: {
+          create: jest.fn().mockResolvedValue({
+            choices: [{ message: { content: "Updated content from LLM" } }],
+          }),
+        },
+      },
+    })),
+  };
+});
+
 import {
   parseFrontmatter,
   serializeFrontmatter,
@@ -15,6 +33,7 @@ import { ChangeImpact } from "../src/indexer/symbol.types.js";
 import { mkdtemp, writeFile, mkdir, rm, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
+import { Config, ConfigSchema } from "../src/config.js";
 
 describe("frontmatter parser", () => {
   const fixture1 = `---
@@ -311,23 +330,37 @@ describe("updateSection", () => {
     docUpdateRequired: true,
   } as unknown as ChangeImpact;
 
-  test("updates existing section content", () => {
+  const mockConfig = ConfigSchema.parse({
+    projectRoot: "/tmp",
+    llm: {
+      provider: "openai",
+      apiKey: "test-key",
+    },
+  });
+
+  test("updates existing section content", async () => {
     const sections = parseSections(md);
-    const { result, heading } = updateSection(md, sections, "createOrder", impact);
+    const { result, heading } = await updateSection(
+      md,
+      sections,
+      "createOrder",
+      impact,
+      mockConfig,
+    );
     expect(result).toContain("## createOrder");
-    expect(result).toContain("was modified");
+    expect(result).toContain("Updated content from LLM");
     expect(result).toContain("## cancelOrder");
     expect(heading).toBe("createOrder");
   });
 
-  test("appends new section when not found", () => {
+  test("appends new section when not found", async () => {
     const sections = parseSections(md);
     const newImpact = {
       ...impact,
       symbol: { ...impact.symbol, name: "processOrder" },
       changeType: "added",
     } as unknown as ChangeImpact;
-    const { result } = updateSection(md, sections, "processOrder", newImpact);
+    const { result } = await updateSection(md, sections, "processOrder", newImpact, mockConfig);
     expect(result).toContain("## processOrder");
     expect(result).toContain("TODO: Document");
   });
@@ -338,6 +371,7 @@ describe("updateSection", () => {
 describe("docUpdater", () => {
   let db: Database.Database;
   let tmpDir: string;
+  let mockConfig: Config;
 
   const ordersDoc = `---
 title: Order Service
@@ -363,6 +397,13 @@ Old deprecated method.
     tmpDir = await mkdtemp(join(tmpdir(), "dockit-updater-"));
     await mkdir(join(tmpDir, "domain"), { recursive: true });
     await writeFile(join(tmpDir, "domain", "orders.md"), ordersDoc);
+    mockConfig = ConfigSchema.parse({
+      projectRoot: tmpDir,
+      llm: {
+        provider: "openai",
+        apiKey: "test-key",
+      },
+    });
   });
 
   afterEach(async () => {
@@ -387,6 +428,7 @@ Old deprecated method.
       [makeImpact("createOrder", "modified")],
       registry,
       tmpDir,
+      mockConfig,
     );
 
     expect(results).toHaveLength(1);
@@ -395,7 +437,7 @@ Old deprecated method.
     expect(results[0].sectionHeading).toBe("## createOrder");
 
     const content = await readFile(join(tmpDir, "domain", "orders.md"), "utf-8");
-    expect(content).toContain("was modified");
+    expect(content).toContain("Updated content from LLM");
     expect(content).toContain("## legacyMethod");
   });
 
@@ -407,6 +449,7 @@ Old deprecated method.
       [makeImpact("legacyMethod", "removed")],
       registry,
       tmpDir,
+      mockConfig,
     );
 
     expect(results).toHaveLength(1);
@@ -422,7 +465,12 @@ Old deprecated method.
     const registry = createDocRegistry(db);
     const updater = createDocUpdater();
     // Symbol with no mapping — should skip, not create
-    const results = await updater.applyChanges([makeImpact("BrandNew", "added")], registry, tmpDir);
+    const results = await updater.applyChanges(
+      [makeImpact("BrandNew", "added")],
+      registry,
+      tmpDir,
+      mockConfig,
+    );
     expect(results).toHaveLength(1);
     expect(results[0].action).toBe("skipped");
   });
@@ -431,7 +479,12 @@ Old deprecated method.
     const registry = createDocRegistry(db);
     await registry.rebuild(tmpDir);
     const updater = createDocUpdater();
-    await updater.applyChanges([makeImpact("createOrder", "modified")], registry, tmpDir);
+    await updater.applyChanges(
+      [makeImpact("createOrder", "modified")],
+      registry,
+      tmpDir,
+      mockConfig,
+    );
 
     const content = await readFile(join(tmpDir, "domain", "orders.md"), "utf-8");
     expect(content).toContain("## legacyMethod");
@@ -446,6 +499,7 @@ Old deprecated method.
       [makeImpact("createOrder", "modified")],
       registry,
       tmpDir,
+      mockConfig,
     );
 
     expect(results[0].diff).toBeDefined();
@@ -462,7 +516,7 @@ Old deprecated method.
     const updater = createDocUpdater();
     const impact = makeImpact("createOrder", "modified");
     impact.docUpdateRequired = false;
-    const results = await updater.applyChanges([impact], registry, tmpDir);
+    const results = await updater.applyChanges([impact], registry, tmpDir, mockConfig);
     expect(results).toHaveLength(0);
   });
 
@@ -474,6 +528,7 @@ Old deprecated method.
       [makeImpact("UnknownSymbol", "modified")],
       registry,
       tmpDir,
+      mockConfig,
     );
     expect(results).toHaveLength(1);
     expect(results[0].action).toBe("skipped");

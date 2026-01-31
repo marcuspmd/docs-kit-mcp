@@ -11,9 +11,13 @@ import TypeScript from "tree-sitter-typescript";
 import { indexFile } from "./indexer/indexer.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
+import "dotenv/config";
 
 const config = ConfigSchema.parse({
   projectRoot: process.cwd(),
+  llm: {
+    apiKey: process.env.OPENAI_API_KEY,
+  },
 });
 
 const db = new Database(config.dbPath);
@@ -42,7 +46,7 @@ server.tool(
         head,
       });
       const updater = createDocUpdater({ dryRun });
-      const results = await updater.applyChanges(impacts, registry, docsDir);
+      const results = await updater.applyChanges(impacts, registry, docsDir, config);
 
       const summary = results
         .filter((r) => r.action !== "skipped")

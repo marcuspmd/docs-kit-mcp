@@ -3,6 +3,8 @@ import { join } from "node:path";
 import { ChangeImpact } from "../indexer/symbol.types.js";
 import { DocRegistry } from "./docRegistry.js";
 import { updateFrontmatter } from "./frontmatter.js";
+import { buildUpdateSectionPrompt } from "../prompts/updateSection.prompt.js";
+import { Config } from "../config.js";
 
 export interface MarkdownSection {
   heading: string;
@@ -25,6 +27,7 @@ export interface DocUpdater {
     impacts: ChangeImpact[],
     registry: DocRegistry,
     docsDir: string,
+    config: Config,
   ): Promise<UpdateResult[]>;
 }
 
@@ -98,7 +101,18 @@ export function updateSection(
   sections: MarkdownSection[],
   symbolName: string,
   impact: ChangeImpact,
-): { result: string; heading?: string } {
+  config: Config,
+): Promise<{ result: string; heading?: string }> {
+  return updateSectionAsync(markdown, sections, symbolName, impact, config);
+}
+
+async function updateSectionAsync(
+  markdown: string,
+  sections: MarkdownSection[],
+  symbolName: string,
+  impact: ChangeImpact,
+  config: Config,
+): Promise<{ result: string; heading?: string }> {
   const section = findSection(sections, symbolName);
 
   if (!section) {
@@ -108,10 +122,21 @@ export function updateSection(
     return { result: markdown.trimEnd() + "\n" + newSection + "\n", heading: baseName };
   }
 
+  // Use LLM to generate updated content
+  const updatedContent = await buildUpdateSectionPrompt(
+    {
+      symbolName,
+      changeType: impact.changeType,
+      diff: impact.diff || "",
+      currentSection: section.content,
+    },
+    config,
+  );
+
   // Replace existing section content, keeping heading
   const lines = markdown.split("\n");
   const headingLine = lines[section.startLine];
-  const replacement = [headingLine, "", `> Updated: \`${symbolName}\` was ${impact.changeType}.`];
+  const replacement = [headingLine, "", updatedContent];
 
   const before = lines.slice(0, section.startLine);
   const after = lines.slice(section.endLine + 1);
@@ -130,6 +155,7 @@ export function createDocUpdater(options?: { dryRun?: boolean }): DocUpdater {
       impacts: ChangeImpact[],
       registry: DocRegistry,
       docsDir: string,
+      config: Config,
     ): Promise<UpdateResult[]> {
       const results: UpdateResult[] = [];
 
@@ -171,11 +197,12 @@ export function createDocUpdater(options?: { dryRun?: boolean }): DocUpdater {
               diff: dryRun ? diff : undefined,
             });
           } else {
-            const { result: updated, heading } = updateSection(
+            const { result: updated, heading } = await updateSection(
               markdown,
               sections,
               impact.symbol.name,
               impact,
+              config,
             );
 
             const diff = dryRun ? diffText(markdown, updated) : undefined;

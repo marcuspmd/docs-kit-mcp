@@ -74,6 +74,16 @@ export const ConfigSchema = z.object({
       changePrompt: z.string().default("Summarize what changed semantically, not line-by-line."),
     })
     .default({}),
+
+  llm: z
+    .object({
+      provider: z.enum(["openai", "anthropic"]).default("openai"),
+      apiKey: z.string().optional(),
+      model: z.string().default("gpt-4"),
+      maxTokens: z.number().default(2000),
+      temperature: z.number().default(0.7),
+    })
+    .default({}),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
