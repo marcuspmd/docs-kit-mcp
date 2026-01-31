@@ -1,6 +1,6 @@
 # Task 19 — Business Context Mapper
 
-> **Status:** pending
+> **Status:** done
 > **Layer:** Business
 > **Priority:** Release 2
 > **Depends on:** 02, 07, 15
