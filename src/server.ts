@@ -15,6 +15,7 @@ import { createArchGuard } from "./governance/archGuard.js";
 import { createReaper } from "./governance/reaper.js";
 import { createContextMapper } from "./business/contextMapper.js";
 import { createCodeExampleValidator, ValidationResult } from "./docs/codeExampleValidator.js";
+import { generateProjectStatus, formatProjectStatus } from "./governance/projectStatus.js";
 import OpenAI from "openai";
 import Parser from "tree-sitter";
 import TypeScript from "tree-sitter-typescript";
@@ -711,6 +712,49 @@ server.tool(
     } catch (err) {
       return {
         content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.tool(
+  "projectStatus",
+  "Generate comprehensive project status report with documentation coverage, patterns, and metrics",
+  {
+    docsDir: z.string().default("docs").describe("Docs directory"),
+  },
+  async ({ docsDir }) => {
+    try {
+      const result = await generateProjectStatus(
+        { docsDir },
+        {
+          symbolRepo,
+          relRepo,
+          registry,
+          patternAnalyzer,
+          archGuard,
+          reaper,
+          graph,
+        },
+      );
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: formatProjectStatus(result),
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `Error generating status report: ${(err as Error).message}`,
+          },
+        ],
         isError: true,
       };
     }

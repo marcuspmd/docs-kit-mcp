@@ -16,6 +16,10 @@ import {
 } from "./storage/db.js";
 import { generateSite } from "./site/generator.js";
 import { generateDocs } from "./site/mdGenerator.js";
+import { generateProjectStatus, formatProjectStatus } from "./governance/projectStatus.js";
+import { createKnowledgeGraph } from "./knowledge/graph.js";
+import { createArchGuard } from "./governance/archGuard.js";
+import { createReaper } from "./governance/reaper.js";
 import type { CodeSymbol, SymbolRelationship } from "./indexer/symbol.types.js";
 
 /* ================== Helpers ================== */
@@ -65,6 +69,9 @@ async function main() {
         (args[4] || "node_modules,dist,.git,docs,tests,.doc-kit").split(",").map((d) => d.trim()),
       );
       break;
+    case "project-status":
+      await runProjectStatus(args.slice(1));
+      break;
     default:
       printHelp();
       process.exit(command === "--help" || command === "-h" ? 0 : 1);
@@ -82,6 +89,7 @@ Usage:
   doc-kit build-docs [--out dir] [--db path] [--root dir]
                                                         Generate Markdown documentation
   doc-kit generate-repo-docs [repo-dir] [docs-dir]     Generate markdown docs
+  doc-kit project-status [--db path] [--docs dir]      Generate project status report
   doc-kit --help                                        Show this help
 
 Commands:
@@ -89,6 +97,7 @@ Commands:
   build-site         Generate navigable HTML documentation from index
   build-docs         Generate structured Markdown documentation from index
   generate-repo-docs Create markdown doc stubs for undocumented symbols
+  project-status     Generate comprehensive project status report
 `);
 }
 
@@ -604,6 +613,54 @@ const value = ${symbol.name}.SomeValue;
     default:
       return `TODO: Add usage examples here.`;
   }
+}
+
+async function runProjectStatus(args: string[]) {
+  const { flags } = parseArgs(args, {
+    db: ".doc-kit/registry.db",
+    docs: "docs",
+  });
+
+  const dbPath = flags.db;
+  const docsDir = flags.docs;
+
+  if (!fs.existsSync(dbPath)) {
+    console.error(`Error: Database not found at ${dbPath}`);
+    console.error(`Run "doc-kit index" first to create the index.`);
+    process.exit(1);
+  }
+
+  header("Generating Project Status Report");
+
+  step("Reading data from database");
+  const db = new Database(dbPath);
+  const registry = createDocRegistry(db);
+  const symbolRepo = createSymbolRepository(db);
+  const relRepo = createRelationshipRepository(db);
+  const graph = createKnowledgeGraph(db);
+  const patternAnalyzer = createPatternAnalyzer();
+  const archGuard = createArchGuard();
+  const reaper = createReaper();
+  done();
+
+  step("Generating status report");
+  const result = await generateProjectStatus(
+    { docsDir },
+    {
+      symbolRepo,
+      relRepo,
+      registry,
+      patternAnalyzer,
+      archGuard,
+      reaper,
+      graph,
+    },
+  );
+  done();
+
+  db.close();
+
+  console.log(formatProjectStatus(result));
 }
 
 main().catch((err) => {

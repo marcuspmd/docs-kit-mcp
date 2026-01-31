@@ -196,6 +196,9 @@ No VS Code (via extensão MCP ou Copilot):
 
 @docs-agent generateMermaid symbols=OrderService,PaymentService type=classDiagram
 # → (retorna diagrama Mermaid)
+
+@docs-agent projectStatus
+# → Comprehensive project status report with coverage, patterns, violations, etc.
 ```
 
 #### c) Exemplos de automação/pipeline
@@ -240,6 +243,7 @@ npx doc-guard --base origin/main
   doc-kit build-site [--out dir] [--db path]
   doc-kit generate-repo-docs [repo-dir] [docs-dir]
   doc-kit build-docs [--out dir] [--db path] [--root dir]
+  doc-kit project-status [--db path] [--docs dir]
 ---
 
 ## Licença
