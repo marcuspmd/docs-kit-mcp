@@ -34,6 +34,10 @@ interface SymbolRow {
   signature: string | null;
   pattern: string | null;
   metrics: string | null;
+  doc_ref: string | null;
+  summary: string | null;
+  tags: string | null;
+  last_modified: string | null;
 }
 
 function rowToSymbol(row: SymbolRow): CodeSymbol {
@@ -51,6 +55,10 @@ function rowToSymbol(row: SymbolRow): CodeSymbol {
     signature: row.signature ?? undefined,
     pattern: row.pattern ?? undefined,
     metrics: row.metrics ? JSON.parse(row.metrics) : undefined,
+    docRef: row.doc_ref ?? undefined,
+    summary: row.summary ?? undefined,
+    tags: row.tags ? JSON.parse(row.tags) : undefined,
+    lastModified: row.last_modified ? new Date(row.last_modified) : undefined,
   };
 }
 
@@ -77,9 +85,7 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   const symbolRows = db.prepare("SELECT * FROM symbols").all() as SymbolRow[];
   const symbols = symbolRows.map(rowToSymbol);
 
-  const relationships = db
-    .prepare("SELECT * FROM relationships")
-    .all() as RelationshipRow[];
+  const relationships = db.prepare("SELECT * FROM relationships").all() as RelationshipRow[];
 
   db.close();
 
@@ -117,11 +123,9 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   // Generate file pages
   for (const file of files) {
     const fileSymbols = symbols.filter((s) => s.file === file);
-    const source = getSource(file);
-    fs.writeFileSync(
-      path.join(outDir, "files", `${fileSlug(file)}.html`),
-      renderFilePage(file, fileSymbols, source),
-    );
+    // Generate search index (items + facets)
+    const searchIndex = buildSearchIndex(symbols);
+    fs.writeFileSync(path.join(outDir, "search.json"), JSON.stringify(searchIndex));
   }
 
   // Generate relationships page
@@ -131,16 +135,10 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   );
 
   // Generate patterns page
-  fs.writeFileSync(
-    path.join(outDir, "patterns.html"),
-    renderPatternsPage(patterns, symbols),
-  );
+  fs.writeFileSync(path.join(outDir, "patterns.html"), renderPatternsPage(patterns, symbols));
 
   // Generate search index
-  fs.writeFileSync(
-    path.join(outDir, "search.json"),
-    JSON.stringify(buildSearchIndex(symbols)),
-  );
+  fs.writeFileSync(path.join(outDir, "search.json"), JSON.stringify(buildSearchIndex(symbols)));
 
   return {
     symbolPages: symbols.length,
