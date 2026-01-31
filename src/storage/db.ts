@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import type { CodeSymbol, SymbolKind } from "../indexer/symbol.types.js";
+import type { CodeSymbol, SymbolKind, SymbolRelationship } from "../indexer/symbol.types.js";
 
 /* ================== Database ================== */
 
@@ -341,6 +341,15 @@ export interface RelationshipRow {
   source_id: string;
   target_id: string;
   type: string;
+}
+
+/** Map storage RelationshipRow to SymbolRelationship for analyzers and generators. */
+export function relationshipRowsToSymbolRelationships(rows: RelationshipRow[]): SymbolRelationship[] {
+  return rows.map((r) => ({
+    sourceId: r.source_id,
+    targetId: r.target_id,
+    type: r.type as SymbolRelationship["type"],
+  }));
 }
 
 export interface RelationshipRepository {

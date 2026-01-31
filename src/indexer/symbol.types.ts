@@ -219,3 +219,15 @@ export type ChangeImpact = z.infer<typeof ChangeImpactSchema>;
 export function generateSymbolId(file: string, name: string, kind: SymbolKind): string {
   return createHash("sha256").update(`${file}::${name}::${kind}`).digest("hex").slice(0, 16);
 }
+
+/** Minimal CodeSymbol for fallback when a symbol is not found in the index (e.g. for prompt building). */
+export function createStubCodeSymbol(name: string, kind: SymbolKind = "function"): CodeSymbol {
+  return {
+    id: "_",
+    name,
+    kind,
+    file: "unknown",
+    startLine: 0,
+    endLine: 0,
+  };
+}

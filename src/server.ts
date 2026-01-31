@@ -7,15 +7,25 @@ import { analyzeChanges } from "./analyzer/changeAnalyzer.js";
 import { createDocUpdater } from "./docs/docUpdater.js";
 import { createDocRegistry } from "./docs/docRegistry.js";
 import { createKnowledgeGraph } from "./knowledge/graph.js";
-import { createSymbolRepository, createRelationshipRepository } from "./storage/db.js";
+import { buildRelevantContext } from "./knowledge/contextBuilder.js";
+import {
+  createSymbolRepository,
+  createRelationshipRepository,
+  relationshipRowsToSymbolRelationships,
+} from "./storage/db.js";
 import { createPatternAnalyzer } from "./patterns/patternAnalyzer.js";
-import { createEventFlowAnalyzer } from "./events/eventFlowAnalyzer.js";
+import {
+  createEventFlowAnalyzer,
+  formatEventFlowsAsMermaid,
+} from "./events/eventFlowAnalyzer.js";
 import { createRagIndex } from "./knowledge/rag.js";
 import { createArchGuard } from "./governance/archGuard.js";
 import { createReaper } from "./governance/reaper.js";
 import { createContextMapper } from "./business/contextMapper.js";
 import { createBusinessTranslator } from "./business/businessTranslator.js";
 import { createCodeExampleValidator, ValidationResult } from "./docs/codeExampleValidator.js";
+import { scanFileAndCreateDocs } from "./docs/docScanner.js";
+import { generateMermaid } from "./docs/mermaidGenerator.js";
 import { generateProjectStatus, formatProjectStatus } from "./governance/projectStatus.js";
 import { performSmartCodeReview } from "./governance/smartCodeReview.js";
 import { createLlmProvider } from "./llm/provider.js";
@@ -24,7 +34,7 @@ import TypeScript from "tree-sitter-typescript";
 import { indexFile } from "./indexer/indexer.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
-import { buildExplainSymbolPrompt } from "./prompts/explainSymbol.prompt.js";
+import { buildExplainSymbolContext } from "./handlers/explainSymbol.js";
 import { buildImpactAnalysisPrompt } from "./prompts/impactAnalysis.prompt.js";
 import { buildSmartCodeReviewPrompt } from "./prompts/smartCodeReview.prompt.js";
 import { buildCodeReviewPrompt } from "./prompts/codeReview.prompt.js";
@@ -132,12 +142,14 @@ server.tool(
   async ({ symbol: symbolName, docsDir }) => {
     try {
       await registry.rebuild(docsDir);
-
-      // Find symbol in index
-      const symbols = symbolRepo.findByName(symbolName);
-      const mappings = await registry.findDocBySymbol(symbolName);
-
-      if (symbols.length === 0 && mappings.length === 0) {
+      const result = await buildExplainSymbolContext(symbolName, {
+        projectRoot: config.projectRoot,
+        docsDir,
+        registry,
+        symbolRepo,
+        graph,
+      });
+      if (!result.found) {
         return {
           content: [
             {
@@ -147,51 +159,8 @@ server.tool(
           ],
         };
       }
-
-      const { readFile } = await import("node:fs/promises");
-      const { join } = await import("node:path");
-
-      // Get doc content
-      let docContent: string | undefined;
-      for (const mapping of mappings) {
-        try {
-          docContent = await readFile(join(docsDir, mapping.docPath), "utf-8");
-          break;
-        } catch { /* skip */ }
-      }
-
-      // Get source code and dependencies if we have the symbol in index
-      let sourceCode: string | undefined;
-      let dependencies: typeof symbols = [];
-      let dependents: typeof symbols = [];
-      const sym = symbols[0];
-
-      if (sym) {
-        try {
-          const filePath = path.resolve(config.projectRoot, sym.file);
-          const fullSource = await readFile(filePath, "utf-8");
-          const lines = fullSource.split("\n").slice(sym.startLine - 1, sym.endLine);
-          sourceCode = lines.join("\n");
-        } catch { /* skip */ }
-
-        // Get dependencies from graph
-        const depRels = graph.getDependencies(sym.id);
-        dependencies = symbolRepo.findByIds(depRels.map((r) => r.targetId));
-        const depByRels = graph.getDependents(sym.id);
-        dependents = symbolRepo.findByIds(depByRels.map((r) => r.sourceId));
-      }
-
-      // Build rich prompt for LLM
-      const prompt = buildExplainSymbolPrompt({
-        symbol: sym || { id: "", name: symbolName, kind: "function", file: "unknown", startLine: 0, endLine: 0 } as any,
-        sourceCode,
-        docContent,
-        dependencies,
-        dependents,
-      });
-
       return {
-        content: [{ type: "text" as const, text: prompt }],
+        content: [{ type: "text" as const, text: result.prompt }],
       };
     } catch (err) {
       return {
@@ -219,43 +188,13 @@ server.tool(
         .map((s) => s.trim())
         .filter(Boolean);
 
-      let diagram: string;
-
-      if (diagramType === "classDiagram") {
-        const lines = ["classDiagram"];
-        for (const name of symbolNames) {
-          if (name.includes(".")) {
-            const [cls, method] = name.split(".");
-            lines.push(`    ${cls} : +${method}()`);
-          } else {
-            lines.push(`    class ${name}`);
-          }
-        }
-        // Add relationships between top-level classes
-        const classes = [...new Set(symbolNames.map((n) => n.split(".")[0]))];
-        for (let i = 0; i < classes.length - 1; i++) {
-          lines.push(`    ${classes[i]} --> ${classes[i + 1]} : uses`);
-        }
-        diagram = lines.join("\n");
-      } else if (diagramType === "sequenceDiagram") {
-        const lines = ["sequenceDiagram"];
-        const classes = [...new Set(symbolNames.map((n) => n.split(".")[0]))];
-        for (let i = 0; i < classes.length - 1; i++) {
-          lines.push(`    ${classes[i]}->>+${classes[i + 1]}: call`);
-          lines.push(`    ${classes[i + 1]}-->>-${classes[i]}: response`);
-        }
-        diagram = lines.join("\n");
-      } else {
-        const lines = ["flowchart LR"];
-        const classes = [...new Set(symbolNames.map((n) => n.split(".")[0]))];
-        for (const cls of classes) {
-          lines.push(`    ${cls}[${cls}]`);
-        }
-        for (let i = 0; i < classes.length - 1; i++) {
-          lines.push(`    ${classes[i]} --> ${classes[i + 1]}`);
-        }
-        diagram = lines.join("\n");
-      }
+      const allSymbols = symbolRepo.findAll();
+      const allRels = relationshipRowsToSymbolRelationships(relRepo.findAll());
+      const diagram = generateMermaid(
+        { symbols: symbolNames, type: diagramType },
+        allSymbols,
+        allRels,
+      );
 
       return {
         content: [
@@ -289,7 +228,6 @@ server.tool(
     try {
       const absoluteFilePath = path.resolve(filePathParam);
 
-      // Ensure db directory exists
       const dbDir = path.dirname(dbPath);
       if (!fs.existsSync(dbDir)) {
         fs.mkdirSync(dbDir, { recursive: true });
@@ -300,53 +238,13 @@ server.tool(
       parser.setLanguage(TypeScript.typescript);
       const symbols = indexFile(absoluteFilePath, source, parser);
 
-      let createdCount = 0;
-      const createdSymbols: string[] = [];
-
-      for (const symbol of symbols) {
-        const mappings = await registry.findDocBySymbol(symbol.name);
-        if (mappings.length === 0) {
-          // Create a new doc file for this symbol
-          const docPath = `domain/${symbol.name}.md`;
-          const fullDocPath = path.join(docsDir, docPath);
-          const docDir = path.dirname(fullDocPath);
-          if (!fs.existsSync(docDir)) {
-            fs.mkdirSync(docDir, { recursive: true });
-          }
-
-          // Create initial doc content
-          const initialContent = `---
-title: ${symbol.name}
-symbols:
-  - ${symbol.name}
-lastUpdated: ${new Date().toISOString().slice(0, 10)}
----
-
-# ${symbol.name}
-
-> TODO: Document \`${symbol.name}\` (${symbol.kind} in ${path.relative(process.cwd(), symbol.file)}).
-
-## Description
-
-TODO: Add description here.
-
-## Usage
-
-TODO: Add usage examples here.
-`;
-
-          fs.writeFileSync(fullDocPath, initialContent, "utf-8");
-
-          // Register the mapping
-          await registry.register({
-            symbolName: symbol.name,
-            docPath,
-          });
-
-          createdCount++;
-          createdSymbols.push(symbol.name);
-        }
-      }
+      const { createdCount, createdSymbols } = await scanFileAndCreateDocs({
+        filePath: absoluteFilePath,
+        docsDir,
+        projectRoot: config.projectRoot,
+        symbols,
+        registry,
+      });
 
       if (createdCount === 0) {
         return {
@@ -433,11 +331,7 @@ server.tool(
   async () => {
     try {
       const allSymbols = symbolRepo.findAll();
-      const allRels = relRepo.findAll().map((r) => ({
-        sourceId: r.source_id,
-        targetId: r.target_id,
-        type: r.type,
-      }));
+      const allRels = relationshipRowsToSymbolRelationships(relRepo.findAll());
       const patterns = patternAnalyzer.analyze(allSymbols, allRels);
 
       const report = patterns
@@ -470,34 +364,9 @@ server.tool(
 server.tool("generateEventFlow", "Simulate event flows and listeners", {}, async () => {
   try {
     const allSymbols = symbolRepo.findAll();
-    const allRels = relRepo.findAll().map((r) => ({
-      sourceId: r.source_id,
-      targetId: r.target_id,
-      type: r.type,
-    }));
+    const allRels = relationshipRowsToSymbolRelationships(relRepo.findAll());
     const flows = eventFlowAnalyzer.analyze(allSymbols, allRels);
-
-    const lines = ["sequenceDiagram"];
-    for (const flow of flows) {
-      lines.push(`    participant ${flow.event.name}`);
-      for (const emitter of flow.emitters) {
-        lines.push(`    participant ${emitter.name}`);
-      }
-      for (const listener of flow.listeners) {
-        lines.push(`    participant ${listener.name}`);
-      }
-
-      for (const emitter of flow.emitters) {
-        lines.push(`    ${emitter.name}->>+${flow.event.name}: emit`);
-        for (const listener of flow.listeners) {
-          lines.push(`    ${flow.event.name}->>+${listener.name}: notify`);
-          lines.push(`    ${listener.name}-->>-${flow.event.name}: handle`);
-        }
-        lines.push(`    ${flow.event.name}-->>-${emitter.name}: emitted`);
-      }
-    }
-
-    const diagram = lines.join("\n");
+    const diagram = formatEventFlowsAsMermaid(flows);
 
     return {
       content: [
@@ -596,11 +465,7 @@ server.tool(
   async () => {
     try {
       const allSymbols = symbolRepo.findAll();
-      const allRels = relRepo.findAll().map((r) => ({
-        sourceId: r.source_id,
-        targetId: r.target_id,
-        type: r.type,
-      }));
+      const allRels = relationshipRowsToSymbolRelationships(relRepo.findAll());
       const violations = archGuard.analyze(allSymbols, allRels);
 
       const report = violations
@@ -903,104 +768,19 @@ server.tool(
         };
       }
 
-      const { readFile } = await import("node:fs/promises");
-      const parts: string[] = [];
-      let targetSymbols: ReturnType<typeof symbolRepo.findByName> = [];
-
-      if (symbolName) {
-        targetSymbols = symbolRepo.findByName(symbolName);
-      } else if (filePath) {
-        targetSymbols = symbolRepo.findByFile(filePath);
-      }
-
-      if (targetSymbols.length === 0) {
-        return {
-          content: [{ type: "text" as const, text: `No symbols found for: ${symbolName || filePath}` }],
-        };
-      }
-
-      // 1. Symbol info
-      parts.push(`# Context for ${symbolName || filePath}\n`);
-      parts.push(`## Symbols (${targetSymbols.length})\n`);
-      for (const sym of targetSymbols) {
-        parts.push(`### ${sym.qualifiedName || sym.name}`);
-        parts.push(`- Kind: ${sym.kind}`);
-        parts.push(`- File: ${sym.file}:${sym.startLine}-${sym.endLine}`);
-        if (sym.signature) parts.push(`- Signature: \`${sym.signature}\``);
-        if (sym.layer) parts.push(`- Layer: ${sym.layer}`);
-        if (sym.pattern) parts.push(`- Pattern: ${sym.pattern}`);
-        if (sym.summary) parts.push(`- Summary: ${sym.summary}`);
-        parts.push(``);
-      }
-
-      // 2. Dependencies (1 level)
-      const allDepIds = new Set<string>();
-      const allDependentIds = new Set<string>();
-      for (const sym of targetSymbols) {
-        const deps = graph.getDependencies(sym.id);
-        for (const d of deps) allDepIds.add(d.targetId);
-        const dependents = graph.getDependents(sym.id);
-        for (const d of dependents) allDependentIds.add(d.sourceId);
-      }
-
-      const depSymbols = symbolRepo.findByIds([...allDepIds]);
-      const dependentSymbols = symbolRepo.findByIds([...allDependentIds]);
-
-      if (depSymbols.length > 0) {
-        parts.push(`## Dependencies (${depSymbols.length})\n`);
-        for (const dep of depSymbols) {
-          parts.push(`- ${dep.name} (${dep.kind} in ${dep.file})`);
-        }
-        parts.push(``);
-      }
-
-      if (dependentSymbols.length > 0) {
-        parts.push(`## Dependents (${dependentSymbols.length})\n`);
-        for (const dep of dependentSymbols) {
-          parts.push(`- ${dep.name} (${dep.kind} in ${dep.file})`);
-        }
-        parts.push(``);
-      }
-
-      // 3. Mapped docs
-      await registry.rebuild(docsDir);
-      const docParts: string[] = [];
-      for (const sym of targetSymbols) {
-        const mappings = await registry.findDocBySymbol(sym.name);
-        for (const m of mappings) {
-          try {
-            const content = await readFile(path.join(docsDir, m.docPath), "utf-8");
-            docParts.push(`### ${m.docPath}\n${content.slice(0, 2000)}`);
-          } catch { /* skip */ }
-        }
-      }
-      if (docParts.length > 0) {
-        parts.push(`## Documentation\n`);
-        parts.push(...docParts);
-        parts.push(``);
-      }
-
-      // 4. Source code of relevant files
-      const relevantFiles = new Set(targetSymbols.map((s) => s.file));
-      parts.push(`## Source Code\n`);
-      for (const file of relevantFiles) {
-        try {
-          const absPath = path.resolve(config.projectRoot, file);
-          const source = await readFile(absPath, "utf-8");
-          const lines = source.split("\n");
-          // Only include lines around the symbols in this file
-          const fileSymbols = targetSymbols.filter((s) => s.file === file);
-          const minLine = Math.max(0, Math.min(...fileSymbols.map((s) => s.startLine)) - 3);
-          const maxLine = Math.min(lines.length, Math.max(...fileSymbols.map((s) => s.endLine)) + 3);
-          parts.push(`### ${file}:${minLine + 1}-${maxLine}`);
-          parts.push("```");
-          parts.push(lines.slice(minLine, maxLine).join("\n"));
-          parts.push("```\n");
-        } catch { /* skip */ }
-      }
+      const result = await buildRelevantContext(
+        { symbolName, filePath },
+        {
+          projectRoot: config.projectRoot,
+          docsDir,
+          registry,
+          symbolRepo,
+          graph,
+        },
+      );
 
       return {
-        content: [{ type: "text" as const, text: parts.join("\n") }],
+        content: [{ type: "text" as const, text: result.text }],
       };
     } catch (err) {
       return {

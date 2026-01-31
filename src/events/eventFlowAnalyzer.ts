@@ -86,3 +86,29 @@ function findListeners(
 
   return [...matched.values()];
 }
+
+/**
+ * Format event flows as a Mermaid sequence diagram. Reusable by MCP server and CLI.
+ */
+export function formatEventFlowsAsMermaid(flows: EventFlow[]): string {
+  const lines: string[] = ["sequenceDiagram"];
+  for (const flow of flows) {
+    lines.push(`    participant ${flow.event.name}`);
+    for (const emitter of flow.emitters) {
+      lines.push(`    participant ${emitter.name}`);
+    }
+    for (const listener of flow.listeners) {
+      lines.push(`    participant ${listener.name}`);
+    }
+
+    for (const emitter of flow.emitters) {
+      lines.push(`    ${emitter.name}->>+${flow.event.name}: emit`);
+      for (const listener of flow.listeners) {
+        lines.push(`    ${flow.event.name}->>+${listener.name}: notify`);
+        lines.push(`    ${listener.name}-->>-${flow.event.name}: handle`);
+      }
+      lines.push(`    ${flow.event.name}-->>-${emitter.name}: emitted`);
+    }
+  }
+  return lines.join("\n");
+}
