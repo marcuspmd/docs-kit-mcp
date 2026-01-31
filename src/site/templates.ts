@@ -296,7 +296,7 @@ export function renderSymbolPage(
       ${symbol.signature ? `<p><strong>Signature:</strong> <code>${escapeHtml(symbol.signature)}</code></p>` : ""}
       ${symbol.pattern ? `<p><strong>Pattern:</strong> ${escapeHtml(symbol.pattern)}</p>` : ""}
       ${symbol.metrics ? `<p><strong>Metrics:</strong> LOC: ${symbol.metrics.linesOfCode ?? "-"}, Complexity: ${symbol.metrics.cyclomaticComplexity ?? "-"}, Params: ${symbol.metrics.parameterCount ?? "-"}</p>` : ""}
-      ${symbol.docRef ? `<p><strong>Docs:</strong> <a href="${escapeHtml(symbol.docRef)}">${escapeHtml(symbol.docRef)}</a></p>` : ""}
+      ${symbol.docRef ? `<p><strong>Docs:</strong> <a href="../${escapeHtml(symbol.docRef)}">${escapeHtml(symbol.docRef)}</a></p>` : ""}
       ${symbol.summary ? `<p><strong>Summary:</strong> ${escapeHtml(symbol.summary)}</p>` : ""}
       ${symbol.tags ? `<p><strong>Tags:</strong> ${symbol.tags.map((t) => `<span class='tag'>${escapeHtml(t)}</span>`).join(" ")}</p>` : ""}
       ${symbol.lastModified ? `<p><strong>Last Updated:</strong> ${escapeHtml(formatDate(symbol.lastModified) ?? "")}</p>` : ""}

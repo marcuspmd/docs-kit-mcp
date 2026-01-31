@@ -91,6 +91,7 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
 
   const patterns: DetectedPattern[] = [];
   const files = [...new Set(symbols.map((s) => s.file))];
+  const docRefs = new Set<string>();
 
   // Create output directories
   fs.mkdirSync(path.join(outDir, "symbols"), { recursive: true });
@@ -100,7 +101,38 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   const sourceCache = new Map<string, string | undefined>();
   function getSource(file: string): string | undefined {
     if (!sourceCache.has(file)) {
-      sourceCache.set(file, readSource(rootDir, file));
+      // Try a few candidate locations to be resilient to stored file paths
+      let content: string | undefined = undefined;
+
+      // direct from configured root
+      content = readSource(rootDir, file);
+
+      // try with src/ prefix or without it
+      if (!content && rootDir) {
+        content = readSource(rootDir, path.join("src", file));
+        if (!content) content = readSource(rootDir, file.replace(/^src[\\/]/, ""));
+      }
+
+      // try absolute paths relative to cwd
+      if (!content) {
+        try {
+          const p = path.join(process.cwd(), file);
+          if (fs.existsSync(p) && fs.statSync(p).isFile()) content = fs.readFileSync(p, "utf-8");
+        } catch {
+          /* ignore */
+        }
+      }
+
+      if (!content) {
+        try {
+          const p2 = path.join(process.cwd(), "src", file);
+          if (fs.existsSync(p2) && fs.statSync(p2).isFile()) content = fs.readFileSync(p2, "utf-8");
+        } catch {
+          /* ignore */
+        }
+      }
+
+      sourceCache.set(file, content);
     }
     return sourceCache.get(file);
   }
@@ -110,6 +142,66 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
     path.join(outDir, "index.html"),
     renderDashboard({ symbols, relationships, patterns, files }),
   );
+
+  // Copy markdown docs referenced by symbols into the site output so links work
+  for (const s of symbols) {
+    if (s.docRef) docRefs.add(s.docRef);
+  }
+
+  for (const docRef of Array.from(docRefs)) {
+    // Try multiple source locations: root/docs/<docRef>, root/<docRef>, docs-output/<docRef>
+    const candidates = [] as string[];
+    if (rootDir) {
+      candidates.push(path.join(rootDir, "docs", docRef));
+      candidates.push(path.join(rootDir, docRef));
+    }
+    candidates.push(path.join(process.cwd(), "docs-output", docRef));
+
+    let content: string | undefined = undefined;
+    for (const c of candidates) {
+      try {
+        if (fs.existsSync(c) && fs.statSync(c).isFile()) {
+          content = fs.readFileSync(c, "utf-8");
+          break;
+        }
+      } catch {
+        // ignore
+      }
+    }
+
+    if (content !== undefined) {
+      const outPath = path.join(outDir, docRef);
+      const outDirPath = path.dirname(outPath);
+      fs.mkdirSync(outDirPath, { recursive: true });
+      fs.writeFileSync(outPath, content, "utf-8");
+    } else {
+      // Create a placeholder markdown if the referenced doc doesn't exist
+      const linked = symbols.filter((s) => s.docRef === docRef);
+      if (linked.length > 0) {
+        const title = path.basename(docRef, path.extname(docRef));
+        const lines = [] as string[];
+        lines.push("---");
+        lines.push(`title: ${title}`);
+        lines.push("symbols:");
+        for (const s of linked) lines.push(`  - ${s.name}`);
+        lines.push(`lastUpdated: ${new Date().toISOString().slice(0, 10)}`);
+        lines.push("---\n");
+        lines.push(`# ${title}\n`);
+        lines.push(
+          `This page was generated automatically by doc-kit as a placeholder for ${linked.length} symbol(s).`,
+        );
+        lines.push("");
+        for (const s of linked) {
+          lines.push(`- [${s.name}](../symbols/${s.id}.html) - ${s.signature ?? ""}`);
+        }
+
+        const outPath = path.join(outDir, docRef);
+        const outDirPath = path.dirname(outPath);
+        fs.mkdirSync(outDirPath, { recursive: true });
+        fs.writeFileSync(outPath, lines.join("\n"), "utf-8");
+      }
+    }
+  }
 
   // Generate symbol pages
   for (const symbol of symbols) {
@@ -123,9 +215,11 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   // Generate file pages
   for (const file of files) {
     const fileSymbols = symbols.filter((s) => s.file === file);
-    // Generate search index (items + facets)
-    const searchIndex = buildSearchIndex(symbols);
-    fs.writeFileSync(path.join(outDir, "search.json"), JSON.stringify(searchIndex));
+    const source = getSource(file);
+    fs.writeFileSync(
+      path.join(outDir, "files", `${fileSlug(file)}.html`),
+      renderFilePage(file, fileSymbols, source),
+    );
   }
 
   // Generate relationships page
@@ -143,6 +237,6 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   return {
     symbolPages: symbols.length,
     filePages: files.length,
-    totalFiles: symbols.length + files.length + 4, // index + relationships + patterns + search.json
+    totalFiles: symbols.length + files.length + 4 + docRefs.size, // index + relationships + patterns + search.json + docs
   };
 }
