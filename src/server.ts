@@ -17,7 +17,7 @@ import { createContextMapper } from "./business/contextMapper.js";
 import { createCodeExampleValidator, ValidationResult } from "./docs/codeExampleValidator.js";
 import { generateProjectStatus, formatProjectStatus } from "./governance/projectStatus.js";
 import { performSmartCodeReview } from "./governance/smartCodeReview.js";
-import OpenAI from "openai";
+import { createLlmProvider } from "./llm/provider.js";
 import Parser from "tree-sitter";
 import TypeScript from "tree-sitter-typescript";
 import { indexFile } from "./indexer/indexer.js";
@@ -38,14 +38,11 @@ const relRepo = createRelationshipRepository(db);
 const graph = createKnowledgeGraph(db);
 const patternAnalyzer = createPatternAnalyzer();
 const eventFlowAnalyzer = createEventFlowAnalyzer();
-const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
+const llm = createLlmProvider(config);
 const ragIndex = createRagIndex({
-  embeddingModel: "text-embedding-ada-002",
+  embeddingModel: config.llm.embeddingModel ?? "text-embedding-ada-002",
   db,
-  embedFn: async (texts: string[]) => {
-    const res = await openai.embeddings.create({ model: "text-embedding-ada-002", input: texts });
-    return res.data.map((d) => d.embedding);
-  },
+  embedFn: (texts: string[]) => llm.embed(texts),
 });
 const archGuard = createArchGuard();
 
@@ -571,12 +568,7 @@ server.tool(
 
       const prompt = `Based on the following context, answer the question. If the context doesn't contain enough information, say so.\n\nContext:\n${context}\n\nQuestion: ${question}`;
 
-      const res = await openai.chat.completions.create({
-        model: "gpt-4",
-        messages: [{ role: "user", content: prompt }],
-      });
-
-      const answer = res.choices[0]?.message?.content || "No answer generated.";
+      const answer = await llm.chat([{ role: "user", content: prompt }]) || "No answer generated.";
 
       return {
         content: [

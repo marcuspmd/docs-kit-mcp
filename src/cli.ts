@@ -400,27 +400,32 @@ async function runIndex(args: string[]) {
   }
 
   // Phase 7: Auto-populate RAG index
-  if (process.env.OPENAI_API_KEY) {
-    step("Populating RAG index");
-    try {
-      const OpenAI = (await import("openai")).default;
-      const { createRagIndex } = await import("./knowledge/rag.js");
-      const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY });
-      const ragIndex = createRagIndex({
-        embeddingModel: "text-embedding-ada-002",
-        db,
-        embedFn: async (texts: string[]) => {
-          const res = await openai.embeddings.create({ model: "text-embedding-ada-002", input: texts });
-          return res.data.map((d) => d.embedding);
-        },
-      });
-      await ragIndex.indexSymbols(allSymbols, sources);
-      if (fs.existsSync(docsPath)) {
-        await ragIndex.indexDocs(docsDir);
+  {
+    const canEmbed =
+      config.llm.provider === "ollama" ||
+      (config.llm.provider === "openai" && process.env.OPENAI_API_KEY) ||
+      (config.llm.provider === "gemini" && (config.llm.apiKey || process.env.GEMINI_API_KEY)) ||
+      (config.llm.provider === "claude" && process.env.VOYAGE_API_KEY);
+
+    if (canEmbed) {
+      step("Populating RAG index");
+      try {
+        const { createLlmProvider } = await import("./llm/provider.js");
+        const { createRagIndex } = await import("./knowledge/rag.js");
+        const llm = createLlmProvider(config);
+        const ragIndex = createRagIndex({
+          embeddingModel: config.llm.embeddingModel ?? "text-embedding-ada-002",
+          db,
+          embedFn: (texts: string[]) => llm.embed(texts),
+        });
+        await ragIndex.indexSymbols(allSymbols, sources);
+        if (fs.existsSync(docsPath)) {
+          await ragIndex.indexDocs(docsDir);
+        }
+        done(`${ragIndex.chunkCount()} chunks`);
+      } catch (err) {
+        done(`skipped (${(err as Error).message})`);
       }
-      done(`${ragIndex.chunkCount()} chunks`);
-    } catch (err) {
-      done(`skipped (${(err as Error).message})`);
     }
   }
 

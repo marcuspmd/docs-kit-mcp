@@ -26,6 +26,7 @@
   },
   "license": "MIT",
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.72.1",
     "@modelcontextprotocol/sdk": "^1.0.0",
     "better-sqlite3": "^11.0.0",
     "dotenv": "^17.2.3",

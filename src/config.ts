@@ -77,9 +77,11 @@ export const ConfigSchema = z.object({
 
   llm: z
     .object({
-      provider: z.enum(["openai", "anthropic"]).default("openai"),
+      provider: z.enum(["openai", "ollama", "gemini", "claude"]).default("openai"),
       apiKey: z.string().optional(),
       model: z.string().default("gpt-4"),
+      embeddingModel: z.string().optional(),
+      baseUrl: z.string().optional(),
       maxTokens: z.number().default(2000),
       temperature: z.number().default(0.7),
     })

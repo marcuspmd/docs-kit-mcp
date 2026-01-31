@@ -1,5 +1,5 @@
-import OpenAI from "openai";
-import { Config } from "../config.js";
+import type { Config } from "../config.js";
+import type { LlmProvider } from "../llm/provider.js";
 
 /**
  * Generate updated documentation section using LLM
@@ -15,14 +15,12 @@ export interface UpdateSectionPromptInput {
 export async function buildUpdateSectionPrompt(
   input: UpdateSectionPromptInput,
   config: Config,
+  llm?: LlmProvider,
 ): Promise<string> {
-  if (!config.llm.apiKey) {
-    throw new Error("LLM API key not configured. Set OPENAI_API_KEY environment variable.");
+  if (!llm) {
+    const { createLlmProvider } = await import("../llm/provider.js");
+    llm = createLlmProvider(config);
   }
-
-  const openai = new OpenAI({
-    apiKey: config.llm.apiKey,
-  });
 
   const prompt = `You are an expert technical writer updating documentation for a software project.
 
@@ -41,16 +39,12 @@ Please update the documentation section to accurately reflect the code changes. 
 Updated section:`;
 
   try {
-    const response = await openai.chat.completions.create({
-      model: config.llm.model,
-      messages: [{ role: "user", content: prompt }],
-      max_tokens: config.llm.maxTokens,
+    return await llm.chat([{ role: "user", content: prompt }], {
+      maxTokens: config.llm.maxTokens,
       temperature: config.llm.temperature,
     });
-
-    return response.choices[0]?.message?.content?.trim() || input.currentSection;
   } catch (error) {
     console.warn("LLM call failed, falling back to current section:", error);
-    return input.currentSection; // Fallback
+    return input.currentSection;
   }
 }
