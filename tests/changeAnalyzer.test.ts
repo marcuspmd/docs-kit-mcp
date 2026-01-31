@@ -1,0 +1,160 @@
+import type { CodeSymbol } from "../src/indexer/symbol.types.js";
+import type { FileDiff } from "../src/analyzer/gitDiff.js";
+import {
+  analyzeChanges,
+  isSymbolImpacted,
+  requiresDocUpdate,
+  type AnalyzeDeps,
+} from "../src/analyzer/changeAnalyzer.js";
+
+function sym(overrides: Partial<CodeSymbol> & Pick<CodeSymbol, "name" | "kind" | "startLine" | "endLine">): CodeSymbol {
+  return {
+    id: `test:${overrides.name}:${overrides.kind}`,
+    file: overrides.file ?? "src/test.ts",
+    ...overrides,
+  } as CodeSymbol;
+}
+
+function makeDeps(
+  diffs: FileDiff[],
+  symbolsByFile: Record<string, { old: CodeSymbol[]; new: CodeSymbol[] }>,
+): AnalyzeDeps {
+  const callCounts: Record<string, number> = {};
+  return {
+    getFileDiffs: async () => diffs,
+    getFileAtRef: async (_repo, filePath, _ref) => `source:${filePath}`,
+    indexSource: (filePath: string) => {
+      const entry = symbolsByFile[filePath];
+      if (!entry) return [];
+      callCounts[filePath] = (callCounts[filePath] ?? 0) + 1;
+      return callCounts[filePath] === 1 ? entry.old : entry.new;
+    },
+  };
+}
+
+describe("isSymbolImpacted", () => {
+  it("returns true when hunk overlaps symbol range", () => {
+    const s = sym({ name: "X", kind: "function", startLine: 5, endLine: 15 });
+    expect(isSymbolImpacted(s, [{ oldStart: 10, oldLines: 3, newStart: 10, newLines: 5, content: "" }])).toBe(true);
+  });
+
+  it("returns false when no overlap", () => {
+    const s = sym({ name: "X", kind: "function", startLine: 5, endLine: 10 });
+    expect(isSymbolImpacted(s, [{ oldStart: 50, oldLines: 3, newStart: 50, newLines: 3, content: "" }])).toBe(false);
+  });
+});
+
+describe("requiresDocUpdate", () => {
+  it("returns true for added/removed/signature_changed", () => {
+    const s = sym({ name: "X", kind: "function", startLine: 1, endLine: 5 });
+    expect(requiresDocUpdate({ symbol: s, changeType: "added", details: "" })).toBe(true);
+    expect(requiresDocUpdate({ symbol: s, changeType: "removed", details: "" })).toBe(true);
+    expect(requiresDocUpdate({ symbol: s, changeType: "signature_changed", details: "" })).toBe(true);
+  });
+
+  it("returns false for body_changed/moved", () => {
+    const s = sym({ name: "X", kind: "function", startLine: 1, endLine: 5 });
+    expect(requiresDocUpdate({ symbol: s, changeType: "body_changed", details: "" })).toBe(false);
+    expect(requiresDocUpdate({ symbol: s, changeType: "moved", details: "" })).toBe(false);
+  });
+});
+
+describe("analyzeChanges", () => {
+  it("returns empty array when there are no diffs", async () => {
+    const deps = makeDeps([], {});
+    const result = await analyzeChanges({ repoPath: ".", base: "main" }, deps);
+    expect(result).toEqual([]);
+  });
+
+  it("marks added symbols with docUpdateRequired=true", async () => {
+    const newSym = sym({ name: "NewFunc", kind: "function", startLine: 1, endLine: 5, file: "src/new.ts" });
+    const deps: AnalyzeDeps = {
+      getFileDiffs: async () => [{
+        oldPath: "/dev/null", newPath: "src/new.ts", status: "added",
+        hunks: [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: 5, content: "+code" }],
+      }],
+      getFileAtRef: async () => "source",
+      indexSource: (filePath) => filePath === "src/new.ts" ? [newSym] : [],
+    };
+
+    const impacts = await analyzeChanges({ repoPath: ".", base: "main" }, deps);
+    expect(impacts).toHaveLength(1);
+    expect(impacts[0].changeType).toBe("added");
+    expect(impacts[0].docUpdateRequired).toBe(true);
+  });
+
+  it("marks removed symbols with docUpdateRequired=true", async () => {
+    const oldSym = sym({ name: "OldFunc", kind: "function", startLine: 1, endLine: 5, file: "src/old.ts" });
+    const deps: AnalyzeDeps = {
+      getFileDiffs: async () => [{
+        oldPath: "src/old.ts", newPath: "/dev/null", status: "deleted",
+        hunks: [{ oldStart: 1, oldLines: 5, newStart: 0, newLines: 0, content: "-code" }],
+      }],
+      getFileAtRef: async () => "source",
+      indexSource: (filePath) => filePath === "src/old.ts" ? [oldSym] : [],
+    };
+
+    const impacts = await analyzeChanges({ repoPath: ".", base: "main" }, deps);
+    expect(impacts).toHaveLength(1);
+    expect(impacts[0].changeType).toBe("removed");
+    expect(impacts[0].docUpdateRequired).toBe(true);
+  });
+
+  it("detects body_changed with docUpdateRequired=false", async () => {
+    const deps = makeDeps(
+      [{
+        oldPath: "src/mod.ts", newPath: "src/mod.ts", status: "modified",
+        hunks: [{ oldStart: 1, oldLines: 10, newStart: 1, newLines: 15, content: " changed" }],
+      }],
+      {
+        "src/mod.ts": {
+          old: [sym({ name: "Foo", kind: "class", startLine: 1, endLine: 10 })],
+          new: [sym({ name: "Foo", kind: "class", startLine: 1, endLine: 15 })],
+        },
+      },
+    );
+
+    const impacts = await analyzeChanges({ repoPath: ".", base: "main" }, deps);
+    expect(impacts).toHaveLength(1);
+    expect(impacts[0].changeType).toBe("body_changed");
+    expect(impacts[0].docUpdateRequired).toBe(false);
+  });
+
+  it("filters out moved symbols not overlapping any hunk", async () => {
+    const deps = makeDeps(
+      [{
+        oldPath: "src/f.ts", newPath: "src/f.ts", status: "modified",
+        hunks: [{ oldStart: 50, oldLines: 3, newStart: 50, newLines: 5, content: "+new" }],
+      }],
+      {
+        "src/f.ts": {
+          old: [sym({ name: "Far", kind: "function", startLine: 1, endLine: 10 })],
+          new: [sym({ name: "Far", kind: "function", startLine: 3, endLine: 12 })],
+        },
+      },
+    );
+
+    const impacts = await analyzeChanges({ repoPath: ".", base: "main" }, deps);
+    expect(impacts).toHaveLength(0);
+  });
+
+  it("handles new files where all symbols are added", async () => {
+    const syms = [
+      sym({ name: "A", kind: "class", startLine: 1, endLine: 10, file: "src/brand-new.ts" }),
+      sym({ name: "B", kind: "function", startLine: 12, endLine: 20, file: "src/brand-new.ts" }),
+    ];
+    const deps: AnalyzeDeps = {
+      getFileDiffs: async () => [{
+        oldPath: "/dev/null", newPath: "src/brand-new.ts", status: "added",
+        hunks: [{ oldStart: 0, oldLines: 0, newStart: 1, newLines: 20, content: "+all new" }],
+      }],
+      getFileAtRef: async () => "source",
+      indexSource: (filePath) => filePath === "src/brand-new.ts" ? syms : [],
+    };
+
+    const impacts = await analyzeChanges({ repoPath: ".", base: "main" }, deps);
+    expect(impacts).toHaveLength(2);
+    expect(impacts.every((i) => i.changeType === "added")).toBe(true);
+    expect(impacts.every((i) => i.docUpdateRequired === true)).toBe(true);
+  });
+});

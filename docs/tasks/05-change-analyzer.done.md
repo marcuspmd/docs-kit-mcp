@@ -1,6 +1,6 @@
 # Task 05 — Change Analyzer
 
-> **Status:** pending
+> **Status:** done
 > **Layer:** Analysis
 > **Priority:** MVP
 > **Depends on:** 01, 02, 03, 04
