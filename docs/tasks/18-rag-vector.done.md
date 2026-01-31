@@ -1,6 +1,6 @@
 # Task 18 — RAG / Vector DB Integration
 
-> **Status:** pending
+> **Status:** done
 > **Layer:** Knowledge
 > **Priority:** Release 2
 > **Depends on:** 02, 15
