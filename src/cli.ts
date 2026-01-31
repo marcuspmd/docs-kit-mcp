@@ -113,7 +113,7 @@ function parseArgs(
 
 async function runIndex(args: string[]) {
   const { positional, flags } = parseArgs(args, {
-    exclude: "node_modules,dist,.git,docs,tests,.doc-kit",
+    exclude: "node_modules,dist,.git,docs,tests,.doc-kit,vendor,.build,.out,bin,build",
     db: ".doc-kit/index.db",
     docs: "docs",
   });
