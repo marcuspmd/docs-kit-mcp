@@ -121,6 +121,104 @@ console.log(result);
 
 ---
 
+## 🧑‍💻 Exemplos de Uso — CLI, Indexação e Integração MCP
+
+### 1. Indexação manual dos símbolos (rebuild do registro)
+
+```ts
+import Database from "better-sqlite3";
+import { createDocRegistry } from "./dist/docs/docRegistry.js";
+
+const db = new Database('.doc-kit/registry.db');
+const registry = createDocRegistry(db);
+await registry.rebuild('docs');
+// O registro agora está sincronizado com os arquivos Markdown.
+```
+
+### 2. Consulta de símbolos/documentos
+
+```ts
+const docs = await registry.findDocBySymbol("OrderService.createOrder");
+// → [{ symbolName: "OrderService.createOrder", docPath: "domain/orders.md" }]
+
+const symbols = await registry.findSymbolsByDoc("domain/orders.md");
+// → ["OrderService", "OrderService.createOrder", "OrderService.cancelOrder"]
+```
+
+### 3. Uso via CLI (doc-guard)
+
+Auditoria de documentação em CI/CD ou local:
+
+```bash
+# Após build
+npm run build
+node dist/governance/docGuardBin.js --base main --head feature-branch
+
+# Ou via npx (se instalado globalmente ou linkado)
+npx doc-guard --base origin/main
+# Saída típica:
+# Doc-Guard: 2 symbol(s) changed without doc updates:
+#   - OrderService.createOrder (src/services/order.ts): Linked doc was not updated in this PR
+#   - PaymentGateway (src/services/payment.ts): No doc linked to this symbol
+# exit code 1
+```
+
+Opções principais:
+- `--base` (branch base, default: main)
+- `--head` (branch/commit head, default: HEAD)
+- `--strict` (fail on violation, default: true)
+- `--db-path` (caminho do banco, default: .doc-kit/registry.db)
+- `--docs-dir` (diretório de docs, default: docs)
+
+### 4. Integração com MCP (VS Code, Copilot, automação)
+
+O agente pode ser exposto como servidor MCP para integração com IDEs e automações:
+
+#### a) Rodando o servidor MCP
+
+```bash
+npm run build
+node dist/server.js &
+# Ou conforme mcp.json:
+# node dist/server.js
+```
+
+#### b) Exemplos de comandos MCP (VS Code/Copilot ou automação)
+
+No VS Code (via extensão MCP ou Copilot):
+
+```
+@docs-agent generateDocs --base main
+# → "Updated 3 doc sections across 2 files"
+
+@docs-agent explainSymbol symbol=OrderService.createOrder
+# → "OrderService.createOrder cria um novo pedido... [resumo do código + doc]"
+
+@docs-agent generateMermaid symbols=OrderService,PaymentService type=classDiagram
+# → (retorna diagrama Mermaid)
+```
+
+#### c) Exemplos de automação/pipeline
+
+No CI/CD:
+
+```bash
+npx doc-guard --base origin/main
+# Falha se houver símbolos alterados sem doc correspondente
+```
+
+---
+
+## 🔗 Referências rápidas
+
+- [docs/tasks/07-doc-registry.done.md](docs/tasks/07-doc-registry.done.md) — exemplos de uso do DocRegistry
+- [docs/tasks/09-doc-guard-cli.done.md](docs/tasks/09-doc-guard-cli.done.md) — exemplos de uso CLI
+- [docs/tasks/10-mcp-server.done.md](docs/tasks/10-mcp-server.done.md) — exemplos de integração MCP
+
+---
+
+---
+
 ## Estrutura do projeto (resumo)
 
 - `src/` — código-fonte (indexer, analyzer, docs, governance, server, etc.)

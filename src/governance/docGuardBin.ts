@@ -4,6 +4,8 @@ import { parseArgs } from "node:util";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
 import Database from "better-sqlite3";
+import { dirname } from "node:path";
+import { existsSync, mkdirSync } from "node:fs";
 import { runDocGuard, formatResult } from "./docGuardCli.js";
 import { analyzeChanges } from "../analyzer/changeAnalyzer.js";
 import { createDocRegistry } from "../docs/docRegistry.js";
@@ -34,7 +36,13 @@ async function getChangedFiles(options: {
   return stdout.trim().split("\n").filter(Boolean);
 }
 
-const db = new Database(values["db-path"]!);
+// Garante que o diretório do banco existe
+const dbPath = values["db-path"]!;
+const dbDir = dirname(dbPath);
+if (!existsSync(dbDir)) {
+  mkdirSync(dbDir, { recursive: true });
+}
+const db = new Database(dbPath);
 const registry = createDocRegistry(db);
 await registry.rebuild(values["docs-dir"]!);
 
