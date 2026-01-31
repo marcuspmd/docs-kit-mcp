@@ -14,6 +14,8 @@ import {
   createSymbolRepository,
   createRelationshipRepository,
 } from "./storage/db.js";
+import { loadConfig, configExists, createDefaultConfig } from "./configLoader.js";
+import fg from "fast-glob";
 import { generateSite } from "./site/generator.js";
 import { generateDocs } from "./site/mdGenerator.js";
 import { generateProjectStatus, formatProjectStatus } from "./governance/projectStatus.js";
@@ -54,6 +56,9 @@ async function main() {
   const command = args[0];
 
   switch (command) {
+    case "init":
+      runInit(args.slice(1));
+      break;
     case "index":
       await runIndex(args.slice(1));
       break;
@@ -89,7 +94,8 @@ function printHelp() {
   console.log(`doc-kit - Intelligent documentation agent
 
 Usage:
-  doc-kit index [dir] [--exclude dirs] [--db path] [--docs dir]
+  doc-kit init [dir]                                    Create docs.config.js with defaults
+  doc-kit index [dir] [--db path] [--docs dir]
                                                         Index repository
   doc-kit build-site [--out dir] [--db path] [--root dir]
                                                         Generate static HTML site
@@ -103,7 +109,8 @@ Usage:
   doc-kit --help                                        Show this help
 
 Commands:
-  index              Scan .ts files, extract symbols, relationships, metrics
+  init               Create docs.config.js with default settings
+  index              Scan source files, extract symbols, relationships, metrics
   build-site         Generate navigable HTML documentation from index
   build-docs         Generate structured Markdown documentation from index
   generate-repo-docs Create markdown doc stubs for undocumented symbols
@@ -135,19 +142,39 @@ function parseArgs(
   return { positional, flags: result };
 }
 
+/* ================== init command ================== */
+
+function runInit(args: string[]) {
+  const rootDir = args[0] || ".";
+
+  if (configExists(rootDir)) {
+    console.log("  docs.config.js already exists, skipping.");
+    return;
+  }
+
+  const configPath = createDefaultConfig(rootDir);
+  console.log(`  Created ${configPath}`);
+  console.log("  Edit it to customize include/exclude patterns and other settings.");
+}
+
 /* ================== index command ================== */
 
 async function runIndex(args: string[]) {
   const { positional, flags } = parseArgs(args, {
-    exclude: "node_modules,dist,.git,docs,tests,.doc-kit,vendor,.build,.out,bin,build",
-    db: ".doc-kit/index.db",
-    docs: "docs",
+    db: "",
+    docs: "",
   });
 
   const rootDir = positional[0] || ".";
-  const dbPath = flags.db;
-  const docsDir = flags.docs;
-  const excludeDirs = flags.exclude.split(",").map((d) => d.trim());
+
+  if (!configExists(rootDir)) {
+    const configPath = createDefaultConfig(rootDir);
+    console.log(`  No docs.config.js found. Created ${configPath} with defaults.\n`);
+  }
+
+  const config = await loadConfig(rootDir);
+  const dbPath = flags.db || config.dbPath;
+  const docsDir = flags.docs || "docs";
 
   header(`Indexing ${path.resolve(rootDir)}`);
 
@@ -165,37 +192,14 @@ async function runIndex(args: string[]) {
 
   const parser = new Parser();
 
-  // Find source files (multiple extensions)
+  // Find source files using config include/exclude patterns
   step("Scanning for source files");
-  const tsFiles: string[] = [];
-  function findTsFiles(dir: string) {
-    const items = fs.readdirSync(dir);
-    for (const item of items) {
-      const fullPath = path.join(dir, item);
-      const stat = fs.statSync(fullPath);
-      if (stat.isDirectory()) {
-        if (!excludeDirs.includes(item)) {
-          findTsFiles(fullPath);
-        }
-      } else {
-        if (
-          (item.endsWith(".ts") && !item.endsWith(".d.ts")) ||
-          item.endsWith(".tsx") ||
-          item.endsWith(".js") ||
-          item.endsWith(".jsx") ||
-          item.endsWith(".py") ||
-          item.endsWith(".go") ||
-          item.endsWith(".php") ||
-          item.endsWith(".dart") ||
-          item.endsWith(".rb") ||
-          item.endsWith(".cs")
-        ) {
-          tsFiles.push(fullPath);
-        }
-      }
-    }
-  }
-  findTsFiles(rootDir);
+  const relativeFiles = await fg(config.include, {
+    cwd: path.resolve(rootDir),
+    ignore: config.exclude,
+    absolute: false,
+  });
+  const tsFiles = relativeFiles.map((f) => path.join(rootDir, f));
   done(`found ${tsFiles.length} files`);
 
   // Phase 1: Index symbols + collect AST trees
@@ -453,9 +457,11 @@ async function generateRepoDocumentation(
   repoDir: string = ".",
   docsDir: string = "docs",
   dbPath: string = ".doc-kit/registry.db",
-  excludeDirs: string[] = ["node_modules", "dist", ".git", "docs", "tests", ".doc-kit"],
+  _excludeDirs: string[] = [],
 ) {
   header("Generating Repository Documentation");
+
+  const config = await loadConfig(repoDir);
 
   const dbDir = path.dirname(dbPath);
   if (!fs.existsSync(dbDir)) {
@@ -472,35 +478,12 @@ async function generateRepoDocumentation(
   const parser = new Parser();
 
   step("Scanning for source files");
-  const tsFiles: string[] = [];
-  function findTsFiles(dir: string) {
-    const items = fs.readdirSync(dir);
-    for (const item of items) {
-      const fullPath = path.join(dir, item);
-      const stat = fs.statSync(fullPath);
-      if (stat.isDirectory()) {
-        if (!excludeDirs.includes(item)) {
-          findTsFiles(fullPath);
-        }
-      } else {
-        if (
-          (item.endsWith(".ts") && !item.endsWith(".d.ts")) ||
-          item.endsWith(".tsx") ||
-          item.endsWith(".js") ||
-          item.endsWith(".jsx") ||
-          item.endsWith(".py") ||
-          item.endsWith(".go") ||
-          item.endsWith(".php") ||
-          item.endsWith(".dart") ||
-          item.endsWith(".rb") ||
-          item.endsWith(".cs")
-        ) {
-          tsFiles.push(fullPath);
-        }
-      }
-    }
-  }
-  findTsFiles(repoDir);
+  const relativeFiles = await fg(config.include, {
+    cwd: path.resolve(repoDir),
+    ignore: config.exclude,
+    absolute: false,
+  });
+  const tsFiles = relativeFiles.map((f) => path.join(repoDir, f));
   done(`found ${tsFiles.length} files`);
 
   let totalSymbols = 0;

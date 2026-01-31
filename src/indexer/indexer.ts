@@ -23,8 +23,8 @@ import { getStrategy } from "./languages/index.js";
 
 export interface IndexerOptions {
   rootDir: string;
-  include?: string[];
-  exclude?: string[];
+  include: string[];
+  exclude: string[];
 }
 
 export interface IndexResult {
@@ -97,7 +97,7 @@ function extractInterfaceExtends(node: Parser.SyntaxNode): string | undefined {
   return typeNode?.text;
 }
 
-function extractJsDoc(node: Parser.SyntaxNode): { summary?: string; tags?: string[] } {
+function extractJsDoc(node: Parser.SyntaxNode): { summary?: string; tags?: string[]; docComment?: string } {
   const targetNode = node.parent?.type === "export_statement" ? node.parent : node;
   const prev = targetNode.previousNamedSibling;
 
@@ -127,7 +127,55 @@ function extractJsDoc(node: Parser.SyntaxNode): { summary?: string; tags?: strin
   }
 
   const summary = summaryLines.join(" ").trim() || undefined;
-  return { summary, tags: tags.length > 0 ? tags : undefined };
+  return { summary, tags: tags.length > 0 ? tags : undefined, docComment: text };
+}
+
+function extractPythonDocstring(node: Parser.SyntaxNode): { summary?: string; docComment?: string } {
+  // Python docstrings are the first expression_statement > string in a function/class body
+  const body = node.childForFieldName("body");
+  if (!body) return {};
+
+  const firstChild = body.namedChildren[0];
+  if (!firstChild) return {};
+
+  // expression_statement containing a string literal
+  if (firstChild.type === "expression_statement") {
+    const strNode = firstChild.namedChildren[0];
+    if (strNode && (strNode.type === "string" || strNode.type === "concatenated_string")) {
+      const raw = strNode.text;
+      const cleaned = raw
+        .replace(/^("""|'''|"|')/, "")
+        .replace(/("""|'''|"|')$/, "")
+        .trim();
+      const firstLine = cleaned.split("\n")[0].trim();
+      return { summary: firstLine, docComment: raw };
+    }
+  }
+
+  return {};
+}
+
+function extractGoDocComment(node: Parser.SyntaxNode): { summary?: string; docComment?: string } {
+  // Go doc comments are consecutive // comments immediately before the declaration
+  const comments: string[] = [];
+  let prev = node.previousNamedSibling;
+
+  // Collect consecutive comment nodes
+  while (prev && prev.type === "comment") {
+    comments.unshift(prev.text);
+    prev = prev.previousNamedSibling;
+  }
+
+  if (comments.length === 0) return {};
+
+  const raw = comments.join("\n");
+  const cleaned = comments
+    .map((c) => c.replace(/^\/\/\s?/, ""))
+    .join(" ")
+    .trim();
+  const firstSentence = cleaned.split(/\.\s/)[0];
+
+  return { summary: firstSentence, docComment: raw };
 }
 
 export function detectLanguage(file: string): CodeSymbol["language"] {
@@ -247,8 +295,26 @@ function walkNode(
     // Refine kind
     const finalKind = strategy.refineKind(kind, name, extendsName, implementsNames);
 
-    // JSDoc / PHPDoc
-    const { summary, tags } = extractJsDoc(node);
+    // Doc comments: JSDoc for TS/JS, docstrings for Python, doc comments for Go
+    let summary: string | undefined;
+    let tags: string[] | undefined;
+    let docComment: string | undefined;
+    const lang = detectLanguage(file);
+
+    if (lang === "python") {
+      const pyDoc = extractPythonDocstring(node);
+      summary = pyDoc.summary;
+      docComment = pyDoc.docComment;
+    } else if (lang === "go") {
+      const goDoc = extractGoDocComment(node);
+      summary = goDoc.summary;
+      docComment = goDoc.docComment;
+    } else {
+      const jsDoc = extractJsDoc(node);
+      summary = jsDoc.summary;
+      tags = jsDoc.tags;
+      docComment = jsDoc.docComment;
+    }
 
     // Layer
     const layer = detectLayer(file, name);
@@ -279,6 +345,7 @@ function walkNode(
       usesTraits,
       summary,
       tags,
+      docComment,
       layer,
       deprecated,
       signature,
@@ -316,11 +383,11 @@ export function indexFile(filePath: string, source: string, parser: Parser): Cod
 /* ================== Project indexer ================== */
 
 export async function indexProject(options: IndexerOptions): Promise<IndexResult> {
-  const {
-    rootDir,
-    include = ["**/*.{ts,tsx,js,jsx,py,go,php,dart,rb,cs}"],
-    exclude = ["node_modules/**", "dist/**"],
-  } = options;
+  const { rootDir, include, exclude } = options;
+
+  if (!include || !exclude) {
+    throw new Error("indexProject requires explicit include and exclude patterns. Use loadConfig() to get defaults.");
+  }
 
   const files = await fg(include, {
     cwd: rootDir,

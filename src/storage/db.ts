@@ -32,6 +32,7 @@ CREATE TABLE IF NOT EXISTS symbols (
   language          TEXT,
   doc_ref           TEXT,
   summary           TEXT,
+  doc_comment       TEXT,
   tags              TEXT,
   domain            TEXT,
   bounded_context   TEXT,
@@ -104,6 +105,7 @@ interface SymbolRow {
   language: string | null;
   doc_ref: string | null;
   summary: string | null;
+  doc_comment: string | null;
   tags: string | null;
   domain: string | null;
   bounded_context: string | null;
@@ -148,6 +150,7 @@ function rowToSymbol(row: SymbolRow): CodeSymbol {
     language: (row.language as CodeSymbol["language"]) ?? undefined,
     docRef: row.doc_ref ?? undefined,
     summary: row.summary ?? undefined,
+    docComment: row.doc_comment ?? undefined,
     tags: parseJsonArray(row.tags),
     domain: row.domain ?? undefined,
     boundedContext: row.bounded_context ?? undefined,
@@ -174,13 +177,13 @@ export function createSymbolRepository(db: Database.Database): SymbolRepository 
   const upsertStmt = db.prepare(`
     INSERT OR REPLACE INTO symbols (
       id, name, qualified_name, kind, file, start_line, end_line, parent,
-      visibility, exported, language, doc_ref, summary, tags, domain, bounded_context,
+      visibility, exported, language, doc_ref, summary, doc_comment, tags, domain, bounded_context,
       sym_extends, sym_implements, uses_traits, sym_references, referenced_by, layer, metrics,
       pattern, violations, deprecated, since, stability, generated, source,
       last_modified, signature
     ) VALUES (
       @id, @name, @qualified_name, @kind, @file, @start_line, @end_line, @parent,
-      @visibility, @exported, @language, @doc_ref, @summary, @tags, @domain, @bounded_context,
+      @visibility, @exported, @language, @doc_ref, @summary, @doc_comment, @tags, @domain, @bounded_context,
       @sym_extends, @sym_implements, @uses_traits, @sym_references, @referenced_by, @layer, @metrics,
       @pattern, @violations, @deprecated, @since, @stability, @generated, @source,
       @last_modified, @signature
@@ -216,6 +219,7 @@ export function createSymbolRepository(db: Database.Database): SymbolRepository 
         language: symbol.language ?? null,
         doc_ref: symbol.docRef ?? null,
         summary: symbol.summary ?? null,
+        doc_comment: symbol.docComment ?? null,
         tags: toJson(symbol.tags),
         domain: symbol.domain ?? null,
         bounded_context: symbol.boundedContext ?? null,

@@ -2,7 +2,7 @@ import { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
 import { z } from "zod";
 import Database from "better-sqlite3";
-import { ConfigSchema } from "./config.js";
+import { loadConfig } from "./configLoader.js";
 import { analyzeChanges } from "./analyzer/changeAnalyzer.js";
 import { createDocUpdater } from "./docs/docUpdater.js";
 import { createDocRegistry } from "./docs/docRegistry.js";
@@ -25,12 +25,7 @@ import * as fs from "node:fs";
 import * as path from "node:path";
 import "dotenv/config";
 
-const config = ConfigSchema.parse({
-  projectRoot: process.cwd(),
-  llm: {
-    apiKey: process.env.OPENAI_API_KEY,
-  },
-});
+const config = await loadConfig(process.cwd());
 
 const db = new Database(config.dbPath);
 const registry = createDocRegistry(db);

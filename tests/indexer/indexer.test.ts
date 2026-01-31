@@ -168,6 +168,7 @@ describe("indexProject", () => {
     const result = await indexProject({
       rootDir: FIXTURES,
       include: ["**/*.ts"],
+      exclude: [],
     });
 
     expect(result.fileCount).toBeGreaterThanOrEqual(3);
@@ -195,6 +196,7 @@ describe("indexProject", () => {
     const result = await indexProject({
       rootDir: "/tmp/nonexistent-dir-doc-kit-test",
       include: ["**/*.ts"],
+      exclude: [],
     });
     expect(result.fileCount).toBe(0);
     expect(result.symbols).toHaveLength(0);

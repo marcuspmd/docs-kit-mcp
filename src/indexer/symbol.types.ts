@@ -89,6 +89,7 @@ export const CodeSymbolSchema = z
 
     docRef: z.string().optional(),
     summary: z.string().optional(),
+    docComment: z.string().optional(),
     tags: z.array(z.string().min(1)).optional(),
     domain: z.string().optional(),
     boundedContext: z.string().optional(),
