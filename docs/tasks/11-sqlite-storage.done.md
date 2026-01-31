@@ -1,6 +1,6 @@
 # Task 11 — SQLite Storage Layer
 
-> **Status:** pending
+> **Status:** done
 > **Layer:** Storage
 > **Priority:** MVP
 > **Depends on:** 01

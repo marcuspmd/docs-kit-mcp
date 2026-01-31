@@ -1,0 +1,291 @@
+import Database from "better-sqlite3";
+import type { CodeSymbol, SymbolKind } from "../indexer/symbol.types.js";
+
+/* ================== Database ================== */
+
+export interface DbOptions {
+  path?: string;
+  inMemory?: boolean;
+}
+
+export function createDatabase(options?: DbOptions): Database.Database {
+  const db = new Database(
+    options?.inMemory ? ":memory:" : (options?.path ?? "src/storage/index.db"),
+  );
+  db.pragma("journal_mode = WAL");
+  db.pragma("foreign_keys = ON");
+  return db;
+}
+
+const SCHEMA_SQL = `
+CREATE TABLE IF NOT EXISTS symbols (
+  id                TEXT PRIMARY KEY,
+  name              TEXT NOT NULL,
+  qualified_name    TEXT,
+  kind              TEXT NOT NULL,
+  file              TEXT NOT NULL,
+  start_line        INTEGER NOT NULL,
+  end_line          INTEGER NOT NULL,
+  parent            TEXT,
+  visibility        TEXT,
+  exported          INTEGER,
+  language          TEXT,
+  doc_ref           TEXT,
+  summary           TEXT,
+  tags              TEXT,
+  domain            TEXT,
+  bounded_context   TEXT,
+  sym_extends       TEXT,
+  sym_implements    TEXT,
+  uses_traits       TEXT,
+  sym_references    TEXT,
+  referenced_by     TEXT,
+  layer             TEXT,
+  metrics           TEXT,
+  pattern           TEXT,
+  violations        TEXT,
+  deprecated        INTEGER,
+  since             TEXT,
+  stability         TEXT,
+  generated         INTEGER,
+  source            TEXT,
+  last_modified     TEXT,
+  signature         TEXT
+);
+
+CREATE TABLE IF NOT EXISTS relationships (
+  source_id TEXT NOT NULL,
+  target_id TEXT NOT NULL,
+  type      TEXT NOT NULL,
+  PRIMARY KEY (source_id, target_id)
+);
+
+CREATE TABLE IF NOT EXISTS doc_mappings (
+  symbol_name TEXT NOT NULL,
+  doc_path    TEXT NOT NULL,
+  section     TEXT,
+  updated_at  TEXT DEFAULT (datetime('now')),
+  PRIMARY KEY (symbol_name, doc_path)
+);
+
+CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file);
+CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind);
+CREATE INDEX IF NOT EXISTS idx_doc_mappings_path ON doc_mappings(doc_path);
+`;
+
+export function initializeSchema(db: Database.Database): void {
+  db.exec(SCHEMA_SQL);
+}
+
+/* ================== SymbolRepository ================== */
+
+export interface SymbolRepository {
+  upsert(symbol: CodeSymbol): void;
+  findById(id: string): CodeSymbol | undefined;
+  findByFile(file: string): CodeSymbol[];
+  findByKind(kind: SymbolKind): CodeSymbol[];
+  deleteByFile(file: string): void;
+}
+
+interface SymbolRow {
+  id: string;
+  name: string;
+  qualified_name: string | null;
+  kind: string;
+  file: string;
+  start_line: number;
+  end_line: number;
+  parent: string | null;
+  visibility: string | null;
+  exported: number | null;
+  language: string | null;
+  doc_ref: string | null;
+  summary: string | null;
+  tags: string | null;
+  domain: string | null;
+  bounded_context: string | null;
+  sym_extends: string | null;
+  sym_implements: string | null;
+  uses_traits: string | null;
+  sym_references: string | null;
+  referenced_by: string | null;
+  layer: string | null;
+  metrics: string | null;
+  pattern: string | null;
+  violations: string | null;
+  deprecated: number | null;
+  since: string | null;
+  stability: string | null;
+  generated: number | null;
+  source: string | null;
+  last_modified: string | null;
+  signature: string | null;
+}
+
+function parseJsonArray(value: string | null): string[] | undefined {
+  return value ? JSON.parse(value) : undefined;
+}
+
+function toBool(value: number | null): boolean | undefined {
+  return value !== null ? value === 1 : undefined;
+}
+
+function rowToSymbol(row: SymbolRow): CodeSymbol {
+  return {
+    id: row.id,
+    name: row.name,
+    qualifiedName: row.qualified_name ?? undefined,
+    kind: row.kind as SymbolKind,
+    file: row.file,
+    startLine: row.start_line,
+    endLine: row.end_line,
+    parent: row.parent ?? undefined,
+    visibility: (row.visibility as CodeSymbol["visibility"]) ?? undefined,
+    exported: toBool(row.exported),
+    language: (row.language as CodeSymbol["language"]) ?? undefined,
+    docRef: row.doc_ref ?? undefined,
+    summary: row.summary ?? undefined,
+    tags: parseJsonArray(row.tags),
+    domain: row.domain ?? undefined,
+    boundedContext: row.bounded_context ?? undefined,
+    extends: row.sym_extends ?? undefined,
+    implements: parseJsonArray(row.sym_implements),
+    usesTraits: parseJsonArray(row.uses_traits),
+    references: parseJsonArray(row.sym_references),
+    referencedBy: parseJsonArray(row.referenced_by),
+    layer: (row.layer as CodeSymbol["layer"]) ?? undefined,
+    metrics: row.metrics ? JSON.parse(row.metrics) : undefined,
+    pattern: row.pattern ?? undefined,
+    violations: parseJsonArray(row.violations),
+    deprecated: toBool(row.deprecated),
+    since: row.since ?? undefined,
+    stability: (row.stability as CodeSymbol["stability"]) ?? undefined,
+    generated: toBool(row.generated),
+    source: (row.source as CodeSymbol["source"]) ?? undefined,
+    lastModified: row.last_modified ? new Date(row.last_modified) : undefined,
+    signature: row.signature ?? undefined,
+  };
+}
+
+export function createSymbolRepository(db: Database.Database): SymbolRepository {
+  const upsertStmt = db.prepare(`
+    INSERT OR REPLACE INTO symbols (
+      id, name, qualified_name, kind, file, start_line, end_line, parent,
+      visibility, exported, language, doc_ref, summary, tags, domain, bounded_context,
+      sym_extends, sym_implements, uses_traits, sym_references, referenced_by, layer, metrics,
+      pattern, violations, deprecated, since, stability, generated, source,
+      last_modified, signature
+    ) VALUES (
+      @id, @name, @qualified_name, @kind, @file, @start_line, @end_line, @parent,
+      @visibility, @exported, @language, @doc_ref, @summary, @tags, @domain, @bounded_context,
+      @sym_extends, @sym_implements, @uses_traits, @sym_references, @referenced_by, @layer, @metrics,
+      @pattern, @violations, @deprecated, @since, @stability, @generated, @source,
+      @last_modified, @signature
+    )
+  `);
+
+  const findByIdStmt = db.prepare("SELECT * FROM symbols WHERE id = ?");
+  const findByFileStmt = db.prepare("SELECT * FROM symbols WHERE file = ?");
+  const findByKindStmt = db.prepare("SELECT * FROM symbols WHERE kind = ?");
+  const deleteByFileStmt = db.prepare("DELETE FROM symbols WHERE file = ?");
+
+  return {
+    upsert(symbol: CodeSymbol): void {
+      const toJson = (v: unknown) => (v != null ? JSON.stringify(v) : null);
+      const toBit = (v: boolean | undefined) => (v != null ? (v ? 1 : 0) : null);
+
+      upsertStmt.run({
+        id: symbol.id,
+        name: symbol.name,
+        qualified_name: symbol.qualifiedName ?? null,
+        kind: symbol.kind,
+        file: symbol.file,
+        start_line: symbol.startLine,
+        end_line: symbol.endLine,
+        parent: symbol.parent ?? null,
+        visibility: symbol.visibility ?? null,
+        exported: toBit(symbol.exported),
+        language: symbol.language ?? null,
+        doc_ref: symbol.docRef ?? null,
+        summary: symbol.summary ?? null,
+        tags: toJson(symbol.tags),
+        domain: symbol.domain ?? null,
+        bounded_context: symbol.boundedContext ?? null,
+        sym_extends: symbol.extends ?? null,
+        sym_implements: toJson(symbol.implements),
+        uses_traits: toJson(symbol.usesTraits),
+        sym_references: toJson(symbol.references),
+        referenced_by: toJson(symbol.referencedBy),
+        layer: symbol.layer ?? null,
+        metrics: toJson(symbol.metrics),
+        pattern: symbol.pattern ?? null,
+        violations: toJson(symbol.violations),
+        deprecated: toBit(symbol.deprecated),
+        since: symbol.since ?? null,
+        stability: symbol.stability ?? null,
+        generated: toBit(symbol.generated),
+        source: symbol.source ?? null,
+        last_modified: symbol.lastModified?.toISOString() ?? null,
+        signature: symbol.signature ?? null,
+      });
+    },
+
+    findById(id: string): CodeSymbol | undefined {
+      const row = findByIdStmt.get(id) as SymbolRow | undefined;
+      return row ? rowToSymbol(row) : undefined;
+    },
+
+    findByFile(file: string): CodeSymbol[] {
+      const rows = findByFileStmt.all(file) as SymbolRow[];
+      return rows.map(rowToSymbol);
+    },
+
+    findByKind(kind: SymbolKind): CodeSymbol[] {
+      const rows = findByKindStmt.all(kind) as SymbolRow[];
+      return rows.map(rowToSymbol);
+    },
+
+    deleteByFile(file: string): void {
+      deleteByFileStmt.run(file);
+    },
+  };
+}
+
+/* ================== RelationshipRepository ================== */
+
+export interface RelationshipRow {
+  source_id: string;
+  target_id: string;
+  type: string;
+}
+
+export interface RelationshipRepository {
+  upsert(sourceId: string, targetId: string, type: string): void;
+  findBySource(sourceId: string): RelationshipRow[];
+  findByTarget(targetId: string): RelationshipRow[];
+  deleteBySource(sourceId: string): void;
+}
+
+export function createRelationshipRepository(db: Database.Database): RelationshipRepository {
+  const upsertStmt = db.prepare(
+    "INSERT OR REPLACE INTO relationships (source_id, target_id, type) VALUES (?, ?, ?)",
+  );
+  const findBySourceStmt = db.prepare("SELECT * FROM relationships WHERE source_id = ?");
+  const findByTargetStmt = db.prepare("SELECT * FROM relationships WHERE target_id = ?");
+  const deleteBySourceStmt = db.prepare("DELETE FROM relationships WHERE source_id = ?");
+
+  return {
+    upsert(sourceId, targetId, type) {
+      upsertStmt.run(sourceId, targetId, type);
+    },
+    findBySource(sourceId) {
+      return findBySourceStmt.all(sourceId) as RelationshipRow[];
+    },
+    findByTarget(targetId) {
+      return findByTargetStmt.all(targetId) as RelationshipRow[];
+    },
+    deleteBySource(sourceId) {
+      deleteBySourceStmt.run(sourceId);
+    },
+  };
+}
