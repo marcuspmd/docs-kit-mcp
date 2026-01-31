@@ -1,6 +1,6 @@
 # Task 06 — Frontmatter Parser
 
-> **Status:** pending
+> **Status:** done
 > **Layer:** Documentation
 > **Priority:** MVP
 > **Depends on:** 01
