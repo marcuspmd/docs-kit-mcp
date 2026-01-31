@@ -111,13 +111,23 @@ describe("generateSite", () => {
     expect(files.every((f) => !f.includes("%2F"))).toBe(true);
   });
 
+  it("generates files directory page", () => {
+    generateSite({ dbPath, outDir });
+    const html = fs.readFileSync(path.join(outDir, "files.html"), "utf-8");
+    expect(html).toContain("File Explorer");
+    expect(html).toContain("src");
+    expect(html).toContain("service.ts");
+    // Should have links to files
+    expect(html).toContain("files/src--service.ts.html");
+  });
+
   it("generates relationships page", () => {
     generateSite({ dbPath, outDir });
     const html = fs.readFileSync(path.join(outDir, "relationships.html"), "utf-8");
     expect(html).toContain("Relationships");
     expect(html).toContain("UserService");
     // Should have a table
-    expect(html).toContain("<table>");
+    expect(html).toContain("<table");
   });
 
   it("generates patterns page", () => {

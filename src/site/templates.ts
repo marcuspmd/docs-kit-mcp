@@ -1,7 +1,6 @@
 import type { CodeSymbol } from "../indexer/symbol.types.js";
 import type { DetectedPattern } from "../patterns/patternAnalyzer.js";
 import type { RelationshipRow } from "../storage/db.js";
-import { CSS } from "./styles.js";
 import {
   fileSlug,
   buildMermaidForSymbol,
@@ -21,50 +20,56 @@ function escapeHtml(str: string): string {
 }
 
 function escapeCodeBlocks(str: string): string {
-  // For syntax highlighting, we need to escape HTML but preserve code structure
   return escapeHtml(str);
 }
 
 function badgeClass(kind: string): string {
+  const base = "px-2 py-0.5 rounded text-xs font-medium border";
   const map: Record<string, string> = {
-    class: "badge-class",
-    abstract_class: "badge-class",
-    interface: "badge-interface",
-    function: "badge-function",
-    method: "badge-method",
-    enum: "badge-enum",
-    type: "badge-type",
+    class: "bg-blue-50 text-blue-700 border-blue-200",
+    abstract_class: "bg-blue-50 text-blue-700 border-blue-200 dashed",
+    interface: "bg-green-50 text-green-700 border-green-200",
+    function: "bg-yellow-50 text-yellow-800 border-yellow-200",
+    method: "bg-purple-50 text-purple-700 border-purple-200",
+    enum: "bg-pink-50 text-pink-700 border-pink-200",
+    type: "bg-indigo-50 text-indigo-700 border-indigo-200",
   };
-  return map[kind] ?? "badge-class";
+  return `${base} ${map[kind] || "bg-gray-50 text-gray-700 border-gray-200"}`;
 }
 
 function visibilityBadge(visibility?: string): string {
   if (!visibility) return "";
+  const base = "px-2 py-0.5 rounded text-xs font-medium border ml-2";
   const map: Record<string, string> = {
-    public: "badge-public",
-    protected: "badge-protected",
-    private: "badge-private",
+    public: "bg-green-50 text-green-700 border-green-200",
+    protected: "bg-yellow-50 text-yellow-800 border-yellow-200",
+    private: "bg-red-50 text-red-700 border-red-200",
   };
-  return `<span class="badge ${map[visibility] || "badge-public"}">${visibility}</span>`;
+  return `<span class="${base} ${map[visibility] || "bg-gray-50 text-gray-700 border-gray-200"}">${visibility}</span>`;
 }
 
 function layerBadge(layer?: string): string {
   if (!layer) return "";
+  const base = "px-2 py-0.5 rounded text-xs font-medium border ml-2";
   const map: Record<string, string> = {
-    domain: "badge-layer-domain",
-    application: "badge-layer-application",
-    infrastructure: "badge-layer-infrastructure",
-    presentation: "badge-layer-presentation",
-    test: "badge-layer",
+    domain: "bg-green-50 text-green-700 border-green-200",
+    application: "bg-blue-50 text-blue-700 border-blue-200",
+    infrastructure: "bg-yellow-50 text-yellow-800 border-yellow-200",
+    presentation: "bg-purple-50 text-purple-700 border-purple-200",
+    test: "bg-gray-50 text-gray-700 border-gray-200",
   };
-  return `<span class="badge ${map[layer] || "badge-layer"}">${layer}</span>`;
+  return `<span class="${base} ${map[layer] || "bg-gray-50 text-gray-700 border-gray-200"}">${layer}</span>`;
 }
 
 function statusBadges(symbol: CodeSymbol): string {
   const badges = [];
-  if (symbol.exported) badges.push(`<span class="badge badge-exported">exported</span>`);
-  if (symbol.deprecated) badges.push(`<span class="badge badge-deprecated">deprecated</span>`);
-  return badges.join(" ");
+  if (symbol.exported) {
+    badges.push(`<span class="px-2 py-0.5 rounded text-xs font-medium border bg-blue-50 text-blue-700 border-blue-200 ml-2">exported</span>`);
+  }
+  if (symbol.deprecated) {
+    badges.push(`<span class="px-2 py-0.5 rounded text-xs font-medium border bg-red-50 text-red-700 border-red-200 ml-2 line-through">deprecated</span>`);
+  }
+  return badges.join("");
 }
 
 function layout(
@@ -77,6 +82,7 @@ function layout(
   const prefix = depth > 0 ? "../".repeat(depth) : "";
   const navLinks = [
     [`${prefix}index.html`, "Dashboard"],
+    [`${prefix}files.html`, "Files"],
     [`${prefix}relationships.html`, "Relationships"],
     [`${prefix}patterns.html`, "Patterns"],
   ];
@@ -84,60 +90,89 @@ function layout(
   const sidebarNav = navLinks
     .map(([href, label]) => {
       const isActive = currentPage === href.split("/").pop();
-      return `<a href="${href}" class="${isActive ? "active" : ""}">${label}</a>`;
+      return `<a href="${href}" class="block px-4 py-2 rounded-md text-sm font-medium ${isActive
+          ? "bg-blue-50 text-blue-700"
+          : "text-gray-700 hover:bg-gray-50 hover:text-gray-900"}">${label}</a>`;
     })
     .join("");
 
-  const rightSidebar = facetsHtml ? `<aside class="right-sidebar">${facetsHtml}</aside>` : "";
+  const rightSidebar = facetsHtml
+    ? `<aside class="w-64 bg-white border-l border-gray-200 p-6 overflow-y-auto hidden xl:block flex-shrink-0">${facetsHtml}</aside>`
+    : "";
 
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="h-full bg-gray-50">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>${escapeHtml(title)} - doc-kit</title>
   <meta name="description" content="Documentation generated by doc-kit for your codebase">
-  <script type="application/ld+json">${escapeHtml(
-    JSON.stringify({
-      "@context": "https://schema.org",
-      "@type": "WebSite",
-      name: "doc-kit",
-      description: "Documentation generated by doc-kit for a codebase",
-    }),
-  )}</script>
-  <style>${CSS}</style>
+  <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            primary: '#2563eb',
+            secondary: '#475569',
+          }
+        }
+      }
+    }
+  </script>
 </head>
-<body>
-  <header class="header">
-    <div class="logo">doc-kit</div>
-    <div class="search-container">
-      <input type="text" class="search-box" id="global-search" placeholder="Search symbols..." aria-label="Search symbols">
+<body class="h-full flex flex-col">
+  <header class="bg-white border-b border-gray-200 sticky top-0 z-30">
+    <div class="max-w-8xl mx-auto px-4 sm:px-6 lg:px-8">
+      <div class="flex justify-between h-16">
+        <div class="flex">
+          <div class="flex-shrink-0 flex items-center">
+            <span class="text-xl font-bold text-blue-600">doc-kit</span>
+          </div>
+        </div>
+        <div class="flex-1 flex items-center justify-center px-2 lg:ml-6 lg:justify-end">
+          <div class="max-w-lg w-full lg:max-w-xs">
+            <label for="global-search" class="sr-only">Search</label>
+            <div class="relative">
+              <input id="global-search" class="block w-full pl-3 pr-3 py-2 border border-gray-300 rounded-md leading-5 bg-white placeholder-gray-500 focus:outline-none focus:placeholder-gray-400 focus:ring-1 focus:ring-blue-500 focus:border-blue-500 sm:text-sm" placeholder="Search symbols..." type="search">
+            </div>
+          </div>
+        </div>
+      </div>
     </div>
   </header>
 
-  <div class="main-layout">
-    <aside class="sidebar">
-      <h3>Navigation</h3>
-      <nav>
-        ${sidebarNav}
-      </nav>
-      <h3>Quick Links</h3>
-      <nav>
-        <a href="${prefix}index.html#architecture-layers">Layers</a>
-        <a href="${prefix}index.html#top-complex-symbols">Complexity</a>
-        <a href="${prefix}relationships.html">All Relationships</a>
-      </nav>
+  <div class="flex-1 flex overflow-hidden">
+    <aside class="w-64 bg-white border-r border-gray-200 overflow-y-auto hidden md:block flex-shrink-0">
+      <div class="p-6">
+        <h3 class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Navigation</h3>
+        <nav class="space-y-1">
+          ${sidebarNav}
+        </nav>
+        
+        <h3 class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mt-8 mb-2">Quick Links</h3>
+        <nav class="space-y-1">
+          <a href="${prefix}index.html#architecture-layers" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900">Layers</a>
+          <a href="${prefix}index.html#top-complex-symbols" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900">Complexity</a>
+          <a href="${prefix}relationships.html" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900">All Relationships</a>
+        </nav>
+      </div>
     </aside>
 
-    <main class="content" id="content" role="main">
-      <a class="skip-link" href="#content">Skip to content</a>
-      ${body}
+    <main class="flex-1 overflow-y-auto focus:outline-none p-6 lg:p-8" id="content" role="main">
+      <div class="max-w-7xl mx-auto">
+        ${body}
+      </div>
     </main>
 
     ${rightSidebar}
   </div>
 
-  <footer>Generated by doc-kit</footer>
+  <footer class="bg-white border-t border-gray-200 py-4 px-6 text-center text-sm text-gray-500">
+    Generated by doc-kit
+  </footer>
 
   <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2/dist/fuse.min.js"></script>
   <script>
@@ -164,8 +199,8 @@ function layout(
       if (!q || !FUSE) return;
 
       const results = FUSE.search(q).slice(0, 5);
-      // For now, just log; could show dropdown later
       console.log('Search results:', results);
+      // TODO: Implement dropdown
     });
   </script>
 </body>
@@ -186,6 +221,43 @@ export interface SiteData {
   relationships: RelationshipRow[];
   patterns: DetectedPattern[];
   files: string[];
+}
+
+export function renderMarkdownWrapper(title: string, mdFilename: string): string {
+  const body = `
+    <article id="doc" class="prose max-w-none prose-blue">
+       <div class="flex items-center justify-center h-32">
+          <svg class="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+            <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+            <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+          </svg>
+          <span class="ml-2 text-gray-600">Loading document...</span>
+       </div>
+    </article>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+      (async function(){
+        try {
+          const res = await fetch('./${escapeHtml(mdFilename)}');
+          if (!res.ok) throw new Error('Failed to load');
+          const md = await res.text();
+          const html = marked.parse(md);
+          document.getElementById('doc').innerHTML = html;
+          // Convert internal .md links to .html so navigation stays within site
+          document.querySelectorAll('#doc a').forEach(function(a){
+            const href = a.getAttribute('href');
+            if (!href) return;
+            if (href.toLowerCase().endsWith('.md')) a.setAttribute('href', href.slice(0, -3) + '.html');
+          });
+          hljs.highlightAll();
+        } catch(e) {
+          document.getElementById('doc').innerHTML = '<div class="bg-red-50 border border-red-200 rounded-md p-4 text-red-700">Error loading document: ' + e.message + '</div>';
+        }
+      })();
+    </script>
+  `;
+
+  return layout(title, "", body, 1);
 }
 
 export function renderDashboard(data: SiteData): string {
@@ -227,130 +299,149 @@ export function renderDashboard(data: SiteData): string {
   const topLevel = symbols.filter((s) => !s.parent);
 
   const body = `
-    <h1>doc-kit Documentation</h1>
+    <h1 class="text-3xl font-bold text-gray-900 mb-8 pb-4 border-b border-gray-200">doc-kit Documentation</h1>
 
-    <div class="stats">
-      <div class="stat">
-        <div class="number">${files.length}</div>
-        <div class="label">Files</div>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
+      <div class="bg-white overflow-hidden shadow rounded-lg">
+        <div class="px-4 py-5 sm:p-6 text-center">
+          <dt class="text-sm font-medium text-gray-500 truncate">Files</dt>
+          <dd class="mt-1 text-3xl font-semibold text-blue-600">${files.length}</dd>
+        </div>
       </div>
-      <div class="stat">
-        <div class="number">${symbols.length}</div>
-        <div class="label">Symbols</div>
+      <div class="bg-white overflow-hidden shadow rounded-lg">
+        <div class="px-4 py-5 sm:p-6 text-center">
+          <dt class="text-sm font-medium text-gray-500 truncate">Symbols</dt>
+          <dd class="mt-1 text-3xl font-semibold text-blue-600">${symbols.length}</dd>
+        </div>
       </div>
-      <div class="stat">
-        <div class="number">${relationships.length}</div>
-        <div class="label">Relationships</div>
+      <div class="bg-white overflow-hidden shadow rounded-lg">
+        <div class="px-4 py-5 sm:p-6 text-center">
+          <dt class="text-sm font-medium text-gray-500 truncate">Relationships</dt>
+          <dd class="mt-1 text-3xl font-semibold text-blue-600">${relationships.length}</dd>
+        </div>
       </div>
-      <div class="stat">
-        <div class="number">${patterns.length}</div>
-        <div class="label">Patterns</div>
+      <div class="bg-white overflow-hidden shadow rounded-lg">
+        <div class="px-4 py-5 sm:p-6 text-center">
+          <dt class="text-sm font-medium text-gray-500 truncate">Patterns</dt>
+          <dd class="mt-1 text-3xl font-semibold text-blue-600">${patterns.length}</dd>
+        </div>
       </div>
     </div>
 
-    <h2>Architecture Layers</h2>
-    <div class="layer-cards">
-      ${Object.entries(layerCounts)
-        .sort((a, b) => b[1] - a[1])
-        .map(
-          ([layer, count]) => `
-        <div class="layer-card">
-          <div class="number">${count}</div>
-          <div class="label">${layer}</div>
-        </div>`,
-        )
-        .join("")}
-    </div>
-
-    ${
-      overviewGraph
-        ? `
-    <h2>Architecture Overview</h2>
-    <div class="mermaid-container">
-      <div class="mermaid">${overviewGraph}</div>
-    </div>`
-        : ""
-    }
-
-    <h2>Top Complex Symbols</h2>
-    <table>
-      <thead><tr><th scope="col">Name</th><th scope="col">File</th><th scope="col">Complexity</th><th scope="col">LOC</th></tr></thead>
-      <tbody>
-        ${complexSymbols
-          .map((s) => {
-            const complexity = s.metrics?.cyclomaticComplexity || 0;
-            const loc = s.metrics?.linesOfCode || 0;
-            return `<tr class="${complexity > 10 ? "complexity-high" : ""}">
-            <td><a href="symbols/${s.id}.html">${escapeHtml(s.name)}</a></td>
-            <td><a href="files/${fileSlug(s.file)}.html">${escapeHtml(s.file)}</a></td>
-            <td>${complexity}</td>
-            <td>${loc}</td>
-          </tr>`;
-          })
-          .join("")}
-      </tbody>
-    </table>
-
-    <h2>Symbol Kinds</h2>
-    <div class="stats">
-      ${Object.entries(kindCounts)
-        .sort((a, b) => b[1] - a[1])
-        .map(
-          ([kind, count]) => `
-        <div class="stat">
-          <div class="number">${count}</div>
-          <div class="label">${kind}</div>
-        </div>`,
-        )
-        .join("")}
-    </div>
-
-    <h2>Files by Directory</h2>
-    ${Object.entries(dirGroups)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .map(
-        ([dir, { files: dirFiles, symbols: symbolCount }]) => `
-      <details class="dir-group">
-        <summary>${escapeHtml(dir)} <span class="dir-count">(${dirFiles.length} files, ${symbolCount} symbols)</span></summary>
-        <ul>
-          ${dirFiles
-            .sort()
-            .map((f) => `<li><a href="files/${fileSlug(f)}.html">${escapeHtml(f)}</a></li>`)
-            .join("")}
-        </ul>
-      </details>`,
-      )
-      .join("")}
-
-    <h2>Top-Level Symbols</h2>
-    <table>
-      <thead><tr><th scope="col">Name</th><th scope="col">Kind</th><th scope="col">File</th></tr></thead>
-      <tbody>
-        ${topLevel
-          .sort((a, b) => a.name.localeCompare(b.name))
+    <div id="architecture-layers" class="mb-12">
+      <h2 class="text-2xl font-bold text-gray-900 mb-6">Architecture Layers</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+        ${Object.entries(layerCounts)
+          .sort((a, b) => b[1] - a[1])
           .map(
-            (s) => `<tr>
-            <td><a href="symbols/${s.id}.html">${escapeHtml(s.name)}</a></td>
-            <td><span class="badge ${badgeClass(s.kind)}">${s.kind}</span></td>
-            <td><a href="files/${fileSlug(s.file)}.html">${escapeHtml(s.file)}</a></td>
-          </tr>`,
+            ([layer, count]) => `
+          <div class="bg-white overflow-hidden shadow rounded-lg border border-gray-200">
+            <div class="px-4 py-5 sm:p-6 text-center">
+              <dt class="text-sm font-medium text-gray-500 truncate capitalize">${layer}</dt>
+              <dd class="mt-1 text-2xl font-semibold text-gray-900">${count}</dd>
+            </div>
+          </div>`,
           )
           .join("")}
-      </tbody>
-    </table>
-
-    <h2>Search</h2>
-    <div class="search-area">
-      <div class="facets" id="facets">
-        <div class="facet" id="facet-kinds"><strong>Kinds</strong><div class="facet-list"></div></div>
-        <div class="facet" id="facet-tags"><strong>Tags</strong><div class="facet-list"></div></div>
-        <div class="facet" id="facet-files"><strong>Files</strong><div class="facet-list"></div></div>
       </div>
-      <div style="flex:1">
-        <div role="search" aria-label="Symbol search">
-          <input type="text" class="search-box" id="search" placeholder="Search symbols..." aria-label="Search symbols">
+    </div>
+
+    ${overviewGraph
+      ? `
+    <div class="mb-12">
+      <h2 class="text-2xl font-bold text-gray-900 mb-6">Architecture Overview</h2>
+      <div class="bg-white shadow rounded-lg p-6 overflow-x-auto border border-gray-200">
+        <div class="mermaid">${overviewGraph}</div>
+      </div>
+    </div>`
+      : ""}
+
+    <div id="top-complex-symbols" class="mb-12">
+      <h2 class="text-2xl font-bold text-gray-900 mb-6">Top Complex Symbols</h2>
+      <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Complexity</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">LOC</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            ${complexSymbols
+              .map((s) => {
+                const complexity = s.metrics?.cyclomaticComplexity || 0;
+                const loc = s.metrics?.linesOfCode || 0;
+                return `<tr class="${complexity > 10 ? "bg-red-50" : ""}">
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600"><a href="symbols/${s.id}.html" class="hover:underline">${escapeHtml(s.name)}</a></td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><a href="files/${fileSlug(s.file)}.html" class="hover:text-blue-600 hover:underline">${escapeHtml(s.file)}</a></td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm ${complexity > 10 ? "text-red-600 font-bold" : "text-gray-500"}">${complexity}</td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${loc}</td>
+              </tr>`;
+              })
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="mb-12">
+      <h2 class="text-2xl font-bold text-gray-900 mb-6">Symbol Kinds</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4">
+        ${Object.entries(kindCounts)
+          .sort((a, b) => b[1] - a[1])
+          .map(
+            ([kind, count]) => `
+          <div class="bg-white shadow rounded-lg p-4 border border-gray-200 flex justify-between items-center">
+            <span class="text-sm font-medium text-gray-500">${kind}</span>
+            <span class="text-lg font-semibold text-gray-900">${count}</span>
+          </div>`,
+          )
+          .join("")}
+      </div>
+    </div>
+
+    <div class="mb-12">
+      <h2 class="text-2xl font-bold text-gray-900 mb-6">Top-Level Symbols</h2>
+      <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kind</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            ${topLevel
+              .sort((a, b) => a.name.localeCompare(b.name))
+              .map(
+                (s) => `<tr>
+                <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600"><a href="symbols/${s.id}.html" class="hover:underline">${escapeHtml(s.name)}</a></td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm"><span class="${badgeClass(s.kind)}">${s.kind}</span></td>
+                <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><a href="files/${fileSlug(s.file)}.html" class="hover:text-blue-600 hover:underline">${escapeHtml(s.file)}</a></td>
+              </tr>`,
+              )
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="mb-12">
+      <h2 class="text-2xl font-bold text-gray-900 mb-6">Search</h2>
+      <div class="flex flex-col md:flex-row gap-6">
+        <div class="hidden"></div>
+        <div class="flex-1">
+           <div class="relative rounded-md shadow-sm mb-4">
+            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+              <span class="text-gray-500 sm:text-sm">🔍</span>
+            </div>
+            <input type="text" id="search" class="focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 sm:text-sm border-gray-300 rounded-md py-2" placeholder="Search symbols in detail..." aria-label="Search symbols">
+          </div>
+          <ul id="results" class="bg-white shadow overflow-hidden sm:rounded-md divide-y divide-gray-200" role="region" aria-live="polite" aria-label="Search results"></ul>
         </div>
-        <ul class="search-results" id="results" role="region" aria-live="polite" aria-label="Search results"></ul>
       </div>
     </div>
 
@@ -362,93 +453,91 @@ export function renderDashboard(data: SiteData): string {
       var INDEX = null;
       var FUSE = null;
 
-      function renderFacets(facets) {
-        function renderList(containerId, map, keyName) {
-          var el = document.getElementById(containerId).querySelector('.facet-list');
-          el.innerHTML = '';
-          Object.keys(map).sort().forEach(function(k){
-            var id = containerId + '-' + k.replace(/[^a-z0-9]/gi,'_');
-            var cb = document.createElement('input'); cb.type='checkbox'; cb.id=id; cb.dataset.value=k; cb.dataset.key=keyName;
-            cb.addEventListener('change', function(){ doSearch(document.getElementById('search').value); });
-            var label = document.createElement('label'); label.htmlFor = id; label.appendChild(cb); label.appendChild(document.createTextNode(' ' + k + ' ('+map[k]+')'));
-            var div = document.createElement('div'); div.appendChild(label); el.appendChild(div);
-          });
-        }
-        renderList('facet-kinds', facets.kinds, 'kind');
-        renderList('facet-tags', facets.tags, 'tag');
-        renderList('facet-files', facets.files, 'file');
-      }
-
-      function getSelectedFacets() {
-        var checks = document.querySelectorAll('.facet input[type=checkbox]');
-        var sel = { kinds: new Set(), tags: new Set(), files: new Set() };
-        checks.forEach(function(ch){ if (ch.checked) { var k = ch.dataset.key; if (k==='kind') sel.kinds.add(ch.dataset.value); if (k==='tag') sel.tags.add(ch.dataset.value); if (k==='file') sel.files.add(ch.dataset.value); } });
-        return sel;
-      }
-
-      function itemMatchesFacets(item, sel) {
-        if (sel.kinds.size && !sel.kinds.has(item.kind)) return false;
-        if (sel.files.size) {
-          var p = item.file ? item.file.split('/')[0] : 'root';
-          if (!sel.files.has(p)) return false;
-        }
-        if (sel.tags.size) {
-          var itags = Array.isArray(item.tags) ? item.tags : [];
-          var ok = false; for (var t of itags) { if (sel.tags.has(t)) { ok = true; break; } }
-          if (!ok) return false;
-        }
-        return true;
-      }
-
       function renderResults(results) {
         var r = document.getElementById('results'); r.textContent='';
+        if (results.length === 0) {
+            r.innerHTML = '<li class="px-4 py-4 text-center text-gray-500 text-sm">No results found</li>';
+            return;
+        }
         results.slice(0, 100).forEach(function(it){
           var li = document.createElement('li');
-          var a = document.createElement('a'); a.href='symbols/'+it.id+'.html'; a.textContent=it.name; li.appendChild(a);
-          li.appendChild(document.createTextNode(' '));
-          var span = document.createElement('span'); span.className='badge '+it.badgeClass; span.textContent=it.kind; li.appendChild(span);
-          if (it.signature) { li.appendChild(document.createTextNode(' - ')); var sig = document.createElement('code'); sig.textContent = it.signature; li.appendChild(sig); }
-          if (it.summary) { li.appendChild(document.createTextNode(' — ' + it.summary)); }
+          
+          var div = document.createElement('div');
+          div.className = "px-4 py-4 sm:px-6 hover:bg-gray-50";
+          
+          var flex = document.createElement('div');
+          flex.className = "flex items-center justify-between";
+          
+          var nameP = document.createElement('p');
+          nameP.className = "text-sm font-medium text-blue-600 truncate";
+          var a = document.createElement('a'); a.href='symbols/'+it.id+'.html'; a.textContent=it.name; 
+          nameP.appendChild(a); 
+          
+          var badgeDiv = document.createElement('div');
+          badgeDiv.className = "ml-2 flex-shrink-0 flex";
+          var span = document.createElement('span'); span.className=it.badgeClass; span.textContent=it.kind; 
+          badgeDiv.appendChild(span);
+          
+          flex.appendChild(nameP);
+          flex.appendChild(badgeDiv);
+          
+          var detailsDiv = document.createElement('div');
+          detailsDiv.className = "mt-2 sm:flex sm:justify-between";
+          
+          var leftDetails = document.createElement('div');
+          leftDetails.className = "sm:flex";
+          
+          if (it.signature) { 
+             var pSig = document.createElement('p'); pSig.className = "flex items-center text-sm text-gray-500 font-mono bg-gray-50 px-1 rounded truncate max-w-md";
+             pSig.textContent = it.signature; 
+             leftDetails.appendChild(pSig);
+          }
+          
+          var rightDetails = document.createElement('div');
+          rightDetails.className = "mt-2 flex items-center text-sm text-gray-500 sm:mt-0 sm:ml-6";
+          
+          if (it.file) {
+              var pFile = document.createElement('p'); pFile.textContent = it.file;
+              rightDetails.appendChild(pFile);
+          }
+          
+          detailsDiv.appendChild(leftDetails);
+          detailsDiv.appendChild(rightDetails);
+          
+          div.appendChild(flex);
+          div.appendChild(detailsDiv);
+          
+          if (it.summary) {
+             var pSum = document.createElement('p'); pSum.className="mt-2 text-sm text-gray-600 italic";
+             pSum.textContent = it.summary;
+             div.appendChild(pSum);
+          }
+
+          li.appendChild(div);
           r.appendChild(li);
         });
       }
 
       function doSearch(q) {
         if (!INDEX) return;
-        var sel = getSelectedFacets();
         var results = [];
         if (q && q.trim().length>0 && FUSE) {
           results = FUSE.search(q).map(function(r){ return r.item; });
         } else {
           results = INDEX.items.slice();
         }
-        results = results.filter(function(it){ return itemMatchesFacets(it, sel); });
         renderResults(results);
       }
 
       fetch('search.json')
         .then(function (r) { return r.json(); })
         .then(function (data) {
-          // Support two formats for search.json:
-          // - legacy: an array of items (tests and older sites)
-          // - current: { items: [], facets: { ... } }
           if (Array.isArray(data)) {
-            INDEX = { items: data, facets: { kinds: {}, tags: {}, files: {} } };
-            // Build simple facets from items
-            for (const it of data) {
-              INDEX.facets.kinds[it.kind] = (INDEX.facets.kinds[it.kind] ?? 0) + 1;
-              const seg = it.file ? (typeof it.file === 'string' ? it.file.split('/')[0] || it.file : 'root') : 'root';
-              INDEX.facets.files[seg] = (INDEX.facets.files[seg] ?? 0) + 1;
-              if (Array.isArray(it.tags)) {
-                for (const t of it.tags) INDEX.facets.tags[t] = (INDEX.facets.tags[t] ?? 0) + 1;
-              }
-            }
+            INDEX = { items: data };
           } else {
             INDEX = data;
           }
 
-          renderFacets(INDEX.facets);
-          // Initialize Fuse
           try {
             FUSE = new Fuse(INDEX.items, { keys: [{ name: 'name', weight: 0.6 }, { name: 'signature', weight: 0.2 }, { name: 'summary', weight: 0.2 }], includeMatches: true, threshold: 0.35 });
           } catch (e) { console.warn('Fuse init failed', e); FUSE = null; }
@@ -457,7 +546,140 @@ export function renderDashboard(data: SiteData): string {
     </script>
   `;
 
+  // No filters in sidebar for dashboard
   return layout("Dashboard", "index.html", body);
+}
+
+export function renderFilesPage(files: string[], symbols: CodeSymbol[]): string {
+  // 1. Build the tree
+  interface TreeNode {
+    name: string;
+    path: string; // full path so far
+    isFile: boolean;
+    children: Record<string, TreeNode>;
+    symbolCount: number;
+  }
+
+  const root: TreeNode = {
+    name: "root",
+    path: "",
+    isFile: false,
+    children: {},
+    symbolCount: 0,
+  };
+
+  const symbolCounts = new Map<string, number>();
+  for (const s of symbols) {
+    symbolCounts.set(s.file, (symbolCounts.get(s.file) ?? 0) + 1);
+  }
+
+  for (const file of files) {
+    const parts = file.split("/");
+    let current = root;
+    let currentPath = "";
+
+    for (let i = 0; i < parts.length; i++) {
+      const part = parts[i];
+      const isLast = i === parts.length - 1;
+      currentPath = currentPath ? `${currentPath}/${part}` : part;
+
+      if (!current.children[part]) {
+        current.children[part] = {
+          name: part,
+          path: currentPath,
+          isFile: isLast,
+          children: {},
+          symbolCount: 0,
+        };
+      }
+      current = current.children[part];
+    }
+    // Set symbol count for the file node
+    current.symbolCount = symbolCounts.get(file) ?? 0;
+  }
+
+  // 2. Propagate counts up
+  function calculateCounts(node: TreeNode): number {
+    if (node.isFile) return node.symbolCount;
+    let sum = 0;
+    for (const child of Object.values(node.children)) {
+      sum += calculateCounts(child);
+    }
+    node.symbolCount = sum;
+    return sum;
+  }
+  calculateCounts(root);
+
+  // 3. Recursive Render
+  function renderNode(node: TreeNode, depth: number): string {
+    const indent = depth * 1.5; // rem
+    const children = Object.values(node.children).sort((a, b) => {
+      // Directories first, then alphabetical
+      if (a.isFile !== b.isFile) return a.isFile ? 1 : -1;
+      return a.name.localeCompare(b.name);
+    });
+
+    if (node.isFile) {
+      return `
+        <div class="flex items-center py-1 hover:bg-gray-50 group transition-colors rounded-md px-2 -mx-2">
+          <div style="width: ${indent}rem" class="flex-shrink-0"></div>
+          <svg class="h-4 w-4 text-gray-400 mr-2 flex-shrink-0 group-hover:text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+          </svg>
+          <a href="files/${fileSlug(node.path)}.html" class="text-sm text-gray-700 hover:text-blue-600 font-medium truncate flex-1 block">
+            ${escapeHtml(node.name)}
+          </a>
+          <span class="text-xs text-gray-400 ml-2 bg-gray-100 px-2 py-0.5 rounded-full border border-gray-200">${node.symbolCount}</span>
+        </div>
+      `;
+    } else {
+      // Directory
+      const inner = children.map((c) => renderNode(c, depth + 1)).join("");
+      // Don't render root wrapper if it's the top-level container call
+      if (node.name === "root") return inner;
+
+      return `
+        <details class="group/folder" open>
+          <summary class="flex items-center py-1 hover:bg-gray-50 cursor-pointer select-none rounded-md px-2 -mx-2 transition-colors">
+            <div style="width: ${indent}rem" class="flex-shrink-0"></div>
+            <svg class="h-4 w-4 text-gray-400 mr-2 flex-shrink-0 group-open/folder:hidden" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z" />
+            </svg>
+            <svg class="h-4 w-4 text-blue-500 mr-2 flex-shrink-0 hidden group-open/folder:block" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+              <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2l-2 2z" />
+            </svg>
+            <span class="text-sm font-semibold text-gray-800 flex-1 truncate">${escapeHtml(node.name)}</span>
+            <span class="text-xs text-gray-400 ml-2">${node.symbolCount}</span>
+          </summary>
+          <div class="border-l border-gray-100 ml-4 pl-1 my-1">
+            ${inner}
+          </div>
+        </details>
+      `;
+    }
+  }
+
+  const body = `
+    <div class="flex items-center justify-between mb-8 pb-4 border-b border-gray-200">
+      <h1 class="text-3xl font-bold text-gray-900">File Explorer</h1>
+      <div class="text-sm text-gray-500">
+        <span class="font-semibold text-gray-900">${files.length}</span> files, 
+        <span class="font-semibold text-gray-900">${symbols.length}</span> symbols
+      </div>
+    </div>
+    
+    <div class="bg-white shadow rounded-lg border border-gray-200 overflow-hidden">
+      <div class="p-4 bg-gray-50 border-b border-gray-200 flex justify-between items-center">
+        <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider">Project Source</span>
+        <button onclick="document.querySelectorAll('details').forEach(d => d.open = false)" class="text-xs text-blue-600 hover:text-blue-800 font-medium">Collapse All</button>
+      </div>
+      <div class="p-2 overflow-x-auto">
+        ${renderNode(root, 0)}
+      </div>
+    </div>
+  `;
+
+  return layout("Files", "files.html", body);
 }
 
 export function renderSymbolPage(
@@ -470,197 +692,253 @@ export function renderSymbolPage(
   const outgoing = relationships.filter((r) => r.source_id === symbol.id);
   const incoming = relationships.filter((r) => r.target_id === symbol.id);
 
-  // Extract source code snippet with syntax highlighting
   let sourceSnippet = "";
   if (sourceCode) {
     const lines = sourceCode.split("\n");
     const start = Math.max(0, symbol.startLine - 1);
     const end = Math.min(lines.length, symbol.endLine);
     const snippet = lines.slice(start, end);
-    // Add line numbers and highlight current symbol line
     const symbolLine = symbol.startLine - 1;
     const numbered = snippet
       .map((line, i) => {
         const lineNum = start + i + 1;
         const isSymbolLine = lineNum === symbolLine;
-        return `<span class="${isSymbolLine ? "highlight-line" : ""}">${String(lineNum).padStart(4)} | ${escapeHtml(line)}</span>`;
+        return `<span class="${isSymbolLine ? "bg-yellow-100 block w-full" : "block w-full"}"><span class="text-gray-400 select-none mr-4 w-8 inline-block text-right">${lineNum}</span>${escapeHtml(line)}</span>`;
       })
       .join("\n");
     sourceSnippet = numbered;
   }
 
-  // Breadcrumb navigation
   const breadcrumb = [
-    '<a href="../index.html">Dashboard</a>',
-    `<a href="../files/${fileSlug(symbol.file)}.html">${escapeHtml(symbol.file)}</a>`,
+    '<a href="../index.html" class="hover:text-gray-700">Dashboard</a>',
+    `<a href="../files/${fileSlug(symbol.file)}.html" class="hover:text-gray-700">${escapeHtml(symbol.file)}</a>`,
   ];
   if (symbol.parent) {
     const parent = allSymbols.find((s) => s.id === symbol.parent);
     if (parent) {
-      breadcrumb.splice(1, 0, `<a href="${parent.id}.html">${escapeHtml(parent.name)}</a>`);
+      breadcrumb.splice(1, 0, `<a href="${parent.id}.html" class="hover:text-gray-700">${escapeHtml(parent.name)}</a>`);
     }
   }
-  breadcrumb.push(escapeHtml(symbol.name));
+  breadcrumb.push(`<span class="text-gray-900 font-semibold">${escapeHtml(symbol.name)}</span>`);
 
-  // Per-symbol dependency graph
   const depGraph = buildMermaidForSymbol(symbol, allSymbols, relationships, "outgoing", true);
-  // Per-symbol impact graph (who depends on me)
   const impactGraph = buildMermaidForSymbol(symbol, allSymbols, relationships, "incoming", true);
 
   const body = `
-    <div class="breadcrumb">
-      ${breadcrumb.map((item) => `<span>${item}</span>`).join('<span class="sep"></span>')}
+    <nav class="flex mb-6" aria-label="Breadcrumb">
+      <ol class="flex items-center space-x-2 text-sm text-gray-500">
+        ${breadcrumb.map((item, i) => `
+          <li>
+            <div class="flex items-center">
+              ${i > 0 ? '<svg class="flex-shrink-0 h-5 w-5 text-gray-300 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" /></svg>' : ''}
+              ${item}
+            </div>
+          </li>
+        `).join("")}
+      </ol>
+    </nav>
+
+    <div class="bg-white shadow rounded-lg mb-8 border border-gray-200">
+      <div class="px-6 py-5 border-b border-gray-200 flex items-center justify-between flex-wrap gap-4">
+        <h1 class="text-2xl font-bold text-gray-900 flex items-center flex-wrap gap-2">
+           <span class="mr-2">${escapeHtml(symbol.name)}</span>
+           <span class="${badgeClass(symbol.kind)}">${symbol.kind}</span>
+           ${visibilityBadge(symbol.visibility)}
+           ${layerBadge(symbol.layer)}
+           ${statusBadges(symbol)}
+        </h1>
+        <div class="text-sm text-gray-500">
+          Last updated: ${escapeHtml(formatDate(symbol.lastModified) ?? "Unknown")}
+        </div>
+      </div>
+      <div class="px-6 py-5 space-y-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <h3 class="text-sm font-medium text-gray-500">Location</h3>
+            <p class="mt-1 text-sm text-gray-900"><a href="../files/${fileSlug(symbol.file)}.html" class="text-blue-600 hover:underline">${escapeHtml(symbol.file)}</a>:${symbol.startLine}-${symbol.endLine}</p>
+          </div>
+          ${symbol.metrics ? `
+          <div>
+            <h3 class="text-sm font-medium text-gray-500">Metrics</h3>
+            <div class="mt-1 flex space-x-4 text-sm text-gray-900">
+              <span>LOC: ${symbol.metrics.linesOfCode ?? "-"}</span>
+              <span>Complexity: <span class="${(symbol.metrics.cyclomaticComplexity ?? 0) > 10 ? 'text-red-600 font-bold' : ''}">${symbol.metrics.cyclomaticComplexity ?? "-"}</span></span>
+              <span>Params: ${symbol.metrics.parameterCount ?? "-"}</span>
+            </div>
+          </div>` : ""}
+        </div>
+
+        ${symbol.signature ? `
+        <div>
+          <h3 class="text-sm font-medium text-gray-500">Signature</h3>
+          <div class="mt-1 bg-gray-50 rounded-md p-3 font-mono text-sm text-gray-800 border border-gray-200 overflow-x-auto">
+            ${escapeHtml(symbol.signature)}
+          </div>
+        </div>` : ""}
+
+        ${symbol.pattern ? `
+        <div>
+          <h3 class="text-sm font-medium text-gray-500">Pattern</h3>
+          <p class="mt-1 text-sm text-gray-900 bg-green-50 text-green-700 px-2 py-1 rounded inline-block border border-green-200">${escapeHtml(symbol.pattern)}</p>
+        </div>` : ""}
+
+        ${symbol.docRef ? `
+        <div>
+          <h3 class="text-sm font-medium text-gray-500">Documentation</h3>
+          <p class="mt-1 text-sm"><a href="../${escapeHtml(symbol.docRef.replace(/\.md$/, ".html"))}" class="text-blue-600 hover:underline flex items-center"><svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>${escapeHtml(symbol.docRef)}</a></p>
+        </div>` : ""}
+        
+        ${symbol.summary ? `
+        <div class="prose prose-sm max-w-none text-gray-700">
+           <h3 class="text-sm font-medium text-gray-500 mb-1">Summary</h3>
+           <p>${escapeHtml(symbol.summary)}</p>
+        </div>` : ""}
+
+        ${symbol.tags ? `
+        <div>
+          <h3 class="text-sm font-medium text-gray-500 mb-2">Tags</h3>
+          <div class="flex flex-wrap gap-2">
+            ${symbol.tags.map((t) => `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200">#${escapeHtml(t)}</span>`).join("")}
+          </div>
+        </div>` : ""}
+      </div>
     </div>
 
-    <h1>
-      ${visibilityBadge(symbol.visibility)}
-      ${layerBadge(symbol.layer)}
-      ${statusBadges(symbol)}
-      <span class="badge ${badgeClass(symbol.kind)}">${symbol.kind}</span>
-      ${escapeHtml(symbol.name)}
-    </h1>
+    ${sourceSnippet
+      ? `<div class="mb-12">
+            <h2 class="text-xl font-bold text-gray-900 mb-4">Source Code</h2>
+            <div class="rounded-lg overflow-hidden border border-gray-200">
+              <pre class="bg-gray-50 p-4 overflow-x-auto text-sm font-mono leading-tight">${sourceSnippet}</pre>
+            </div>
+           </div>`
+      : ""}
 
-    <div class="card">
-      <p><strong>File:</strong> <a href="../files/${fileSlug(symbol.file)}.html">${escapeHtml(symbol.file)}</a>:${symbol.startLine}-${symbol.endLine}</p>
-      ${symbol.signature ? `<p><strong>Signature:</strong> <code>${escapeHtml(symbol.signature)}</code></p>` : ""}
-      ${symbol.pattern ? `<p><strong>Pattern:</strong> ${escapeHtml(symbol.pattern)}</p>` : ""}
-      ${symbol.metrics ? `<p><strong>Metrics:</strong> LOC: ${symbol.metrics.linesOfCode ?? "-"}, Complexity: ${symbol.metrics.cyclomaticComplexity ?? "-"}, Params: ${symbol.metrics.parameterCount ?? "-"}</p>` : ""}
-      ${symbol.docRef ? `<p><strong>Docs:</strong> <a href="../${escapeHtml(symbol.docRef.replace(/\.md$/, ".html"))}">${escapeHtml(symbol.docRef)}</a></p>` : ""}
-      ${symbol.summary ? `<p><strong>Summary:</strong> ${escapeHtml(symbol.summary)}</p>` : ""}
-      ${symbol.tags ? `<p><strong>Tags:</strong> ${symbol.tags.map((t) => `<span class='tag'>${escapeHtml(t)}</span>`).join(" ")}</p>` : ""}
-      ${symbol.lastModified ? `<p><strong>Last Updated:</strong> ${escapeHtml(formatDate(symbol.lastModified) ?? "")}</p>` : ""}
-    </div>
-
-    ${
-      sourceSnippet
-        ? `<h2>Source Code</h2>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <pre><code class="language-typescript">${sourceSnippet}</code></pre>
-    <script>hljs.highlightAll();</script>`
-        : ""
-    }
-
-    ${
-      children.length > 0
-        ? `<h2>Members</h2>
-    <table>
-      <thead><tr><th scope="col">Name</th><th scope="col">Kind</th><th scope="col">Visibility</th><th scope="col">Signature</th></tr></thead>
-      <tbody>
-        ${children
-          .map(
-            (c) => `<tr>
-          <td><a href="${c.id}.html">${escapeHtml(c.name)}</a></td>
-          <td><span class="badge ${badgeClass(c.kind)}">${c.kind}</span></td>
-          <td>${visibilityBadge(c.visibility)}</td>
-          <td>${c.signature ? `<code>${escapeHtml(c.signature)}</code>` : "-"}</td>
-        </tr>`,
-          )
-          .join("")}
-      </tbody>
-    </table>`
-        : ""
-    }
+    ${children.length > 0
+      ? `<div class="mb-12">
+            <h2 class="text-xl font-bold text-gray-900 mb-4">Members</h2>
+            <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+              <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                  <tr>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kind</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Visibility</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Signature</th>
+                  </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                  ${children
+                    .map(
+                      (c) => `<tr>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600"><a href="${c.id}.html" class="hover:underline">${escapeHtml(c.name)}</a></td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm"><span class="${badgeClass(c.kind)}">${c.kind}</span></td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm">${visibilityBadge(c.visibility)}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 text-xs">${c.signature ? escapeHtml(c.signature) : "-"}</td>
+                  </tr>`,
+                    )
+                    .join("")}
+                </tbody>
+              </table>
+            </div>
+          </div>`
+      : ""}
 
     ${(() => {
       const listeners = incoming.filter((r) => r.type === "listens_to");
       if (symbol.kind === "event" && listeners.length > 0) {
-        return `<h2>Listeners</h2>
-    <table>
-      <thead><tr><th scope="col">Listener</th><th scope="col">File</th></tr></thead>
-      <tbody>
-        ${listeners
-          .map((r) => {
-            const source = allSymbols.find((s) => s.id === r.source_id);
-            return `<tr>
-          <td>${source ? `<a href="${source.id}.html">${escapeHtml(source.name)}</a>` : r.source_id}</td>
-          <td>${source ? `<a href="../files/${fileSlug(source.file)}.html">${escapeHtml(source.file)}</a>` : "-"}</td>
-        </tr>`;
-          })
-          .join("")}
-      </tbody>
-    </table>`;
+        return `<div class="mb-12">
+            <h2 class="text-xl font-bold text-gray-900 mb-4">Listeners</h2>
+            <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+              <table class="min-w-full divide-y divide-gray-200">
+                <thead class="bg-gray-50">
+                  <tr>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Listener</th>
+                    <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File</th>
+                  </tr>
+                </thead>
+                <tbody class="bg-white divide-y divide-gray-200">
+                  ${listeners
+                    .map((r) => {
+                      const source = allSymbols.find((s) => s.id === r.source_id);
+                      return `<tr>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">${source ? `<a href="${source.id}.html" class="hover:underline">${escapeHtml(source.name)}</a>` : r.source_id}</td>
+                    <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${source ? `<a href="../files/${fileSlug(source.file)}.html" class="hover:underline hover:text-blue-600">${escapeHtml(source.file)}</a>` : "-"}</td>
+                  </tr>`;
+                    })
+                    .join("")}
+                </tbody>
+              </table>
+            </div>
+          </div>`;
       }
       return "";
     })()}
 
-    ${(() => {
-      const listensTo = outgoing.filter((r) => r.type === "listens_to");
-      if (symbol.kind === "listener" && listensTo.length > 0) {
-        return `<h2>Listens to</h2>
-    <table>
-      <thead><tr><th scope="col">Event</th><th scope="col">File</th></tr></thead>
-      <tbody>
-        ${listensTo
-          .map((r) => {
-            const target = allSymbols.find((s) => s.id === r.target_id);
-            return `<tr>
-          <td>${target ? `<a href="${target.id}.html">${escapeHtml(target.name)}</a>` : r.target_id}</td>
-          <td>${target ? `<a href="../files/${fileSlug(target.file)}.html">${escapeHtml(target.file)}</a>` : "-"}</td>
-        </tr>`;
-          })
-          .join("")}
-      </tbody>
-    </table>`;
-      }
-      return "";
-    })()}
-
-    ${
-      depGraph
-        ? `<h2>Dependencies</h2>
-    <div class="mermaid-container">
-      <div class="mermaid">${depGraph}</div>
-    </div>`
-        : ""
-    }
-
-    ${
-      outgoing.length > 0
-        ? `<table>
-      <thead><tr><th scope="col">Target</th><th scope="col">Type</th></tr></thead>
-      <tbody>
-        ${outgoing
-          .map((r) => {
-            const target = allSymbols.find((s) => s.id === r.target_id);
-            return `<tr>
-          <td>${target ? `<a href="${target.id}.html">${escapeHtml(target.name)}</a>` : r.target_id}</td>
-          <td>${r.type}</td>
-        </tr>`;
-          })
-          .join("")}
-      </tbody>
-    </table>`
-        : ""
-    }
-
-    ${
-      impactGraph
-        ? `<h2>Impact (depended by)</h2>
-    <div class="mermaid-container">
-      <div class="mermaid">${impactGraph}</div>
-    </div>`
-        : ""
-    }
-
-    ${
-      incoming.length > 0
-        ? `<table>
-      <thead><tr><th scope="col">Source</th><th scope="col">Type</th></tr></thead>
-      <tbody>
-        ${incoming
-          .map((r) => {
-            const source = allSymbols.find((s) => s.id === r.source_id);
-            return `<tr>
-          <td>${source ? `<a href="${source.id}.html">${escapeHtml(source.name)}</a>` : r.source_id}</td>
-          <td>${r.type}</td>
-        </tr>`;
-          })
-          .join("")}
-      </tbody>
-    </table>`
-        : ""
-    }
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
+       <div>
+          ${depGraph
+            ? `<div class="mb-8">
+                  <h2 class="text-xl font-bold text-gray-900 mb-4">Dependencies (Outgoing)</h2>
+                  <div class="bg-white shadow rounded-lg p-4 border border-gray-200 overflow-x-auto">
+                    <div class="mermaid">${depGraph}</div>
+                  </div>
+                </div>`
+            : ""}
+          
+          ${outgoing.length > 0
+            ? `<div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200 mb-8">
+                <table class="min-w-full divide-y divide-gray-200">
+                  <thead class="bg-gray-50">
+                    <tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Target</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th></tr>
+                  </thead>
+                  <tbody class="bg-white divide-y divide-gray-200">
+                    ${outgoing
+                      .map((r) => {
+                        const target = allSymbols.find((s) => s.id === r.target_id);
+                        return `<tr>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">${target ? `<a href="${target.id}.html" class="hover:underline">${escapeHtml(target.name)}</a>` : r.target_id}</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${r.type}</td>
+                    </tr>`;
+                      })
+                      .join("")}
+                  </tbody>
+                </table>
+              </div>`
+            : "<p class='text-gray-500 italic mb-8'>No outgoing dependencies.</p>"}
+       </div>
+       
+       <div>
+          ${impactGraph
+            ? `<div class="mb-8">
+                  <h2 class="text-xl font-bold text-gray-900 mb-4">Impact (Incoming)</h2>
+                  <div class="bg-white shadow rounded-lg p-4 border border-gray-200 overflow-x-auto">
+                    <div class="mermaid">${impactGraph}</div>
+                  </div>
+                </div>`
+            : ""}
+          
+          ${incoming.length > 0
+            ? `<div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200 mb-8">
+                <table class="min-w-full divide-y divide-gray-200">
+                  <thead class="bg-gray-50">
+                    <tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th></tr>
+                  </thead>
+                  <tbody class="bg-white divide-y divide-gray-200">
+                    ${incoming
+                      .map((r) => {
+                        const source = allSymbols.find((s) => s.id === r.source_id);
+                        return `<tr>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">${source ? `<a href="${source.id}.html" class="hover:underline">${escapeHtml(source.name)}</a>` : r.source_id}</td>
+                      <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${r.type}</td>
+                    </tr>`;
+                      })
+                      .join("")}
+                  </tbody>
+                </table>
+              </div>`
+            : "<p class='text-gray-500 italic mb-8'>No incoming dependencies.</p>"}
+       </div>
+    </div>
 
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <script>mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose'});</script>
@@ -678,7 +956,6 @@ export function renderFilePage(
 ): string {
   const topLevel = symbols.filter((s) => !s.parent);
 
-  // File summary stats
   const totalSymbols = symbols.length;
   const totalLOC = sourceCode ? sourceCode.split("\n").length : 0;
   const avgComplexity =
@@ -691,98 +968,122 @@ export function renderFilePage(
     kindCounts[s.kind] = (kindCounts[s.kind] ?? 0) + 1;
   }
 
-  // File relationships graph
   let fileGraph = "";
   if (relationships && allSymbols) {
     fileGraph = buildMermaidForFile(filePath, allSymbols, relationships, true);
   }
 
   const body = `
-    <h1>${escapeHtml(filePath)}</h1>
+    <nav class="flex mb-6" aria-label="Breadcrumb">
+       <ol class="flex items-center space-x-2 text-sm text-gray-500">
+         <li><a href="../index.html" class="hover:text-gray-700">Dashboard</a></li>
+         <li><svg class="flex-shrink-0 h-5 w-5 text-gray-300" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" /></svg></li>
+         <li><span class="text-gray-900 font-semibold">${escapeHtml(filePath)}</span></li>
+       </ol>
+    </nav>
+  
+    <h1 class="text-2xl font-bold text-gray-900 mb-6 flex items-center">
+      <svg class="h-8 w-8 text-gray-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+      ${escapeHtml(filePath)}
+    </h1>
 
-    <div class="file-summary">
-      <div class="stat">
-        <div class="number">${totalSymbols}</div>
-        <div class="label">Total Symbols</div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-8">
+      <div class="bg-white overflow-hidden shadow rounded-lg border border-gray-200 p-4 text-center">
+        <dt class="text-sm font-medium text-gray-500 truncate">Total Symbols</dt>
+        <dd class="mt-1 text-2xl font-semibold text-gray-900">${totalSymbols}</dd>
       </div>
-      <div class="stat">
-        <div class="number">${totalLOC}</div>
-        <div class="label">Lines of Code</div>
+      <div class="bg-white overflow-hidden shadow rounded-lg border border-gray-200 p-4 text-center">
+        <dt class="text-sm font-medium text-gray-500 truncate">Lines of Code</dt>
+        <dd class="mt-1 text-2xl font-semibold text-gray-900">${totalLOC}</dd>
       </div>
-      <div class="stat">
-        <div class="number">${avgComplexity.toFixed(1)}</div>
-        <div class="label">Avg Complexity</div>
+      <div class="bg-white overflow-hidden shadow rounded-lg border border-gray-200 p-4 text-center">
+        <dt class="text-sm font-medium text-gray-500 truncate">Avg Complexity</dt>
+        <dd class="mt-1 text-2xl font-semibold text-gray-900">${avgComplexity.toFixed(1)}</dd>
       </div>
-      <div class="stat">
-        <div class="number">${Object.keys(kindCounts).length}</div>
-        <div class="label">Symbol Types</div>
+      <div class="bg-white overflow-hidden shadow rounded-lg border border-gray-200 p-4 text-center">
+        <dt class="text-sm font-medium text-gray-500 truncate">Symbol Types</dt>
+        <dd class="mt-1 text-2xl font-semibold text-gray-900">${Object.keys(kindCounts).length}</dd>
       </div>
     </div>
 
-    ${
-      fileGraph
-        ? `
-    <h2>File Relationships</h2>
-    <div class="mermaid-container">
-      <div class="mermaid">${fileGraph}</div>
+    ${fileGraph
+      ? `
+    <div class="mb-12">
+      <h2 class="text-xl font-bold text-gray-900 mb-4">File Relationships</h2>
+      <div class="bg-white shadow rounded-lg p-6 border border-gray-200 overflow-x-auto">
+        <div class="mermaid">${fileGraph}</div>
+      </div>
     </div>`
-        : ""
-    }
+      : ""}
 
-    <h2>Symbols by Kind</h2>
-    <div class="stats">
-      ${Object.entries(kindCounts)
-        .sort((a, b) => b[1] - a[1])
-        .map(
-          ([kind, count]) => `
-        <div class="stat">
-          <div class="number">${count}</div>
-          <div class="label">${kind}</div>
-        </div>`,
-        )
-        .join("")}
+    <div class="mb-12">
+      <h2 class="text-xl font-bold text-gray-900 mb-4">Symbols by Kind</h2>
+      <div class="flex flex-wrap gap-4">
+        ${Object.entries(kindCounts)
+          .sort((a, b) => b[1] - a[1])
+          .map(
+            ([kind, count]) => `
+          <div class="bg-white shadow rounded-lg px-4 py-2 border border-gray-200 flex items-center space-x-2">
+            <span class="${badgeClass(kind)}">${kind}</span>
+            <span class="text-gray-900 font-semibold">${count}</span>
+          </div>`,
+          )
+          .join("")}
+      </div>
     </div>
 
-    <h2>All Symbols</h2>
-    <table>
-      <thead><tr><th scope="col">Name</th><th scope="col">Kind</th><th scope="col">Visibility</th><th scope="col">Lines</th><th scope="col">Signature</th></tr></thead>
-      <tbody>
-        ${topLevel
-          .sort((a, b) => a.startLine - b.startLine)
-          .map((s) => {
-            const children = symbols.filter((c) => c.parent === s.id);
-            return `<tr>
-          <td><a href="../symbols/${s.id}.html">${escapeHtml(s.name)}</a></td>
-          <td><span class="badge ${badgeClass(s.kind)}">${s.kind}</span></td>
-          <td>${visibilityBadge(s.visibility)}</td>
-          <td>${s.startLine}-${s.endLine}</td>
-          <td>${s.signature ? `<code>${escapeHtml(s.signature)}</code>` : "-"}</td>
-        </tr>
-        ${children
-          .map(
-            (c) => `<tr>
-          <td style="padding-left:2rem"><a href="../symbols/${c.id}.html">${escapeHtml(c.name)}</a></td>
-          <td><span class="badge ${badgeClass(c.kind)}">${c.kind}</span></td>
-          <td>${visibilityBadge(c.visibility)}</td>
-          <td>${c.startLine}-${c.endLine}</td>
-          <td>${c.signature ? `<code>${escapeHtml(c.signature)}</code>` : "-"}</td>
-        </tr>`,
-          )
-          .join("")}`;
-          })
-          .join("")}
-      </tbody>
-    </table>
+    <div class="mb-12">
+      <h2 class="text-xl font-bold text-gray-900 mb-4">All Symbols</h2>
+      <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+        <table class="min-w-full divide-y divide-gray-200">
+          <thead class="bg-gray-50">
+            <tr>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Name</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Kind</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Visibility</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Lines</th>
+              <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Signature</th>
+            </tr>
+          </thead>
+          <tbody class="bg-white divide-y divide-gray-200">
+            ${topLevel
+              .sort((a, b) => a.startLine - b.startLine)
+              .map((s) => {
+                const children = symbols.filter((c) => c.parent === s.id);
+                return `<tr>
+              <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600"><a href="../symbols/${s.id}.html" class="hover:underline">${escapeHtml(s.name)}</a></td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm"><span class="${badgeClass(s.kind)}">${s.kind}</span></td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm">${visibilityBadge(s.visibility)}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${s.startLine}-${s.endLine}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 text-xs">${s.signature ? `<code>${escapeHtml(s.signature)}</code>` : "-"}</td>
+            </tr>
+            ${children
+              .map(
+                (c) => `<tr>
+              <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600 pl-12 border-l-4 border-gray-100"><a href="../symbols/${c.id}.html" class="hover:underline">${escapeHtml(c.name)}</a></td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm"><span class="${badgeClass(c.kind)}">${c.kind}</span></td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm">${visibilityBadge(c.visibility)}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${c.startLine}-${c.endLine}</td>
+              <td class="px-6 py-4 whitespace-nowrap text-sm font-mono text-gray-500 text-xs">${c.signature ? `<code>${escapeHtml(c.signature)}</code>` : "-"}</td>
+            </tr>`,
+              )
+              .join("")}`;
+              })
+              .join("")}
+          </tbody>
+        </table>
+      </div>
+    </div>
 
-    ${
-      sourceCode
-        ? `<h2>Full Source</h2>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css">
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
-    <pre><code class="language-typescript">${escapeCodeBlocks(sourceCode)}</code></pre>
-    <script>hljs.highlightAll();</script>`
-        : ""
-    }
+    ${sourceCode
+      ? `<div class="mb-12">
+            <h2 class="text-xl font-bold text-gray-900 mb-4">Full Source</h2>
+            <div class="rounded-lg overflow-hidden border border-gray-200">
+              <pre class="bg-gray-50 p-4 overflow-x-auto text-sm font-mono leading-tight"><code class="language-typescript">${escapeCodeBlocks(sourceCode)}</code></pre>
+            </div>
+           </div>
+           <script>hljs.highlightAll();</script>`
+      : ""}
 
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <script>mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose'});</script>
@@ -797,72 +1098,84 @@ export function renderRelationshipsPage(
 ): string {
   const symbolMap = new Map(symbols.map((s) => [s.id, s]));
 
-  // Group relationships by type for summary
   const byType: Record<string, number> = {};
   for (const r of relationships) {
     byType[r.type] = (byType[r.type] ?? 0) + 1;
   }
 
-  // Top connected symbols graph
   const topConnectedGraph = buildMermaidTopConnected(symbols, relationships, 30, true);
 
   const body = `
-    <h1>Relationships</h1>
+    <h1 class="text-3xl font-bold text-gray-900 mb-8 pb-4 border-b border-gray-200">Relationships</h1>
 
-    <div class="stats">
+    <div class="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-6 gap-4 mb-8">
       ${Object.entries(byType)
         .sort((a, b) => b[1] - a[1])
         .map(
           ([type, count]) => `
-        <div class="stat">
-          <div class="number">${count}</div>
-          <div class="label">${type}</div>
-        </div>`,
+        <button onclick="filterByType('${type}')" class="bg-white shadow rounded-lg p-4 border border-gray-200 text-center hover:bg-blue-50 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500">
+          <div class="text-2xl font-bold text-blue-600">${count}</div>
+          <div class="text-xs font-medium text-gray-500 uppercase tracking-wide mt-1">${type}</div>
+        </button>`,
         )
         .join("")}
     </div>
 
-    ${
-      topConnectedGraph
-        ? `
-    <h2>Architecture Overview (Top 30 Connected)</h2>
-    <div class="mermaid-container">
-      <div class="mermaid">${topConnectedGraph}</div>
+    ${topConnectedGraph
+      ? `
+    <div class="mb-12">
+      <h2 class="text-xl font-bold text-gray-900 mb-4">Architecture Overview (Top 30 Connected)</h2>
+      <div class="bg-white shadow rounded-lg p-6 border border-gray-200 overflow-x-auto">
+        <div class="mermaid">${topConnectedGraph}</div>
+      </div>
     </div>`
-        : ""
-    }
+      : ""}
 
-    <p>Each symbol page contains focused dependency and impact graphs. Below is the full relationship table.</p>
+    <div class="mb-8 p-4 bg-blue-50 rounded-md border border-blue-100 text-blue-800 text-sm">
+       Each symbol page contains focused dependency and impact graphs. Below is the full relationship table.
+       Click a statistic card above or type below to filter.
+    </div>
 
-    <h2>All Relationships</h2>
-    <input type="text" class="table-filter" id="relationship-filter" placeholder="Filter relationships...">
-    <table id="relationships-table">
-      <thead><tr><th>Source</th><th>Type</th><th>Target</th></tr></thead>
-      <tbody>
-        ${relationships
-          .map((r) => {
-            const source = symbolMap.get(r.source_id);
-            const target = symbolMap.get(r.target_id);
-            return `<tr data-source="${escapeHtml(source?.name || r.source_id)}" data-type="${r.type}" data-target="${escapeHtml(target?.name || r.target_id)}">
-          <td>${source ? `<a href="symbols/${source.id}.html">${escapeHtml(source.name)}</a>` : r.source_id}</td>
-          <td>${r.type}</td>
-          <td>${target ? `<a href="symbols/${target.id}.html">${escapeHtml(target.name)}</a>` : r.target_id}</td>
-        </tr>`;
-          })
-          .join("")}
-      </tbody>
-    </table>
+    <div class="mb-6">
+      <label for="relationship-filter" class="block text-sm font-medium text-gray-700 mb-2">Filter Relationships</label>
+      <input type="text" id="relationship-filter" class="shadow-sm focus:ring-blue-500 focus:border-blue-500 block w-full sm:text-sm border-gray-300 rounded-md p-2" placeholder="Type to filter by source, target or type...">
+    </div>
+
+    <div class="bg-white shadow overflow-hidden sm:rounded-lg border border-gray-200">
+      <table class="min-w-full divide-y divide-gray-200" id="relationships-table">
+        <thead class="bg-gray-50">
+          <tr>
+             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th>
+             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th>
+             <th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Target</th>
+          </tr>
+        </thead>
+        <tbody class="bg-white divide-y divide-gray-200">
+          ${relationships
+            .map((r) => {
+              const source = symbolMap.get(r.source_id);
+              const target = symbolMap.get(r.target_id);
+              return `<tr data-source="${escapeHtml(source?.name || r.source_id)}" data-type="${r.type}" data-target="${escapeHtml(target?.name || r.target_id)}">
+            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">${source ? `<a href="symbols/${source.id}.html" class="hover:underline">${escapeHtml(source.name)}</a>` : r.source_id}</td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500"><span class="px-2 inline-flex text-xs leading-5 font-semibold rounded-full bg-gray-100 text-gray-800">${r.type}</span></td>
+            <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-blue-600">${target ? `<a href="symbols/${target.id}.html" class="hover:underline">${escapeHtml(target.name)}</a>` : r.target_id}</td>
+          </tr>`;
+            })
+            .join("")}
+        </tbody>
+      </table>
+    </div>
 
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <script>
       mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose'});
 
-      // Client-side table filtering
-      document.getElementById('relationship-filter').addEventListener('input', function(e) {
-        const filter = e.target.value.toLowerCase();
-        const rows = document.querySelectorAll('#relationships-table tbody tr');
+      const filterInput = document.getElementById('relationship-filter');
+      const tableRows = document.querySelectorAll('#relationships-table tbody tr');
 
-        rows.forEach(row => {
+      function filterTable(filterValue) {
+        const filter = filterValue.toLowerCase();
+        tableRows.forEach(row => {
           const source = row.dataset.source.toLowerCase();
           const type = row.dataset.type.toLowerCase();
           const target = row.dataset.target.toLowerCase();
@@ -870,6 +1183,15 @@ export function renderRelationshipsPage(
           const matches = source.includes(filter) || type.includes(filter) || target.includes(filter);
           row.style.display = matches ? '' : 'none';
         });
+      }
+
+      function filterByType(type) {
+        filterInput.value = type;
+        filterTable(type);
+      }
+
+      filterInput.addEventListener('input', function(e) {
+        filterTable(e.target.value);
       });
     </script>
   `;
@@ -881,32 +1203,48 @@ export function renderPatternsPage(patterns: DetectedPattern[], symbols: CodeSym
   const symbolMap = new Map(symbols.map((s) => [s.id, s]));
 
   const body = `
-    <h1>Detected Patterns</h1>
+    <h1 class="text-3xl font-bold text-gray-900 mb-8 pb-4 border-b border-gray-200">Detected Patterns</h1>
 
-    ${
-      patterns.length === 0
-        ? "<p>No patterns detected.</p>"
-        : patterns
-            .map(
-              (p) => `
-      <div class="card">
-        <h3>${escapeHtml(p.kind)} <small>(confidence: ${(p.confidence * 100).toFixed(0)}%)</small></h3>
-        <p><strong>Symbols:</strong> ${p.symbols
-          .map((id) => {
-            const s = symbolMap.get(id);
-            return s ? `<a href="symbols/${s.id}.html">${escapeHtml(s.name)}</a>` : id;
-          })
-          .join(", ")}</p>
-        ${
-          p.violations.length > 0
-            ? `<p><strong>Violations:</strong></p><ul>${p.violations
-                .map((v) => `<li>${escapeHtml(v)}</li>`)
-                .join("")}</ul>`
-            : ""
-        }
-      </div>`,
-            )
-            .join("")
+    ${patterns.length === 0
+      ? "<div class='text-center py-12 text-gray-500'>No patterns detected.</div>"
+      : `<div class="grid grid-cols-1 gap-6">
+            ${patterns
+              .map(
+                (p) => `
+          <div class="bg-white shadow rounded-lg border border-gray-200 overflow-hidden">
+            <div class="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
+               <h3 class="text-lg font-medium text-gray-900">${escapeHtml(p.kind)}</h3>
+               <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${p.confidence > 0.8 ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}">
+                 Confidence: ${(p.confidence * 100).toFixed(0)}%
+               </span>
+            </div>
+            <div class="p-6">
+              <div class="mb-4">
+                <span class="text-sm font-medium text-gray-500 uppercase tracking-wider block mb-2">Symbols Involved</span>
+                <div class="flex flex-wrap gap-2">
+                   ${p.symbols
+                     .map((id) => {
+                       const s = symbolMap.get(id);
+                       return s ? `<a href="symbols/${s.id}.html" class="inline-flex items-center px-3 py-1 rounded-md text-sm font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors">${escapeHtml(s.name)}</a>` : `<span class="text-gray-500">${id}</span>`;
+                     })
+                     .join("")}
+                </div>
+              </div>
+              
+              ${p.violations.length > 0
+                ? `<div>
+                      <span class="text-sm font-medium text-red-500 uppercase tracking-wider block mb-2">Violations</span>
+                      <ul class="list-disc pl-5 space-y-1 text-sm text-gray-700">
+                        ${p.violations.map((v) => `<li>${escapeHtml(v)}</li>`).join("")}
+                      </ul>
+                    </div>`
+                : "<p class='text-sm text-green-600 flex items-center'><svg class='h-4 w-4 mr-1' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M5 13l4 4L19 7'/></svg> No violations found</p>"
+              }
+            </div>
+          </div>`,
+              )
+              .join("")}
+          </div>`
     }
   `;
 
@@ -946,7 +1284,6 @@ export function buildSearchIndex(symbols: CodeSymbol[]): {
         tags[t] = (tags[t] ?? 0) + 1;
       }
     }
-    // file prefix: first path segment
     const seg = it.file && typeof it.file === "string" ? it.file.split("/")[0] || it.file : "root";
     files[seg] = (files[seg] ?? 0) + 1;
   }

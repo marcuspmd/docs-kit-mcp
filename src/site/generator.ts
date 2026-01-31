@@ -8,12 +8,14 @@ import {
   renderDashboard,
   renderSymbolPage,
   renderFilePage,
+  renderFilesPage,
   renderRelationshipsPage,
   renderPatternsPage,
+  renderMarkdownWrapper,
   buildSearchIndex,
   fileSlug,
 } from "./templates.js";
-import { CSS } from "./styles.js";
+
 
 export interface GeneratorOptions {
   dbPath: string;
@@ -203,44 +205,7 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
       try {
         const mdName = path.basename(docRef);
         const outHtmlPath = outPath.replace(/\.md$/i, ".html");
-        const wrapper = `<!DOCTYPE html>
-<html lang="en">
-<head>
-  <meta charset="utf-8" />
-  <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>${mdName} - doc-kit</title>
-  <style>${CSS}</style>
-  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-</head>
-<body>
-  <nav>
-    <a href="../index.html">Dashboard</a>
-    <a href="../relationships.html">Relationships</a>
-    <a href="../patterns.html">Patterns</a>
-  </nav>
-  <main id="content">
-    <article id="doc"></article>
-  </main>
-  <script>
-    (async function(){
-      try {
-        const res = await fetch('./${mdName}');
-        const md = await res.text();
-        const html = marked.parse(md);
-        document.getElementById('doc').innerHTML = html;
-        // Convert internal .md links to .html so navigation stays within site
-        document.querySelectorAll('#doc a').forEach(function(a){
-          const href = a.getAttribute('href');
-          if (!href) return;
-          if (href.toLowerCase().endsWith('.md')) a.setAttribute('href', href.slice(0, -3) + '.html');
-        });
-      } catch(e) {
-        document.getElementById('doc').textContent = 'Error loading document.';
-      }
-    })();
-  </script>
-</body>
-</html>`;
+        const wrapper = renderMarkdownWrapper(mdName, mdName);
 
         fs.writeFileSync(outHtmlPath, wrapper, "utf-8");
       } catch (e) {
@@ -275,43 +240,7 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
         try {
           const mdName = path.basename(docRef);
           const outHtmlPath = outPath.replace(/\.md$/i, ".html");
-          const wrapper = `<!DOCTYPE html>
-  <html lang="en">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width,initial-scale=1" />
-    <title>${mdName} - doc-kit</title>
-    <style>${CSS}</style>
-    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
-  </head>
-  <body>
-    <nav>
-      <a href="../index.html">Dashboard</a>
-      <a href="../relationships.html">Relationships</a>
-      <a href="../patterns.html">Patterns</a>
-    </nav>
-    <main id="content">
-      <article id="doc"></article>
-    </main>
-    <script>
-      (async function(){
-        try {
-          const res = await fetch('./${mdName}');
-          const md = await res.text();
-          const html = marked.parse(md);
-          document.getElementById('doc').innerHTML = html;
-          document.querySelectorAll('#doc a').forEach(function(a){
-            const href = a.getAttribute('href');
-            if (!href) return;
-            if (href.toLowerCase().endsWith('.md')) a.setAttribute('href', href.slice(0, -3) + '.html');
-          });
-        } catch(e) {
-          document.getElementById('doc').textContent = 'Error loading document.';
-        }
-      })();
-    </script>
-  </body>
-  </html>`;
+          const wrapper = renderMarkdownWrapper(mdName, mdName);
 
           fs.writeFileSync(outHtmlPath, wrapper, "utf-8");
         } catch (e) {
@@ -339,6 +268,9 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
       renderFilePage(file, fileSymbols, source),
     );
   }
+
+  // Generate files directory page
+  fs.writeFileSync(path.join(outDir, "files.html"), renderFilesPage(files, symbols));
 
   // Generate relationships page
   fs.writeFileSync(
