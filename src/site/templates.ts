@@ -1028,7 +1028,7 @@ export function renderFilesPage(files: string[], symbols: CodeSymbol[]): string 
 
   // 3. Recursive Render
   function renderNode(node: TreeNode, depth: number): string {
-    const indent = depth * 1.5; // rem
+    const indent = depth * 0.75; // rem — compact so deep paths don't use too much horizontal space
     const children = Object.values(node.children).sort((a, b) => {
       // Directories first, then alphabetical
       if (a.isFile !== b.isFile) return a.isFile ? 1 : -1;
@@ -1068,7 +1068,7 @@ export function renderFilesPage(files: string[], symbols: CodeSymbol[]): string 
             <span class="text-sm font-semibold text-gray-800 flex-1 truncate">${escapeHtml(node.name)}</span>
             <span class="text-xs text-gray-400 ml-2">${node.symbolCount}</span>
           </summary>
-          <div class="border-l border-gray-100 ml-4 pl-1 my-1">
+          <div class="border-l border-gray-100 ml-2 pl-1 my-1">
             ${inner}
           </div>
         </details>
