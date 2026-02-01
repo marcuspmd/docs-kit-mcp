@@ -121,9 +121,9 @@ export function renderDashboard(data: SiteData): string {
         ? `
     <div class="flex flex-wrap gap-3 mb-8 p-4 bg-gray-50 dark:bg-gray-800 rounded-lg border border-gray-200 dark:border-gray-700">
       <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Health:</span>
-      ${deprecatedSymbols.length > 0 ? `<a href="#deprecated-symbols" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200 hover:bg-amber-200">${deprecatedSymbols.length} deprecated</a>` : ""}
-      ${archViolations.length > 0 ? `<a href="#arch-violations" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 border border-red-200 hover:bg-red-200">${archViolations.length} violations</a>` : ""}
-      ${highComplexityCount > 0 ? `<a href="#top-complex-symbols" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200 hover:bg-orange-200">${highComplexityCount} high complexity</a>` : ""}
+      ${deprecatedSymbols.length > 0 ? `<a href="#deprecated-symbols" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-amber-100 dark:bg-amber-900/50 text-amber-800 dark:text-amber-300 border border-amber-200 dark:border-amber-800 hover:bg-amber-200 dark:hover:bg-amber-900/70">${deprecatedSymbols.length} deprecated</a>` : ""}
+      ${archViolations.length > 0 ? `<a href="#arch-violations" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-100 dark:bg-red-900/50 text-red-800 dark:text-red-300 border border-red-200 dark:border-red-800 hover:bg-red-200 dark:hover:bg-red-900/70">${archViolations.length} violations</a>` : ""}
+      ${highComplexityCount > 0 ? `<a href="#top-complex-symbols" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 dark:bg-orange-900/50 text-orange-800 dark:text-orange-300 border border-orange-200 dark:border-orange-800 hover:bg-orange-200 dark:hover:bg-orange-900/70">${highComplexityCount} high complexity</a>` : ""}
     </div>`
         : ""
     }
@@ -444,13 +444,13 @@ export function renderDashboard(data: SiteData): string {
           var panelDirs = document.getElementById('arch-panel-dirs');
           if (!tabGraph || !tabDirs || !panelGraph || !panelDirs) return;
           function showGraph() {
-            tabGraph.setAttribute('aria-selected', 'true'); tabGraph.classList.add('bg-blue-100', 'text-blue-800', 'border-blue-200'); tabGraph.classList.remove('text-gray-600', 'border-transparent');
-            tabDirs.setAttribute('aria-selected', 'false'); tabDirs.classList.remove('bg-blue-100', 'text-blue-800', 'border-blue-200'); tabDirs.classList.add('text-gray-600', 'border-transparent');
+            tabGraph.setAttribute('aria-selected', 'true'); tabGraph.classList.add('bg-blue-100', 'dark:bg-blue-900/50', 'text-blue-800', 'dark:text-blue-300', 'border-blue-200', 'dark:border-blue-800'); tabGraph.classList.remove('text-gray-600', 'dark:text-gray-400', 'border-transparent');
+            tabDirs.setAttribute('aria-selected', 'false'); tabDirs.classList.remove('bg-blue-100', 'dark:bg-blue-900/50', 'text-blue-800', 'dark:text-blue-300', 'border-blue-200', 'dark:border-blue-800'); tabDirs.classList.add('text-gray-600', 'dark:text-gray-400', 'border-transparent');
             panelGraph.classList.remove('hidden'); panelDirs.classList.add('hidden'); panelDirs.setAttribute('aria-hidden', 'true');
           }
           function showDirs() {
-            tabDirs.setAttribute('aria-selected', 'true'); tabDirs.classList.add('bg-blue-100', 'text-blue-800', 'border-blue-200'); tabDirs.classList.remove('text-gray-600', 'border-transparent');
-            tabGraph.setAttribute('aria-selected', 'false'); tabGraph.classList.remove('bg-blue-100', 'text-blue-800', 'border-blue-200'); tabGraph.classList.add('text-gray-600', 'border-transparent');
+            tabDirs.setAttribute('aria-selected', 'true'); tabDirs.classList.add('bg-blue-100', 'dark:bg-blue-900/50', 'text-blue-800', 'dark:text-blue-300', 'border-blue-200', 'dark:border-blue-800'); tabDirs.classList.remove('text-gray-600', 'dark:text-gray-400', 'border-transparent');
+            tabGraph.setAttribute('aria-selected', 'false'); tabGraph.classList.remove('bg-blue-100', 'dark:bg-blue-900/50', 'text-blue-800', 'dark:text-blue-300', 'border-blue-200', 'dark:border-blue-800'); tabGraph.classList.add('text-gray-600', 'dark:text-gray-400', 'border-transparent');
             panelDirs.classList.remove('hidden'); panelGraph.classList.add('hidden'); panelDirs.setAttribute('aria-hidden', 'false');
           }
           tabGraph.addEventListener('click', showGraph);

@@ -12,7 +12,7 @@ export function mermaidDiagramWrap(source: string): string {
   const b64 = base64Encode(source);
   return `<div class="mermaid-expand-wrapper relative group" data-mermaid-src-base64="${escapeHtml(b64)}">
   <div class="mermaid">${source}</div>
-  <button type="button" class="mermaid-expand-btn absolute top-2 right-2 z-10 px-2 py-1 text-xs font-medium rounded bg-white/90 text-gray-700 border border-gray-300 shadow hover:bg-white hover:border-blue-400 opacity-70 group-hover:opacity-100 transition-opacity" title="Expand to fullscreen (zoom and pan)">Expand</button>
+  <button type="button" class="mermaid-expand-btn absolute top-2 right-2 z-10 px-2 py-1 text-xs font-medium rounded bg-white/90 dark:bg-gray-800/90 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 shadow hover:bg-white dark:hover:bg-gray-700 hover:border-blue-400 dark:hover:border-blue-500 opacity-70 group-hover:opacity-100 transition-opacity" title="Expand to fullscreen (zoom and pan)">Expand</button>
 </div>`;
 }
 
@@ -23,13 +23,13 @@ export function mermaidDiagramWrap(source: string): string {
 export function getMermaidExpandModalAndScript(): string {
   return `
 <div id="mermaid-fullscreen-modal" class="fixed inset-0 z-[100] hidden bg-black/70 items-center justify-center" aria-modal="true" role="dialog" style="display: none;">
-  <div class="bg-white rounded-lg shadow-xl max-w-[95vw] max-h-[95vh] flex flex-col m-4">
-    <div class="flex justify-between items-center p-2 border-b border-gray-200 flex-shrink-0">
-      <span class="text-sm font-medium text-gray-700">Diagram — zoom and drag to pan</span>
+  <div class="bg-white dark:bg-gray-800 rounded-lg shadow-xl max-w-[95vw] max-h-[95vh] flex flex-col m-4">
+    <div class="flex justify-between items-center p-2 border-b border-gray-200 dark:border-gray-700 flex-shrink-0">
+      <span class="text-sm font-medium text-gray-700 dark:text-gray-300">Diagram — zoom and drag to pan</span>
       <div class="flex items-center gap-2">
-        <button type="button" id="mermaid-zoom-out" class="w-8 h-8 rounded border border-gray-300 bg-gray-50 hover:bg-gray-100 text-lg leading-none" title="Zoom out">−</button>
-        <button type="button" id="mermaid-zoom-in" class="w-8 h-8 rounded border border-gray-300 bg-gray-50 hover:bg-gray-100 text-lg leading-none" title="Zoom in">+</button>
-        <button type="button" id="mermaid-modal-close" class="px-3 py-1.5 rounded border border-gray-300 bg-gray-50 hover:bg-gray-100 text-sm font-medium">Close</button>
+        <button type="button" id="mermaid-zoom-out" class="w-8 h-8 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 text-lg leading-none text-gray-700 dark:text-gray-300" title="Zoom out">−</button>
+        <button type="button" id="mermaid-zoom-in" class="w-8 h-8 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 text-lg leading-none text-gray-700 dark:text-gray-300" title="Zoom in">+</button>
+        <button type="button" id="mermaid-modal-close" class="px-3 py-1.5 rounded border border-gray-300 dark:border-gray-600 bg-gray-50 dark:bg-gray-700 hover:bg-gray-100 dark:hover:bg-gray-600 text-sm font-medium text-gray-700 dark:text-gray-300">Close</button>
       </div>
     </div>
     <div id="mermaid-modal-pan-wrap" class="flex-1 overflow-hidden min-h-0 relative" style="cursor: grab;">
