@@ -66,11 +66,13 @@ export function layout(
       : "";
 
   const rightSidebar = `
-    <aside class="w-64 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 p-6 hidden xl:block flex-shrink-0">
-      ${facetsHtml ? `<div class="mb-8">${facetsHtml}</div>` : ""}
-      <div id="on-this-page-wrap">
-        <h3 class="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">On this page</h3>
-        <nav id="on-this-page" class="space-y-1 text-sm" aria-label="On this page"></nav>
+    <aside class="w-64 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 hidden xl:block flex-shrink-0">
+      <div class="p-6 sticky top-16 max-h-[calc(100vh-4rem)] overflow-y-auto">
+        ${facetsHtml ? `<div class="mb-8">${facetsHtml}</div>` : ""}
+        <div id="on-this-page-wrap">
+          <h3 class="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">On this page</h3>
+          <nav id="on-this-page" class="space-y-1 text-sm" aria-label="On this page"></nav>
+        </div>
       </div>
     </aside>`;
 
@@ -231,9 +233,9 @@ export function layout(
     </div>
   </header>
 
-  <div class="flex">
-    <aside class="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 hidden md:block flex-shrink-0 sticky top-16 self-start max-h-[calc(100vh-4rem)] overflow-y-auto">
-      <div class="p-6">
+  <div class="flex min-h-[calc(100vh-4rem)]">
+    <aside class="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 hidden md:block flex-shrink-0">
+      <div class="p-6 sticky top-16 max-h-[calc(100vh-4rem)] overflow-y-auto">
         <h3 class="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Navigation</h3>
         <nav class="space-y-1">
           ${sidebarNav}
