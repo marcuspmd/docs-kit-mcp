@@ -434,7 +434,8 @@ async function runIndex(args: string[]) {
   // Phase 2.5: Load coverage data if enabled
   let coverageData: LcovFileData[] | undefined;
   if (config.coverage?.enabled) {
-    const lcovPath = path.resolve(rootDir, config.coverage.lcovPath);
+    // Coverage path is always relative to config dir (project root), not the indexed directory
+    const lcovPath = path.resolve(configDir, config.coverage.lcovPath);
     if (fs.existsSync(lcovPath)) {
       step("Loading test coverage data");
       try {
@@ -502,7 +503,8 @@ async function runIndex(args: string[]) {
   // Phase 6: Scan docs and populate doc_mappings
   let docMappingsCount = 0;
   let registeredDocsCount = 0;
-  const docsPath = path.resolve(rootDir, docsDir);
+  // Docs path is always relative to config dir (project root), not the indexed directory
+  const docsPath = path.resolve(configDir, docsDir);
   if (fs.existsSync(docsPath)) {
     step("Scanning docs for symbol mappings");
     const registry = createDocRegistry(db);

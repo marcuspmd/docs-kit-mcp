@@ -34,12 +34,12 @@ export default {
   dbPath: ".doc-kit/index.db",
   promptRules: [],
   coverage: {
-    lcovPath: "coverage/lcov.info",
+    lcovPath: "./coverage/lcov.info",
     enabled: true,
   },
   docs: [
     {
-      path: "docs/domain/arch-guard-rules.md",
+      path: "./docs/domain/arch-guard-rules.md",
       title: "Arch Guard Rules",
       name: "arch-guard-rules",
       category: "domain",
@@ -49,7 +49,7 @@ export default {
       showOnMenu: true
     },
     {
-      path: "docs/domain/projectStatus.md",
+      path: "./docs/domain/projectStatus.md",
       title: "Project Status",
       name: "project-status",
       category: "domain",
