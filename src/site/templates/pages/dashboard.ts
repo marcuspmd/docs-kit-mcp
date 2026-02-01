@@ -550,22 +550,6 @@ export function renderDashboard(data: SiteData): string {
       </div>
     </div>
 
-    <div class="mb-12">
-      <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-6">Search</h2>
-      <div class="flex flex-col md:flex-row gap-6">
-        <div class="hidden"></div>
-        <div class="flex-1">
-           <div class="relative rounded-md shadow-sm mb-4">
-            <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-              <span class="text-gray-500 dark:text-gray-400 sm:text-sm">🔍</span>
-            </div>
-            <input type="text" id="search" class="focus:ring-blue-500 focus:border-blue-500 block w-full pl-10 sm:text-sm border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-white rounded-md py-2" placeholder="Search symbols in detail..." aria-label="Search symbols">
-          </div>
-          <ul id="results" class="bg-white dark:bg-gray-800 shadow overflow-hidden sm:rounded-md divide-y divide-gray-200 dark:divide-gray-700" role="region" aria-live="polite" aria-label="Search results"></ul>
-        </div>
-      </div>
-    </div>
-
     <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2/dist/fuse.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <script>

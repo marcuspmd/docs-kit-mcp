@@ -1,4 +1,6 @@
-# docs-kit 🚀
+# Docs Kit MCP
+
+living connection between code & knowledge
 
 **docs-kit** é um agente inteligente de documentação (via MCP) para repositórios de código. Ele analisa mudanças no código, mapeia símbolos para documentos Markdown, gera diagramas (Mermaid), mantém um registro de documentação e fornece uma CLI (`doc-guard`) para validar que PRs atualizam a documentação quando necessário.
 

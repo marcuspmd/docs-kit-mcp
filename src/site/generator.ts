@@ -284,6 +284,25 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   fs.mkdirSync(path.join(outDir, "symbols"), { recursive: true });
   fs.mkdirSync(path.join(outDir, "files"), { recursive: true });
 
+  // Copy assets directory if it exists
+  const assetsSource = path.join(rootDir || ".", "assets");
+  const assetsTarget = path.join(outDir, "assets");
+  if (fs.existsSync(assetsSource)) {
+    // Copy assets recursively
+    fs.mkdirSync(assetsTarget, { recursive: true });
+    const copyRecursive = (src: string, dest: string) => {
+      if (fs.statSync(src).isDirectory()) {
+        fs.mkdirSync(dest, { recursive: true });
+        for (const entry of fs.readdirSync(src)) {
+          copyRecursive(path.join(src, entry), path.join(dest, entry));
+        }
+      } else {
+        fs.copyFileSync(src, dest);
+      }
+    };
+    copyRecursive(assetsSource, assetsTarget);
+  }
+
   // Cache source files
   const sourceCache = new Map<string, string | undefined>();
   function getSource(file: string): string | undefined {
