@@ -864,7 +864,7 @@ export function renderDashboard(data: SiteData): string {
     <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2/dist/fuse.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <script>
-      mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose'});
+      mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose',maxTextSize:150000});
 
       var INDEX = null;
       var FUSE = null;
@@ -1426,7 +1426,7 @@ export function renderSymbolPage(
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
-    <script>mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose'});</script>
+    <script>mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose',maxTextSize:150000});</script>
   `;
 
   return layout(symbol.name, "", body, 1);
@@ -1591,7 +1591,7 @@ export function renderFilePage(
       : ""}
 
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
-    <script>mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose'});</script>
+    <script>mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose',maxTextSize:150000});</script>
   `;
 
   return layout(filePath, "", body, 1);
@@ -1673,7 +1673,7 @@ export function renderRelationshipsPage(
 
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <script>
-      mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose'});
+      mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose',maxTextSize:150000});
 
       const filterInput = document.getElementById('relationship-filter');
       const tableRows = document.querySelectorAll('#relationships-table tbody tr');
