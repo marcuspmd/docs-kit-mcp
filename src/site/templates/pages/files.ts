@@ -364,10 +364,9 @@ export function renderFilePage(
         ? `<div class="mb-12">
             <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-4">Full Source</h2>
             <div class="rounded-lg overflow-hidden border border-gray-200 dark:border-gray-700">
-              <pre class="bg-gray-50 dark:bg-gray-900 p-4 overflow-x-auto text-sm font-mono leading-tight"><code class="language-typescript">${escapeCodeBlocks(sourceCode)}</code></pre>
+              <pre class="p-4 overflow-x-auto text-sm font-mono leading-tight"><code class="language-typescript">${escapeCodeBlocks(sourceCode)}</code></pre>
             </div>
-           </div>
-           <script>hljs.highlightAll();</script>`
+           </div>`
         : ""
     }
 

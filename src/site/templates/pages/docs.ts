@@ -98,7 +98,11 @@ export function renderMarkdownWrapper(
           if (!href) return;
           if (href.toLowerCase().endsWith('.md')) a.setAttribute('href', href.slice(0, -3) + '.html');
         });
-        hljs.highlightAll();
+        if (typeof hljs !== 'undefined') {
+          document.querySelectorAll('#doc pre code').forEach(function(block) {
+            hljs.highlightElement(block);
+          });
+        }
       })();
     </script>
     ${prevNextFooter}
@@ -128,7 +132,11 @@ export function renderMarkdownWrapper(
             if (!href) return;
             if (href.toLowerCase().endsWith('.md')) a.setAttribute('href', href.slice(0, -3) + '.html');
           });
-          hljs.highlightAll();
+          if (typeof hljs !== 'undefined') {
+            document.querySelectorAll('#doc pre code').forEach(function(block) {
+              hljs.highlightElement(block);
+            });
+          }
         } catch(e) {
           document.getElementById('doc').innerHTML = '<div class="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-md p-4 text-red-700 dark:text-red-300">Error loading document: ' + e.message + '</div>';
         }

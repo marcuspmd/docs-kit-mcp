@@ -84,10 +84,25 @@ export function layout(
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
-  <script src="https://cdn.tailwindcss.com?plugins=typography"></link>
+  <script src="https://cdn.tailwindcss.com?plugins=typography"></script>
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github.min.css" id="hljs-light">
   <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/styles/github-dark.min.css" id="hljs-dark" disabled>
   <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/highlight.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/typescript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/javascript.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/python.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/go.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/rust.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/php.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/ruby.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/java.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/csharp.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/dart.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/bash.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/json.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/yaml.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/markdown.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.9.0/languages/sql.min.js"></script>
   <script>
     // Apply theme immediately to prevent flash
     (function() {
@@ -114,15 +129,18 @@ export function layout(
               css: {
                 'code::before': { content: '""' },
                 'code::after': { content: '""' },
+                // Don't override syntax highlighting
                 'pre': {
-                  backgroundColor: '#f8fafc',
-                  color: '#1e293b',
+                  backgroundColor: 'transparent !important',
+                  color: 'inherit !important',
+                  padding: '0',
                 },
                 'pre code': {
-                  backgroundColor: 'transparent',
-                  color: 'inherit',
+                  backgroundColor: 'transparent !important',
+                  color: 'inherit !important',
                 },
-                'code': {
+                // Only style inline code (not inside pre)
+                ':not(pre) > code': {
                   backgroundColor: '#f1f5f9',
                   color: '#1e293b',
                   padding: '0.125rem 0.25rem',
@@ -134,10 +152,10 @@ export function layout(
             invert: {
               css: {
                 'pre': {
-                  backgroundColor: '#1e293b',
-                  color: '#e2e8f0',
+                  backgroundColor: 'transparent !important',
+                  color: 'inherit !important',
                 },
-                'code': {
+                ':not(pre) > code': {
                   backgroundColor: '#334155',
                   color: '#e2e8f0',
                 },
@@ -152,6 +170,30 @@ export function layout(
     /* Dark mode transitions */
     html { transition: background-color 0.2s ease, color 0.2s ease; }
     .dark { color-scheme: dark; }
+
+    /* Preserve highlight.js syntax highlighting */
+    pre code.hljs {
+      background: transparent !important;
+      padding: 0 !important;
+    }
+
+    /* Code block backgrounds that work with highlight.js */
+    pre {
+      background-color: #f8fafc;
+      border-radius: 0.375rem;
+    }
+
+    .dark pre {
+      background-color: #1e293b;
+    }
+
+    /* Ensure highlight.js colors are visible */
+    pre code {
+      display: block;
+      overflow-x: auto;
+      color: inherit !important;
+      background: transparent !important;
+    }
   </style>
 </head>
 <body class="min-h-screen flex flex-col bg-gray-50 dark:bg-gray-900 text-gray-900 dark:text-gray-100 transition-colors duration-200">
@@ -368,6 +410,11 @@ export function layout(
         try {
           FUSE = new Fuse(INDEX.items, { keys: [{ name: 'name', weight: 0.6 }, { name: 'signature', weight: 0.2 }, { name: 'summary', weight: 0.2 }], includeMatches: true, threshold: 0.35 });
         } catch (e) { console.warn('Fuse init failed', e); FUSE = null; }
+      })
+      .catch(function(e) {
+        // Search index failed to load (CORS or network error)
+        // This is expected when opening the site with file:// protocol
+        console.warn('Search index not available:', e.message);
       });
 
     // Global search dropdown
@@ -501,6 +548,38 @@ export function layout(
           setTheme(e.matches);
         }
       });
+    })();
+  </script>
+
+  <!-- Highlight.js Initialization -->
+  <script>
+    (function() {
+      // Function to highlight all code blocks
+      function highlightAllCodeBlocks() {
+        if (typeof hljs !== 'undefined') {
+          document.querySelectorAll('pre code:not(.hljs)').forEach(function(block) {
+            try {
+              hljs.highlightElement(block);
+            } catch (e) {
+              console.warn('Failed to highlight code block:', e);
+            }
+          });
+        }
+      }
+
+      // Initialize syntax highlighting for all code blocks
+      if (typeof hljs !== 'undefined') {
+        // On DOMContentLoaded
+        if (document.readyState === 'loading') {
+          document.addEventListener('DOMContentLoaded', highlightAllCodeBlocks);
+        } else {
+          // DOM is already ready, highlight immediately
+          highlightAllCodeBlocks();
+        }
+
+        // Also run after a short delay to catch any dynamically added content
+        setTimeout(highlightAllCodeBlocks, 100);
+      }
     })();
   </script>
 </body>
