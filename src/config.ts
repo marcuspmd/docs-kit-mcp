@@ -78,6 +78,13 @@ export const ConfigSchema = z.object({
 
   docs: z.array(DocEntrySchema).default([]),
 
+  coverage: z
+    .object({
+      lcovPath: z.string().default("coverage/lcov.info"),
+      enabled: z.boolean().default(false),
+    })
+    .optional(),
+
   defaultPrompts: z
     .object({
       symbolPrompt: z

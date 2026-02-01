@@ -17,6 +17,15 @@ export interface ProjectStatusResult {
   totalRelationships: number;
   avgReferencesPerSymbol: number;
   generatedAt: string;
+  testCoverage?: {
+    avgCoverage: number;
+    symbolsWithTests: number;
+    totalTestableSymbols: number;
+    fullyCovered: number;
+    partiallyCovered: number;
+    lowCoverage: number;
+    uncovered: number;
+  };
 }
 
 export interface ProjectStatusDeps {
@@ -120,6 +129,43 @@ export async function generateProjectStatus(
     {} as Record<string, number>,
   );
 
+  // Calculate test coverage metrics if available
+  const symbolsWithCoverage = allSymbols.filter((s) => s.metrics?.testCoverage);
+  let testCoverage: ProjectStatusResult["testCoverage"];
+
+  if (symbolsWithCoverage.length > 0) {
+    const totalCoverage = symbolsWithCoverage.reduce(
+      (sum, s) => sum + (s.metrics?.testCoverage?.coveragePercent || 0),
+      0,
+    );
+    const avgCoverage = totalCoverage / symbolsWithCoverage.length;
+
+    const fullyCovered = symbolsWithCoverage.filter(
+      (s) => (s.metrics?.testCoverage?.coveragePercent || 0) >= 80,
+    ).length;
+    const partiallyCovered = symbolsWithCoverage.filter((s) => {
+      const cov = s.metrics?.testCoverage?.coveragePercent || 0;
+      return cov >= 50 && cov < 80;
+    }).length;
+    const lowCoverage = symbolsWithCoverage.filter((s) => {
+      const cov = s.metrics?.testCoverage?.coveragePercent || 0;
+      return cov > 0 && cov < 50;
+    }).length;
+    const uncovered = symbolsWithCoverage.filter(
+      (s) => (s.metrics?.testCoverage?.coveragePercent || 0) === 0,
+    ).length;
+
+    testCoverage = {
+      avgCoverage,
+      symbolsWithTests: symbolsWithCoverage.length,
+      totalTestableSymbols: allSymbols.length,
+      fullyCovered,
+      partiallyCovered,
+      lowCoverage,
+      uncovered,
+    };
+  }
+
   return {
     totalSymbols,
     documentedSymbols,
@@ -131,6 +177,7 @@ export async function generateProjectStatus(
     totalRelationships: allRels.length,
     avgReferencesPerSymbol: totalSymbols > 0 ? allRels.length / totalSymbols : 0,
     generatedAt: new Date().toISOString().slice(0, 10),
+    testCoverage,
   };
 }
 
@@ -173,7 +220,19 @@ ${
 - **Total Relationships**: ${result.totalRelationships}
 - **Average References per Symbol**: ${result.avgReferencesPerSymbol.toFixed(1)}
 
----
+${
+  result.testCoverage
+    ? `## Test Coverage
+- **Average Coverage**: ${result.testCoverage.avgCoverage.toFixed(1)}%
+- **Symbols with Tests**: ${result.testCoverage.symbolsWithTests}/${result.testCoverage.totalTestableSymbols} (${((result.testCoverage.symbolsWithTests / result.testCoverage.totalTestableSymbols) * 100).toFixed(1)}%)
+- **Fully Covered (≥80%)**: ${result.testCoverage.fullyCovered}
+- **Partially Covered (50-79%)**: ${result.testCoverage.partiallyCovered}
+- **Low Coverage (<50%)**: ${result.testCoverage.lowCoverage}
+- **Uncovered (0%)**: ${result.testCoverage.uncovered}
+
+`
+    : ""
+}---
 *Report generated on ${result.generatedAt}*`;
 
   return report;

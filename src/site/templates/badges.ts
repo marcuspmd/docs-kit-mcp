@@ -94,3 +94,33 @@ export function violationsBadges(symbol: CodeSymbol, governanceHref = "governanc
     )
     .join("");
 }
+
+/**
+ * Render coverage badge for a symbol.
+ */
+export function coverageBadge(coveragePercent?: number): string {
+  if (coveragePercent === undefined) return "";
+
+  let colorClass: string;
+  let icon: string;
+
+  if (coveragePercent >= 80) {
+    colorClass =
+      "bg-green-50 dark:bg-green-900/50 text-green-700 dark:text-green-300 border-green-200 dark:border-green-800";
+    icon = "✓";
+  } else if (coveragePercent >= 50) {
+    colorClass =
+      "bg-yellow-50 dark:bg-yellow-900/50 text-yellow-800 dark:text-yellow-300 border-yellow-200 dark:border-yellow-800";
+    icon = "~";
+  } else if (coveragePercent > 0) {
+    colorClass =
+      "bg-red-50 dark:bg-red-900/50 text-red-700 dark:text-red-300 border-red-200 dark:border-red-800";
+    icon = "!";
+  } else {
+    colorClass =
+      "bg-gray-50 dark:bg-gray-700 text-gray-700 dark:text-gray-300 border-gray-200 dark:border-gray-600";
+    icon = "✗";
+  }
+
+  return `<span class="px-2 py-0.5 rounded text-xs font-medium border ${colorClass} ml-2" title="Test Coverage">${icon} ${coveragePercent.toFixed(1)}%</span>`;
+}

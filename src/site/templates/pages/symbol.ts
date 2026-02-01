@@ -12,6 +12,7 @@ import {
   layerBadge,
   statusBadges,
   violationsBadges,
+  coverageBadge,
 } from "../badges.js";
 import { layout } from "../layout.js";
 import { mermaidDiagramWrap, getMermaidExpandModalAndScript } from "../mermaid.js";
@@ -84,6 +85,7 @@ export function renderSymbolPage(
            ${visibilityBadge(symbol.visibility)}
            ${layerBadge(symbol.layer)}
            ${statusBadges(symbol)}
+           ${coverageBadge(symbol.metrics?.testCoverage?.coveragePercent)}
            ${violationsBadges(symbol, "../governance.html")}
         </h1>
         <div class="text-sm text-gray-500 dark:text-gray-400">
@@ -107,6 +109,7 @@ export function renderSymbolPage(
               <span>LOC: ${symbol.metrics.linesOfCode ?? "-"}</span>
               <span>Complexity: <span class="${(symbol.metrics.cyclomaticComplexity ?? 0) > 10 ? "text-red-600 dark:text-red-400 font-bold" : ""}">${symbol.metrics.cyclomaticComplexity ?? "-"}</span></span>
               <span>Params: ${symbol.metrics.parameterCount ?? "-"}</span>
+              ${symbol.metrics.testCoverage ? `<span>Coverage: <span class="font-semibold ${symbol.metrics.testCoverage.coveragePercent >= 80 ? "text-green-600 dark:text-green-400" : symbol.metrics.testCoverage.coveragePercent >= 50 ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400"}">${symbol.metrics.testCoverage.coveragePercent.toFixed(1)}%</span> (${symbol.metrics.testCoverage.linesHit}/${symbol.metrics.testCoverage.linesCovered} lines, ${symbol.metrics.testCoverage.hitCount}x executed)</span>` : ""}
             </div>
           </div>`
               : ""

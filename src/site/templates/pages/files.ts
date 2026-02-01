@@ -6,7 +6,13 @@ import type { CodeSymbol } from "../../../indexer/symbol.types.js";
 import type { RelationshipRow } from "../../../storage/db.js";
 import type { DocEntry, ArchViolationRow } from "../types.js";
 import { escapeHtml, escapeCodeBlocks } from "../utils.js";
-import { badgeClass, visibilityBadge, statusBadges, violationsBadges } from "../badges.js";
+import {
+  badgeClass,
+  visibilityBadge,
+  statusBadges,
+  violationsBadges,
+  coverageBadge,
+} from "../badges.js";
 import { layout } from "../layout.js";
 import { mermaidDiagramWrap, getMermaidExpandModalAndScript } from "../mermaid.js";
 import { fileSlug, buildSmartDiagramsForFile } from "../../shared.js";
@@ -34,6 +40,7 @@ export function renderFilesPage(
     isFile: boolean;
     children: Record<string, TreeNode>;
     symbolCount: number;
+    coverage?: number;
   }
 
   const root: TreeNode = {
@@ -45,8 +52,23 @@ export function renderFilesPage(
   };
 
   const symbolCounts = new Map<string, number>();
+  const fileCoverageMap = new Map<string, number>();
+
   for (const s of symbols) {
     symbolCounts.set(s.file, (symbolCounts.get(s.file) ?? 0) + 1);
+  }
+
+  // Calculate average coverage per file
+  for (const file of files) {
+    const fileSymbols = symbols.filter((s) => s.file === file);
+    const symbolsWithCoverage = fileSymbols.filter((s) => s.metrics?.testCoverage);
+    if (symbolsWithCoverage.length > 0) {
+      const totalCoverage = symbolsWithCoverage.reduce(
+        (sum, s) => sum + (s.metrics!.testCoverage!.coveragePercent || 0),
+        0,
+      );
+      fileCoverageMap.set(file, totalCoverage / symbolsWithCoverage.length);
+    }
   }
 
   for (const file of files) {
@@ -70,8 +92,9 @@ export function renderFilesPage(
       }
       current = current.children[part];
     }
-    // Set symbol count for the file node
+    // Set symbol count and coverage for the file node
     current.symbolCount = symbolCounts.get(file) ?? 0;
+    current.coverage = fileCoverageMap.get(file);
   }
 
   // 2. Propagate counts up
@@ -105,7 +128,10 @@ export function renderFilesPage(
           <a href="files/${fileSlug(node.path)}.html" class="text-sm text-gray-700 dark:text-gray-300 hover:text-blue-600 dark:hover:text-blue-400 font-medium truncate flex-1 block">
             ${escapeHtml(node.name)}
           </a>
-          <span class="text-xs text-gray-400 dark:text-gray-500 ml-2 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full border border-gray-200 dark:border-gray-600">${node.symbolCount}</span>
+          <div class="flex items-center gap-2 ml-2">
+            <span class="text-xs text-gray-400 dark:text-gray-500 bg-gray-100 dark:bg-gray-700 px-2 py-0.5 rounded-full border border-gray-200 dark:border-gray-600">${node.symbolCount}</span>
+            ${node.coverage !== undefined ? coverageBadge(node.coverage) : ""}
+          </div>
         </div>
       `;
     } else {
@@ -223,6 +249,16 @@ export function renderFilePage(
         displaySymbols.length
       : 0;
 
+  // Calculate file-level coverage
+  const symbolsWithCoverage = displaySymbols.filter((s) => s.metrics?.testCoverage);
+  const avgCoverage =
+    symbolsWithCoverage.length > 0
+      ? symbolsWithCoverage.reduce(
+          (sum, s) => sum + (s.metrics!.testCoverage!.coveragePercent || 0),
+          0,
+        ) / symbolsWithCoverage.length
+      : undefined;
+
   const kindCounts: Record<string, number> = {};
   for (const s of displaySymbols) {
     kindCounts[s.kind] = (kindCounts[s.kind] ?? 0) + 1;
@@ -266,10 +302,19 @@ export function renderFilePage(
         <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Avg Complexity</dt>
         <dd class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">${avgComplexity.toFixed(1)}</dd>
       </div>
+      ${
+        avgCoverage !== undefined
+          ? `
+      <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg border border-gray-200 dark:border-gray-700 p-4 text-center">
+        <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Avg Coverage</dt>
+        <dd class="mt-1 text-2xl font-semibold ${avgCoverage >= 80 ? "text-green-600 dark:text-green-400" : avgCoverage >= 50 ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400"}">${avgCoverage.toFixed(1)}%</dd>
+      </div>`
+          : `
       <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg border border-gray-200 dark:border-gray-700 p-4 text-center">
         <dt class="text-sm font-medium text-gray-500 dark:text-gray-400 truncate">Symbol Types</dt>
         <dd class="mt-1 text-2xl font-semibold text-gray-900 dark:text-white">${Object.keys(kindCounts).length}</dd>
-      </div>
+      </div>`
+      }
     </div>
 
     ${

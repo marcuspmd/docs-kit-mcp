@@ -192,6 +192,81 @@ export function renderDashboard(data: SiteData): string {
       </div>
     </div>
 
+    ${(() => {
+      // Calculate test coverage stats
+      const symbolsWithCoverage = symbols.filter((s) => s.metrics?.testCoverage);
+      if (symbolsWithCoverage.length === 0) return "";
+
+      const totalCoverage = symbolsWithCoverage.reduce(
+        (sum, s) => sum + (s.metrics?.testCoverage?.coveragePercent || 0),
+        0,
+      );
+      const avgCoverage = totalCoverage / symbolsWithCoverage.length;
+
+      const fullyCovered = symbolsWithCoverage.filter(
+        (s) => (s.metrics?.testCoverage?.coveragePercent || 0) >= 80,
+      ).length;
+      const partiallyCovered = symbolsWithCoverage.filter((s) => {
+        const cov = s.metrics?.testCoverage?.coveragePercent || 0;
+        return cov >= 50 && cov < 80;
+      }).length;
+      const lowCoverage = symbolsWithCoverage.filter((s) => {
+        const cov = s.metrics?.testCoverage?.coveragePercent || 0;
+        return cov > 0 && cov < 50;
+      }).length;
+      const uncovered = symbolsWithCoverage.filter(
+        (s) => (s.metrics?.testCoverage?.coveragePercent || 0) === 0,
+      ).length;
+
+      const coveragePercent = ((symbolsWithCoverage.length / symbols.length) * 100).toFixed(1);
+
+      return `
+    <div id="test-coverage" class="mb-12">
+      <h2 class="text-2xl font-bold text-gray-900 dark:text-white mb-6">Test Coverage</h2>
+      <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg border border-gray-200 dark:border-gray-700">
+          <div class="px-4 py-4 text-center">
+            <dt class="text-xs font-medium text-gray-500 dark:text-gray-400 truncate">Avg Coverage</dt>
+            <dd class="mt-1 text-2xl font-semibold ${avgCoverage >= 80 ? "text-green-600 dark:text-green-400" : avgCoverage >= 50 ? "text-yellow-600 dark:text-yellow-400" : "text-red-600 dark:text-red-400"}">${avgCoverage.toFixed(1)}%</dd>
+          </div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg border border-gray-200 dark:border-gray-700">
+          <div class="px-4 py-4 text-center">
+            <dt class="text-xs font-medium text-gray-500 dark:text-gray-400 truncate">With Tests</dt>
+            <dd class="mt-1 text-2xl font-semibold text-blue-600 dark:text-blue-400">${symbolsWithCoverage.length}</dd>
+            <dd class="text-xs text-gray-500 dark:text-gray-400">${coveragePercent}% of ${symbols.length}</dd>
+          </div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg border border-gray-200 dark:border-gray-700">
+          <div class="px-4 py-4 text-center">
+            <dt class="text-xs font-medium text-gray-500 dark:text-gray-400 truncate">Full (≥80%)</dt>
+            <dd class="mt-1 text-2xl font-semibold text-green-600 dark:text-green-400">${fullyCovered}</dd>
+          </div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg border border-gray-200 dark:border-gray-700">
+          <div class="px-4 py-4 text-center">
+            <dt class="text-xs font-medium text-gray-500 dark:text-gray-400 truncate">Partial (50-79%)</dt>
+            <dd class="mt-1 text-2xl font-semibold text-yellow-600 dark:text-yellow-400">${partiallyCovered}</dd>
+          </div>
+        </div>
+      </div>
+      <div class="grid grid-cols-2 gap-4">
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg border border-gray-200 dark:border-gray-700">
+          <div class="px-4 py-4 text-center">
+            <dt class="text-xs font-medium text-gray-500 dark:text-gray-400 truncate">Low (<50%)</dt>
+            <dd class="mt-1 text-2xl font-semibold text-orange-600 dark:text-orange-400">${lowCoverage}</dd>
+          </div>
+        </div>
+        <div class="bg-white dark:bg-gray-800 overflow-hidden shadow rounded-lg border border-gray-200 dark:border-gray-700">
+          <div class="px-4 py-4 text-center">
+            <dt class="text-xs font-medium text-gray-500 dark:text-gray-400 truncate">Uncovered (0%)</dt>
+            <dd class="mt-1 text-2xl font-semibold text-red-600 dark:text-red-400">${uncovered}</dd>
+          </div>
+        </div>
+      </div>
+    </div>`;
+    })()}
+
     <div id="code-metrics" class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
       <div>
         <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-4">Symbols by kind</h2>

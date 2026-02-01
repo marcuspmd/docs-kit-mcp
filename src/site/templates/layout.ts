@@ -264,9 +264,7 @@ export function layout(
     </aside>
 
     <main class="flex-1 focus:outline-none p-6 lg:p-8" id="content" role="main">
-      <div class="max-w-7xl mx-auto">
-        ${body}
-      </div>
+      ${body}
     </main>
 
     ${rightSidebar}

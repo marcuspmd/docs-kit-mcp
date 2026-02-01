@@ -64,6 +64,16 @@ export const CodeMetricsSchema = z.object({
   linesOfCode: z.number().int().nonnegative().optional(),
   cyclomaticComplexity: z.number().int().nonnegative().optional(),
   parameterCount: z.number().int().nonnegative().optional(),
+  testCoverage: z
+    .object({
+      hitCount: z.number().int().nonnegative(),
+      linesHit: z.number().int().nonnegative(),
+      linesCovered: z.number().int().nonnegative(),
+      coveragePercent: z.number().min(0).max(100),
+      branchesHit: z.number().int().nonnegative().optional(),
+      branchesCovered: z.number().int().nonnegative().optional(),
+    })
+    .optional(),
 });
 
 export type CodeMetrics = z.infer<typeof CodeMetricsSchema>;

@@ -8,6 +8,7 @@ import { createDocRegistry } from "./docs/docRegistry.js";
 import { indexFile } from "./indexer/indexer.js";
 import { extractRelationships } from "./indexer/relationshipExtractor.js";
 import { collectMetrics } from "./indexer/metricsCollector.js";
+import { parseLcov, type LcovFileData } from "./indexer/lcovCollector.js";
 import { createPatternAnalyzer } from "./patterns/patternAnalyzer.js";
 import {
   initializeSchema,
@@ -430,9 +431,26 @@ async function runIndex(args: string[]) {
     }
   }
 
+  // Phase 2.5: Load coverage data if enabled
+  let coverageData: LcovFileData[] | undefined;
+  if (config.coverage?.enabled) {
+    const lcovPath = path.resolve(rootDir, config.coverage.lcovPath);
+    if (fs.existsSync(lcovPath)) {
+      step("Loading test coverage data");
+      try {
+        coverageData = await parseLcov(lcovPath);
+        done(`loaded from ${config.coverage.lcovPath}`);
+      } catch (err) {
+        console.warn(`  ⚠ Failed to parse lcov file: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    } else {
+      console.warn(`  ⚠ Coverage enabled but lcov file not found: ${config.coverage.lcovPath}`);
+    }
+  }
+
   // Phase 3: Collect metrics
   step("Computing metrics");
-  allSymbols = collectMetrics({ symbols: allSymbols, trees });
+  allSymbols = collectMetrics({ symbols: allSymbols, trees, coverage: coverageData });
   done();
 
   // Phase 4: Detect patterns
@@ -870,7 +888,7 @@ const value = ${symbol.name}.SomeValue;
 
 async function runProjectStatus(args: string[]) {
   const { flags } = parseArgs(args, {
-    db: ".doc-kit/registry.db",
+    db: ".doc-kit/index.db",
     docs: "docs",
   });
 

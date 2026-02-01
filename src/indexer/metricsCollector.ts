@@ -1,5 +1,7 @@
 import type Parser from "tree-sitter";
 import type { CodeMetrics, CodeSymbol } from "./symbol.types.js";
+import type { LcovFileData } from "./lcovCollector.js";
+import { enrichSymbolsWithCoverage } from "./lcovCollector.js";
 
 const BRANCH_NODE_TYPES = new Set([
   "if_statement",
@@ -74,15 +76,18 @@ function findNodeForSymbol(
 export interface MetricsCollectorOptions {
   symbols: CodeSymbol[];
   trees: Map<string, Parser.Tree>;
+  coverage?: LcovFileData[];
 }
 
 /**
  * Compute metrics for each symbol and return updated symbols.
+ * If coverage data is provided, enriches symbols with test coverage metrics.
  */
 export function collectMetrics(options: MetricsCollectorOptions): CodeSymbol[] {
-  const { symbols, trees } = options;
+  const { symbols, trees, coverage } = options;
 
-  return symbols.map((symbol) => {
+  // First, collect static metrics (LOC, complexity, parameters)
+  const symbolsWithStaticMetrics = symbols.map((symbol) => {
     const tree = trees.get(symbol.file);
     const linesOfCode = symbol.endLine - symbol.startLine + 1;
     const parameterCount = countParameters(symbol.signature);
@@ -103,4 +108,22 @@ export function collectMetrics(options: MetricsCollectorOptions): CodeSymbol[] {
 
     return { ...symbol, metrics };
   });
+
+  // If coverage data is available, enrich symbols with test coverage
+  if (coverage && coverage.length > 0) {
+    const { enrichedSymbols, stats } = enrichSymbolsWithCoverage(
+      symbolsWithStaticMetrics,
+      coverage,
+    );
+
+    if (stats.symbolsEnriched > 0) {
+      console.log(
+        `✓ Coverage: Enriched ${stats.symbolsEnriched}/${stats.totalSymbols} symbols from ${stats.filesProcessed} files`,
+      );
+    }
+
+    return enrichedSymbols;
+  }
+
+  return symbolsWithStaticMetrics;
 }
