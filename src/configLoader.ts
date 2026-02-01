@@ -2,6 +2,7 @@ import * as path from "node:path";
 import * as fs from "node:fs";
 import { ConfigSchema, type Config } from "./config.js";
 import { pathToFileURL } from "node:url";
+import { expandAutoDiscoveryDocs, linkDocNavigation } from "./docs/autoDiscovery.js";
 
 const CONFIG_FILENAMES = ["docs.config.js", "docs.config.mjs", "docs.config.cjs"];
 
@@ -12,6 +13,7 @@ export default {
     "**/*.tsx",
     "**/*.js",
     "**/*.jsx",
+    "**/*.php",
     "**/*.py",
     "**/*.java",
     "**/*.go",
@@ -38,8 +40,38 @@ export default {
   ],
   respectGitignore: true,
   maxFileSize: 512_000,
-  dbPath: ".doc-kit/index.db",
+  dbPath: ".docs-kit/index.db",
   promptRules: [],
+  coverage: {
+    lcovPath: "coverage/lcov.info",
+    enabled: false,
+  },
+  docs: [
+    {
+      path: "docs/example.md",
+      title: "Example Document",
+      name: "example",
+      category: "domain",
+      module: "Example",
+      symbols: ["exampleFunction", "ExampleClass"],
+      next: "docs/example2.md",
+      showOnMenu: true
+    },
+    {
+      path: "docs/example2.md",
+      title: "Example Document 2",
+      name: "example-2",
+      category: "domain",
+      module: "Example",
+      symbols: ["exampleFunction2", "ExampleClass2"],
+      previous: "docs/example.md",
+      showOnMenu: true
+    },
+    {
+      path: "./docs/examplesFolder/",
+      autoDiscovery: true
+    }
+  ],
 };
 `;
 
@@ -66,8 +98,17 @@ export async function loadConfig(workspaceRoot: string): Promise<Config> {
     }
   }
 
-  return ConfigSchema.parse({
+  const config = ConfigSchema.parse({
     projectRoot: workspaceRoot,
     ...userConfig,
   });
+
+  // Expand auto-discovery entries and link navigation
+  if (config.docs && config.docs.length > 0) {
+    const expandedDocs = await expandAutoDiscoveryDocs(config.docs, workspaceRoot);
+    const linkedDocs = linkDocNavigation(expandedDocs);
+    config.docs = linkedDocs;
+  }
+
+  return config;
 }

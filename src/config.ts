@@ -26,6 +26,8 @@ export const DocEntrySchema = z.object({
   next: z.string().optional(),
   /** Show this doc in the sidebar menu. Defaults to false. */
   showOnMenu: z.boolean().optional(),
+  /** Auto-discover all .md files in this directory. Only valid when path is a directory. */
+  autoDiscovery: z.boolean().optional(),
 });
 
 export type DocEntry = z.infer<typeof DocEntrySchema>;

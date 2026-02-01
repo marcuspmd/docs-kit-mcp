@@ -31,7 +31,7 @@ export default {
   ],
   respectGitignore: true,
   maxFileSize: 512_000,
-  dbPath: ".doc-kit/index.db",
+  dbPath: ".docs-kit/index.db",
   promptRules: [],
   coverage: {
     lcovPath: "coverage/lcov.info",
@@ -56,6 +56,11 @@ export default {
       module: "Main",
       symbols: ["projectStatus", "ProjectStatusReport"],
       previous: "docs/domain/arch-guard-rules.md",
+      showOnMenu: true
+    },
+    {
+      path: "./docs/examples/",
+      autoDiscovery: true,
       showOnMenu: true
     }
   ],
