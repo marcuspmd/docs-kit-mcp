@@ -23,6 +23,112 @@ function escapeCodeBlocks(str: string): string {
   return escapeHtml(str);
 }
 
+/** Base64-encode for use in data attribute (Node.js). */
+function base64Encode(s: string): string {
+  return Buffer.from(s, "utf8").toString("base64");
+}
+
+/** Wrap a Mermaid diagram with Expand button and data source for fullscreen zoom/pan modal. */
+function mermaidDiagramWrap(source: string): string {
+  if (!source.trim()) return "";
+  const b64 = base64Encode(source);
+  return `<div class="mermaid-expand-wrapper relative group" data-mermaid-src-base64="${escapeHtml(b64)}">
+  <div class="mermaid">${source}</div>
+  <button type="button" class="mermaid-expand-btn absolute top-2 right-2 z-10 px-2 py-1 text-xs font-medium rounded bg-white/90 text-gray-700 border border-gray-300 shadow hover:bg-white hover:border-blue-400 opacity-70 group-hover:opacity-100 transition-opacity" title="Expand to fullscreen (zoom and pan)">Expand</button>
+</div>`;
+}
+
+/** Modal and script for fullscreen Mermaid with zoom and pan. Include once per page that has diagrams. */
+function getMermaidExpandModalAndScript(): string {
+  return `
+<div id="mermaid-fullscreen-modal" class="fixed inset-0 z-[100] hidden bg-black/70 items-center justify-center" aria-modal="true" role="dialog" style="display: none;">
+  <div class="bg-white rounded-lg shadow-xl max-w-[95vw] max-h-[95vh] flex flex-col m-4">
+    <div class="flex justify-between items-center p-2 border-b border-gray-200 flex-shrink-0">
+      <span class="text-sm font-medium text-gray-700">Diagram — zoom and drag to pan</span>
+      <div class="flex items-center gap-2">
+        <button type="button" id="mermaid-zoom-out" class="w-8 h-8 rounded border border-gray-300 bg-gray-50 hover:bg-gray-100 text-lg leading-none" title="Zoom out">−</button>
+        <button type="button" id="mermaid-zoom-in" class="w-8 h-8 rounded border border-gray-300 bg-gray-50 hover:bg-gray-100 text-lg leading-none" title="Zoom in">+</button>
+        <button type="button" id="mermaid-modal-close" class="px-3 py-1.5 rounded border border-gray-300 bg-gray-50 hover:bg-gray-100 text-sm font-medium">Close</button>
+      </div>
+    </div>
+    <div id="mermaid-modal-pan-wrap" class="flex-1 overflow-hidden min-h-0 relative" style="cursor: grab;">
+      <div id="mermaid-modal-content" class="p-4 inline-block origin-top-left" style="transform-origin: 0 0;"></div>
+    </div>
+  </div>
+</div>
+<script>
+(function(){
+  var modal = document.getElementById('mermaid-fullscreen-modal');
+  var content = document.getElementById('mermaid-modal-content');
+  var panWrap = document.getElementById('mermaid-modal-pan-wrap');
+  var scale = 1, translateX = 0, translateY = 0;
+  var isDragging = false, startX, startY, startTx, startTy;
+
+  function applyTransform() {
+    if (!content) return;
+    content.style.transform = 'translate(' + translateX + 'px, ' + translateY + 'px) scale(' + scale + ')';
+  }
+
+  function showModal() {
+    if (modal) { modal.classList.remove('hidden'); modal.style.display = 'flex'; document.body.style.overflow = 'hidden'; }
+  }
+  function hideModal() {
+    if (modal) { modal.classList.add('hidden'); modal.style.display = 'none'; document.body.style.overflow = ''; }
+  }
+
+  document.querySelectorAll('.mermaid-expand-btn').forEach(function(btn) {
+    btn.addEventListener('click', function() {
+      var wrapper = this.closest('.mermaid-expand-wrapper');
+      if (!wrapper || !content || typeof mermaid === 'undefined') return;
+      var b64 = wrapper.getAttribute('data-mermaid-src-base64');
+      if (!b64) return;
+      try {
+        var src = atob(b64);
+        content.innerHTML = '<div class="mermaid"></div>';
+        var mermaidDiv = content.querySelector('.mermaid');
+        if (!mermaidDiv) return;
+        mermaidDiv.textContent = src;
+        mermaid.run({ nodes: [mermaidDiv] }).then(function() {
+          scale = 1; translateX = 0; translateY = 0;
+          applyTransform();
+          showModal();
+        }).catch(function(e) { console.warn('Mermaid render failed', e); });
+      } catch (e) { console.warn('Mermaid expand failed', e); }
+    });
+  });
+
+  if (document.getElementById('mermaid-zoom-in')) {
+    document.getElementById('mermaid-zoom-in').addEventListener('click', function() { scale = Math.min(3, scale + 0.2); applyTransform(); });
+  }
+  if (document.getElementById('mermaid-zoom-out')) {
+    document.getElementById('mermaid-zoom-out').addEventListener('click', function() { scale = Math.max(0.3, scale - 0.2); applyTransform(); });
+  }
+  if (document.getElementById('mermaid-modal-close')) {
+    document.getElementById('mermaid-modal-close').addEventListener('click', hideModal);
+  }
+
+  if (panWrap) {
+    panWrap.addEventListener('mousedown', function(e) {
+      if (e.target === panWrap || e.target.id === 'mermaid-modal-content' || (e.target.closest && e.target.closest('#mermaid-modal-content'))) {
+        isDragging = true; startX = e.clientX; startY = e.clientY; startTx = translateX; startTy = translateY;
+        panWrap.style.cursor = 'grabbing';
+      }
+    });
+    document.addEventListener('mousemove', function(e) {
+      if (isDragging) { translateX = startTx + e.clientX - startX; translateY = startTy + e.clientY - startY; applyTransform(); }
+    });
+    document.addEventListener('mouseup', function() { isDragging = false; if (panWrap) panWrap.style.cursor = 'grab'; });
+    panWrap.addEventListener('mouseleave', function() { if (!isDragging) panWrap.style.cursor = 'grab'; });
+  }
+
+  if (modal) {
+    modal.addEventListener('click', function(e) { if (e.target === modal) hideModal(); });
+    document.addEventListener('keydown', function(e) { if (e.key === 'Escape') hideModal(); });
+  }
+})();
+</script>`;
+}
+
 function badgeClass(kind: string): string {
   const base = "px-2 py-0.5 rounded text-xs font-medium border";
   const map: Record<string, string> = {
@@ -182,7 +288,8 @@ function layout(
 
         <h3 class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mt-8 mb-2">Quick Links</h3>
         <nav class="space-y-1">
-          <a href="${prefix}index.html#architecture-overview" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-gray-50 hover:text-gray-900">Architecture</a>
+          <a href="${prefix}index.html#code-metrics" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:text-gray-50 hover:text-gray-900">Code metrics</a>
+          <a href="${prefix}index.html#architecture-overview" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900">Architecture</a>
           <a href="${prefix}index.html#architecture-layers" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900">Layers</a>
           <a href="${prefix}index.html#top-complex-symbols" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900">Complexity</a>
           <a href="${prefix}relationships.html" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900">All Relationships</a>
@@ -488,6 +595,19 @@ export function renderDashboard(data: SiteData): string {
     : "";
   const highComplexityCount = symbols.filter((s) => (s.metrics?.cyclomaticComplexity ?? 0) > 10).length;
 
+  // Code metrics for dashboard
+  const symbolsWithMetrics = symbols.filter((s) => s.metrics).length;
+  const withComplexity = symbols.filter((s) => s.metrics?.cyclomaticComplexity != null);
+  const avgComplexity =
+    withComplexity.length > 0
+      ? (withComplexity.reduce((sum, s) => sum + (s.metrics!.cyclomaticComplexity ?? 0), 0) / withComplexity.length).toFixed(1)
+      : null;
+  const topByLoc = symbols
+    .filter((s) => (s.metrics?.linesOfCode ?? s.endLine - s.startLine + 1) > 0)
+    .sort((a, b) => (b.metrics?.linesOfCode ?? b.endLine - b.startLine + 1) - (a.metrics?.linesOfCode ?? a.endLine - a.startLine + 1))
+    .slice(0, 5);
+  const symbolsWithoutDocRef = symbols.filter((s) => !s.docRef).length;
+
   const body = `
     <div class="flex flex-wrap items-center justify-between gap-4 mb-6 pb-4 border-b border-gray-200">
       <h1 class="text-3xl font-bold text-gray-900">docs-kit Documentation</h1>
@@ -528,6 +648,62 @@ export function renderDashboard(data: SiteData): string {
           <dt class="text-sm font-medium text-gray-500 truncate">Patterns</dt>
           <dd class="mt-1 text-3xl font-semibold text-blue-600">${patterns.length}</dd>
         </div>
+      </div>
+    </div>
+
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
+      ${avgComplexity != null ? `
+      <div class="bg-white overflow-hidden shadow rounded-lg">
+        <div class="px-4 py-4 text-center">
+          <dt class="text-xs font-medium text-gray-500 truncate">Avg complexity</dt>
+          <dd class="mt-1 text-2xl font-semibold text-gray-900">${avgComplexity}</dd>
+        </div>
+      </div>` : ""}
+      <div class="bg-white overflow-hidden shadow rounded-lg">
+        <div class="px-4 py-4 text-center">
+          <dt class="text-xs font-medium text-gray-500 truncate">With metrics</dt>
+          <dd class="mt-1 text-2xl font-semibold text-gray-900">${symbolsWithMetrics}</dd>
+        </div>
+      </div>
+      ${symbolsWithoutDocRef > 0 ? `
+      <div class="bg-white overflow-hidden shadow rounded-lg">
+        <div class="px-4 py-4 text-center">
+          <dt class="text-xs font-medium text-gray-500 truncate">Without doc ref</dt>
+          <dd class="mt-1 text-2xl font-semibold text-amber-600">${symbolsWithoutDocRef}</dd>
+        </div>
+      </div>` : ""}
+      <div class="bg-white overflow-hidden shadow rounded-lg">
+        <div class="px-4 py-4 text-center">
+          <dt class="text-xs font-medium text-gray-500 truncate">Symbol kinds</dt>
+          <dd class="mt-1 text-2xl font-semibold text-gray-900">${Object.keys(kindCounts).length}</dd>
+        </div>
+      </div>
+    </div>
+
+    <div id="code-metrics" class="grid grid-cols-1 lg:grid-cols-2 gap-8 mb-12">
+      <div>
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Symbols by kind</h2>
+        <div class="bg-white shadow rounded-lg border border-gray-200 overflow-hidden">
+          <ul class="divide-y divide-gray-200 max-h-64 overflow-y-auto">
+            ${Object.entries(kindCounts)
+              .sort((a, b) => b[1] - a[1])
+              .map(([k, n]) => `<li class="px-4 py-2 flex justify-between items-center"><span class="text-sm font-medium text-gray-700">${escapeHtml(k)}</span><span class="text-sm text-gray-500">${n}</span></li>`)
+              .join("")}
+          </ul>
+        </div>
+      </div>
+      <div>
+        <h2 class="text-xl font-bold text-gray-900 mb-4">Longest symbols (LOC)</h2>
+        ${topByLoc.length > 0
+          ? `<div class="bg-white shadow rounded-lg border border-gray-200 overflow-hidden">
+          <table class="min-w-full divide-y divide-gray-200">
+            <thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Symbol</th><th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">LOC</th></tr></thead>
+            <tbody class="divide-y divide-gray-200">
+              ${topByLoc.map((s) => `<tr><td class="px-4 py-2 text-sm font-medium text-blue-600"><a href="symbols/${s.id}.html" class="hover:underline">${escapeHtml(s.name)}</a></td><td class="px-4 py-2 text-sm text-right text-gray-600">${s.metrics?.linesOfCode ?? s.endLine - s.startLine + 1}</td></tr>`).join("")}
+            </tbody>
+          </table>
+        </div>`
+          : "<p class=\"text-sm text-gray-500\">No LOC data.</p>"}
       </div>
     </div>
 
@@ -703,7 +879,7 @@ export function renderDashboard(data: SiteData): string {
         <button type="button" id="arch-tab-dirs" role="tab" aria-selected="false" aria-controls="arch-panel-dirs" class="arch-tab px-4 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 border border-transparent">Directory map</button>
       </div>
       <div id="arch-panel-graph" role="tabpanel" class="arch-panel bg-white shadow rounded-lg p-6 overflow-x-auto border border-gray-200">
-        <div class="mermaid">${overviewGraph}</div>
+        ${mermaidDiagramWrap(overviewGraph)}
       </div>` : ""}
       <div id="arch-panel-dirs" role="tabpanel" class="arch-panel grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 ${overviewGraph ? "hidden" : ""}" aria-hidden="${overviewGraph ? "true" : "false"}">
         ${Object.entries(dirGroups)
@@ -864,7 +1040,7 @@ export function renderDashboard(data: SiteData): string {
     <script src="https://cdn.jsdelivr.net/npm/fuse.js@6.6.2/dist/fuse.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <script>
-      mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose',maxTextSize:150000});
+      mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose',maxTextSize:300000});
 
       var INDEX = null;
       var FUSE = null;
@@ -960,6 +1136,7 @@ export function renderDashboard(data: SiteData): string {
           document.getElementById('search').addEventListener('input', function (e) { doSearch(e.target.value); });
         });
     </script>
+    ${getMermaidExpandModalAndScript()}
   `;
 
   // No filters in sidebar for dashboard
@@ -1213,14 +1390,16 @@ export function renderSymbolPage(
       </div>
       <div class="px-6 py-5 space-y-4">
         <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
+          <div class="min-w-0">
             <h3 class="text-sm font-medium text-gray-500">Location</h3>
-            <p class="mt-1 text-sm text-gray-900"><a href="../files/${fileSlug(symbol.file)}.html" class="text-blue-600 hover:underline">${escapeHtml(symbol.file)}</a>:${symbol.startLine}-${symbol.endLine}</p>
+            <p class="mt-1 text-sm text-gray-900 min-w-0 overflow-hidden">
+              <a href="../files/${fileSlug(symbol.file)}.html" class="text-blue-600 hover:underline truncate block" title="${escapeHtml(symbol.file)}:${symbol.startLine}-${symbol.endLine}">${escapeHtml(symbol.file)}:${symbol.startLine}-${symbol.endLine}</a>
+            </p>
           </div>
           ${symbol.metrics ? `
-          <div>
+          <div class="min-w-0">
             <h3 class="text-sm font-medium text-gray-500">Metrics</h3>
-            <div class="mt-1 flex space-x-4 text-sm text-gray-900">
+            <div class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-900">
               <span>LOC: ${symbol.metrics.linesOfCode ?? "-"}</span>
               <span>Complexity: <span class="${(symbol.metrics.cyclomaticComplexity ?? 0) > 10 ? 'text-red-600 font-bold' : ''}">${symbol.metrics.cyclomaticComplexity ?? "-"}</span></span>
               <span>Params: ${symbol.metrics.parameterCount ?? "-"}</span>
@@ -1365,7 +1544,7 @@ export function renderSymbolPage(
             ? `<div class="mb-8">
                   <h2 class="text-xl font-bold text-gray-900 mb-4">Dependencies (Outgoing)</h2>
                   <div class="bg-white shadow rounded-lg p-4 border border-gray-200 overflow-x-auto">
-                    <div class="mermaid">${depGraph}</div>
+                    ${mermaidDiagramWrap(depGraph)}
                   </div>
                 </div>`
             : ""}
@@ -1397,7 +1576,7 @@ export function renderSymbolPage(
             ? `<div class="mb-8">
                   <h2 class="text-xl font-bold text-gray-900 mb-4">Impact (Incoming)</h2>
                   <div class="bg-white shadow rounded-lg p-4 border border-gray-200 overflow-x-auto">
-                    <div class="mermaid">${impactGraph}</div>
+                    ${mermaidDiagramWrap(impactGraph)}
                   </div>
                 </div>`
             : ""}
@@ -1426,7 +1605,8 @@ export function renderSymbolPage(
     </div>
 
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
-    <script>mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose',maxTextSize:150000});</script>
+    <script>mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose',maxTextSize:300000});</script>
+    ${getMermaidExpandModalAndScript()}
   `;
 
   return layout(symbol.name, "", body, 1);
@@ -1502,7 +1682,7 @@ export function renderFilePage(
     <div class="mb-12">
       <h2 class="text-xl font-bold text-gray-900 mb-4">File Relationships</h2>
       <div class="bg-white shadow rounded-lg p-6 border border-gray-200 overflow-x-auto">
-        <div class="mermaid">${fileGraph}</div>
+        ${mermaidDiagramWrap(fileGraph)}
       </div>
     </div>`
       : ""}
@@ -1591,7 +1771,8 @@ export function renderFilePage(
       : ""}
 
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
-    <script>mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose',maxTextSize:150000});</script>
+    <script>mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose',maxTextSize:300000});</script>
+    ${getMermaidExpandModalAndScript()}
   `;
 
   return layout(filePath, "", body, 1);
@@ -1631,7 +1812,7 @@ export function renderRelationshipsPage(
     <div class="mb-12">
       <h2 class="text-xl font-bold text-gray-900 mb-4">Architecture Overview (Top 30 Connected)</h2>
       <div class="bg-white shadow rounded-lg p-6 border border-gray-200 overflow-x-auto">
-        <div class="mermaid">${topConnectedGraph}</div>
+        ${mermaidDiagramWrap(topConnectedGraph)}
       </div>
     </div>`
       : ""}
@@ -1673,7 +1854,7 @@ export function renderRelationshipsPage(
 
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <script>
-      mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose',maxTextSize:150000});
+      mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose',maxTextSize:300000});
 
       const filterInput = document.getElementById('relationship-filter');
       const tableRows = document.querySelectorAll('#relationships-table tbody tr');
@@ -1699,6 +1880,7 @@ export function renderRelationshipsPage(
         filterTable(e.target.value);
       });
     </script>
+    ${getMermaidExpandModalAndScript()}
   `;
 
   return layout("Relationships", "relationships.html", body);

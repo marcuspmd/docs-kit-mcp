@@ -84,6 +84,9 @@ export function buildMermaidForSymbol(
   return [...lines, ...clickLines].join("\n");
 }
 
+/** Max edges in file/symbol Mermaid diagrams to avoid "Maximum text size in diagram exceeded". */
+const MAX_MERMAID_EDGES = 400;
+
 export function buildMermaidForFile(
   filePath: string,
   fileSymbols: CodeSymbol[],
@@ -97,12 +100,15 @@ export function buildMermaidForFile(
 
   if (relevantRels.length === 0) return "";
 
+  const truncated = relevantRels.length > MAX_MERMAID_EDGES;
+  const relsToRender = truncated ? relevantRels.slice(0, MAX_MERMAID_EDGES) : relevantRels;
+
   const symbolMap = new Map(fileSymbols.map((s) => [s.id, s]));
   const lines: string[] = ["graph LR"];
   const added = new Set<string>();
   const clickLines: string[] = [];
 
-  for (const rel of relevantRels) {
+  for (const rel of relsToRender) {
     const source = symbolMap.get(rel.source_id);
     const target = symbolMap.get(rel.target_id);
     if (!source || !target) continue;
@@ -140,6 +146,12 @@ export function buildMermaidForFile(
   }
 
   if (added.size === 0) return "";
+
+  if (truncated) {
+    const label = `Truncated - first ${MAX_MERMAID_EDGES} of ${relevantRels.length} relationships`;
+    lines.push(`  subgraph _truncated[${label}]`);
+    lines.push("  end");
+  }
   return [...lines, ...clickLines].join("\n");
 }
 
