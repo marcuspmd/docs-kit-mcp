@@ -1,5 +1,6 @@
 import type { CodeSymbol } from "../indexer/symbol.types.js";
 import type { RelationshipRow } from "../storage/db.js";
+import { createLayeredDiagrams, renderDiagramTabs } from "./smartDiagrams.js";
 
 export function fileSlug(filePath: string): string {
   return filePath.replace(/\//g, "--");
@@ -253,4 +254,33 @@ export function buildMermaidTopConnected(
 
   if (added.size === 0) return "";
   return [...lines, ...clickLines].join("\n");
+}
+
+/**
+ * Build smart layered diagrams for a file
+ * Returns either Mermaid markup (for small diagrams) or full HTML with tabs (for large diagrams)
+ */
+export function buildSmartDiagramsForFile(
+  filePath: string,
+  fileSymbols: CodeSymbol[],
+  allSymbols: CodeSymbol[],
+  relationships: RelationshipRow[],
+  clickable = false,
+): { html: string; isMermaid: boolean } {
+  const fileIds = new Set(fileSymbols.map((s) => s.id));
+  const relevantRels = relationships.filter(
+    (r) => fileIds.has(r.source_id) && fileIds.has(r.target_id),
+  );
+
+  if (relevantRels.length === 0) return { html: "", isMermaid: true };
+
+  // Use smart diagrams with tabs if there are many relationships
+  if (relevantRels.length > 50) {
+    const views = createLayeredDiagrams(fileSymbols, relevantRels, clickable, "../symbols/");
+    return { html: renderDiagramTabs(views), isMermaid: false };
+  }
+
+  // For smaller diagrams, use the original single diagram
+  const mermaid = buildMermaidForFile(filePath, fileSymbols, relationships, clickable);
+  return { html: mermaid, isMermaid: true };
 }

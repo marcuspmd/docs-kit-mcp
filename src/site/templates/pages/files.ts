@@ -9,7 +9,7 @@ import { escapeHtml, escapeCodeBlocks } from "../utils.js";
 import { badgeClass, visibilityBadge, statusBadges, violationsBadges } from "../badges.js";
 import { layout } from "../layout.js";
 import { mermaidDiagramWrap, getMermaidExpandModalAndScript } from "../mermaid.js";
-import { fileSlug, buildMermaidForFile } from "../../shared.js";
+import { fileSlug, buildSmartDiagramsForFile } from "../../shared.js";
 
 const GHOST_SYMBOL_NAMES = new Set([
   "class",
@@ -228,9 +228,15 @@ export function renderFilePage(
     kindCounts[s.kind] = (kindCounts[s.kind] ?? 0) + 1;
   }
 
-  let fileGraph = "";
+  let fileGraphData = { html: "", isMermaid: true };
   if (relationships && allSymbols) {
-    fileGraph = buildMermaidForFile(filePath, allSymbols, relationships, true);
+    fileGraphData = buildSmartDiagramsForFile(
+      filePath,
+      displaySymbols,
+      allSymbols,
+      relationships,
+      true,
+    );
   }
 
   const body = `
@@ -267,12 +273,12 @@ export function renderFilePage(
     </div>
 
     ${
-      fileGraph
+      fileGraphData.html
         ? `
     <div class="mb-12">
       <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-4">File Relationships</h2>
       <div class="bg-white dark:bg-gray-800 shadow rounded-lg p-6 border border-gray-200 dark:border-gray-700 overflow-x-auto">
-        ${mermaidDiagramWrap(fileGraph)}
+        ${fileGraphData.isMermaid ? mermaidDiagramWrap(fileGraphData.html) : fileGraphData.html}
       </div>
     </div>`
         : ""
