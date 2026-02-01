@@ -67,7 +67,7 @@ export function layout(
 
   const rightSidebar = `
     <aside class="w-64 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 hidden xl:block flex-shrink-0">
-      <div class="p-6 sticky top-3 max-h-[calc(100vh-4rem)] overflow-y-auto">
+      <div class="px-6 pt-2 pb-6 sticky max-h-[calc(100vh-4rem)] overflow-y-auto">
         ${facetsHtml ? `<div class="mb-8">${facetsHtml}</div>` : ""}
         <div id="on-this-page-wrap">
           <h3 class="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">On this page</h3>
@@ -235,7 +235,7 @@ export function layout(
 
   <div class="flex min-h-[calc(100vh-4rem)] overflow-x-hidden">
     <aside class="w-64 bg-white dark:bg-gray-800 border-r border-gray-200 dark:border-gray-700 hidden md:block flex-shrink-0">
-      <div class="p-6 sticky top-3 max-h-[calc(100vh-4rem)] overflow-y-auto">
+      <div class="px-6 pt-2 pb-6 sticky max-h-[calc(100vh-4rem)] overflow-y-auto">
         <h3 class="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Navigation</h3>
         <nav class="space-y-1">
           ${sidebarNav}
@@ -265,7 +265,7 @@ export function layout(
       </div>
     </aside>
 
-    <main class="flex-1 focus:outline-none p-6 lg:p-8 min-w-0 overflow-x-auto" id="content" role="main">
+    <main class="flex-1 focus:outline-none px-6 py-2 lg:px-8 lg:py-3 min-w-0 overflow-x-auto" id="content" role="main">
       ${body}
     </main>
 
