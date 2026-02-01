@@ -45,11 +45,12 @@ interface DocsConfig {
   docs: DocEntry[];
 }
 
-/** Path inside the site (no leading ../). Used for output and URLs. */
+/** Path inside the site (no leading ../ or ./). Used for output and URLs. */
 function normalizeSitePath(p: string): string {
   return (
     p
       .replace(/^\.\.\/+/, "")
+      .replace(/^\.\/+/, "")
       .replace(/\\/g, "/")
       .trim() || p
   );

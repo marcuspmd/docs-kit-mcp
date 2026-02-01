@@ -243,6 +243,15 @@ function parseArgs(
   return { positional, flags: result };
 }
 
+/**
+ * Resolve a path from config or flags relative to the project root (configDir).
+ * If the path is already absolute, return as-is.
+ */
+function resolveConfigPath(pathValue: string | undefined, configDir: string, defaultValue: string): string {
+  const actualValue = pathValue || defaultValue;
+  return path.isAbsolute(actualValue) ? actualValue : path.resolve(configDir, actualValue);
+}
+
 /* ================== init command ================== */
 
 function runInit(args: string[]) {
@@ -278,7 +287,8 @@ async function runIndex(args: string[]) {
   }
 
   const config = await loadConfig(configDir);
-  const dbPath = flags.db || config.dbPath;
+  // Resolve paths relative to config dir (project root), not the indexed directory
+  const dbPath = resolveConfigPath(flags.db, configDir, config.dbPath);
   const docsDir = flags.docs || "docs";
 
   header(`Indexing ${path.resolve(rootDir)}`);
@@ -315,8 +325,11 @@ async function runIndex(args: string[]) {
   done(`found ${tsFiles.length} files`);
 
   // Detect removed files and clean up
+  // Convert to paths relative to configDir for consistency
   const knownFiles = fileHashRepo.getAll();
-  const currentFileSet = new Set(relativeFiles);
+  const currentFileSet = new Set(
+    relativeFiles.map((f) => path.relative(configDir, path.resolve(rootDir, f)))
+  );
   const removedFiles: string[] = [];
   for (const { filePath: knownPath } of knownFiles) {
     if (!currentFileSet.has(knownPath)) {
@@ -344,7 +357,8 @@ async function runIndex(args: string[]) {
   for (const filePath of tsFiles) {
     try {
       const source = fs.readFileSync(filePath, "utf-8");
-      const relPath = path.relative(rootDir, filePath);
+      // Use path relative to configDir (project root) for consistency with coverage and other tools
+      const relPath = path.relative(configDir, path.resolve(filePath));
 
       // Incremental: skip unchanged files
       if (!fullRebuild) {
@@ -379,7 +393,7 @@ async function runIndex(args: string[]) {
     } catch (err) {
       errorCount++;
       const msg = err instanceof Error ? err.message : String(err);
-      const rel = path.relative(rootDir, filePath);
+      const rel = path.relative(configDir, path.resolve(filePath));
       indexErrors.push({ file: rel, error: msg });
     }
   }
@@ -508,7 +522,7 @@ async function runIndex(args: string[]) {
   if (fs.existsSync(docsPath)) {
     step("Scanning docs for symbol mappings");
     const registry = createDocRegistry(db);
-    await registry.rebuild(docsDir, { configDocs: config.docs });
+    await registry.rebuild(docsPath, { configDocs: config.docs });
 
     // Link symbols to their docs via docRef
     const updateDocRef = db.prepare("UPDATE symbols SET doc_ref = ? WHERE name = ?");
@@ -536,7 +550,7 @@ async function runIndex(args: string[]) {
       location: r.location,
     }));
     const archGuard = createArchGuard();
-    const archRulesPath = path.join(rootDir, "arch-guard.json");
+    const archRulesPath = path.join(configDir, "arch-guard.json");
     if (fs.existsSync(archRulesPath)) {
       try {
         await archGuard.loadRules(archRulesPath);
@@ -608,7 +622,7 @@ async function runIndex(args: string[]) {
         });
         await ragIndex.indexSymbols(allSymbols, sources);
         if (fs.existsSync(docsPath)) {
-          await ragIndex.indexDocs(docsDir);
+          await ragIndex.indexDocs(docsPath);
         }
         done(`${ragIndex.chunkCount()} chunks`);
       } catch (err) {
@@ -1054,14 +1068,13 @@ async function runGenerateDocs(args: string[]) {
     docs: "docs",
     db: "",
   });
-  const rootDir = ".";
-  if (!configExists(rootDir)) {
+  const configDir = process.cwd();
+  if (!configExists(configDir)) {
     console.error("Error: No docs.config.js found. Run docs-kit init first.");
     process.exit(1);
   }
-  const config = await loadConfig(rootDir);
-  const dbPath = flags.db || config.dbPath;
-  const docsDir = flags.docs || "docs";
+  const config = await loadConfig(configDir);
+  const dbPath = resolveConfigPath(flags.db, configDir, config.dbPath);
   const base = flags.base || "main";
   const head = flags.head || undefined;
   const dryRun = "dry-run" in flags;
@@ -1071,11 +1084,12 @@ async function runGenerateDocs(args: string[]) {
     process.exit(1);
   }
 
+  const docsPath = resolveConfigPath(flags.docs, configDir, "docs");
   header("Generate docs for changed symbols");
   const db = new Database(dbPath);
   const registry = createDocRegistry(db);
   step("Rebuilding registry");
-  await registry.rebuild(docsDir);
+  await registry.rebuild(docsPath);
   done();
   step("Analyzing changes");
   const impacts = await analyzeChanges({
@@ -1085,7 +1099,7 @@ async function runGenerateDocs(args: string[]) {
   });
   done(`${impacts.length} impacts`);
   const updater = createDocUpdater({ dryRun });
-  const results = await updater.applyChanges(impacts, registry, docsDir, config);
+  const results = await updater.applyChanges(impacts, registry, docsPath, config);
   db.close();
 
   const summaryLines = results
@@ -1097,16 +1111,16 @@ async function runGenerateDocs(args: string[]) {
 /* ================== explain-symbol (server: explainSymbol) ================== */
 
 async function runExplainSymbol(args: string[]) {
-  const { positional, flags } = parseArgs(args, { docs: "docs" });
+  const { positional, flags } = parseArgs(args, { docs: "docs", db: "" });
   const symbolName = positional[0];
   if (!symbolName) {
     console.error("Usage: docs-kit explain-symbol <symbol> [--docs dir]");
     process.exit(1);
   }
-  const rootDir = ".";
-  const config = await loadConfig(rootDir);
-  const dbPath = flags.db || config.dbPath;
-  const docsDir = flags.docs || "docs";
+  const configDir = process.cwd();
+  const config = await loadConfig(configDir);
+  const dbPath = resolveConfigPath(flags.db, configDir, config.dbPath);
+  const docsPath = resolveConfigPath(flags.docs, configDir, "docs");
   if (!fs.existsSync(dbPath)) {
     console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
     process.exit(1);
@@ -1115,10 +1129,10 @@ async function runExplainSymbol(args: string[]) {
   const registry = createDocRegistry(db);
   const symbolRepo = createSymbolRepository(db);
   const graph = createKnowledgeGraph(db);
-  await registry.rebuild(docsDir);
+  await registry.rebuild(docsPath);
   const result = await buildExplainSymbolContext(symbolName, {
     projectRoot: config.projectRoot,
-    docsDir,
+    docsDir: docsPath,
     registry,
     symbolRepo,
     graph,
@@ -1134,15 +1148,15 @@ async function runExplainSymbol(args: string[]) {
 /* ================== generate-mermaid (server: generateMermaid) ================== */
 
 async function runGenerateMermaid(args: string[]) {
-  const { positional, flags } = parseArgs(args, { type: "classDiagram" });
+  const { positional, flags } = parseArgs(args, { type: "classDiagram", db: "" });
   const symbolsStr = positional[0];
   if (!symbolsStr) {
     console.error("Usage: docs-kit generate-mermaid <comma-separated symbols> [--type classDiagram|sequenceDiagram|flowchart]");
     process.exit(1);
   }
-  const rootDir = ".";
-  const config = await loadConfig(rootDir);
-  const dbPath = flags.db || config.dbPath;
+  const configDir = process.cwd();
+  const config = await loadConfig(configDir);
+  const dbPath = resolveConfigPath(flags.db, configDir, config.dbPath);
   if (!fs.existsSync(dbPath)) {
     console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
     process.exit(1);
@@ -1174,10 +1188,10 @@ async function runScanFile(args: string[]) {
     console.error("Usage: docs-kit scan-file <file> [--docs dir] [--db path]");
     process.exit(1);
   }
-  const rootDir = ".";
-  const config = await loadConfig(rootDir);
-  const dbPath = flags.db || config.dbPath;
-  const docsDir = flags.docs || "docs";
+  const configDir = process.cwd();
+  const config = await loadConfig(configDir);
+  const dbPath = resolveConfigPath(flags.db, configDir, config.dbPath);
+  const docsPath = resolveConfigPath(flags.docs, configDir, "docs");
   const absoluteFilePath = path.resolve(filePathParam);
   if (!fs.existsSync(absoluteFilePath)) {
     console.error(`Error: File not found: ${absoluteFilePath}`);
@@ -1190,14 +1204,14 @@ async function runScanFile(args: string[]) {
   const db = new Database(dbPath);
   initializeSchema(db);
   const registry = createDocRegistry(db);
-  await registry.rebuild(docsDir);
+  await registry.rebuild(docsPath);
   const source = fs.readFileSync(absoluteFilePath, "utf-8");
   const parser = new Parser();
   parser.setLanguage(TypeScript.typescript);
   const symbols = indexFile(absoluteFilePath, source, parser);
   const { createdCount, createdSymbols } = await scanFileAndCreateDocs({
     filePath: absoluteFilePath,
-    docsDir,
+    docsDir: docsPath,
     projectRoot: config.projectRoot,
     symbols,
     registry,
@@ -1219,9 +1233,9 @@ async function runImpactAnalysis(args: string[]) {
     console.error("Usage: docs-kit impact-analysis <symbol> [--max-depth n] [--db path]");
     process.exit(1);
   }
-  const rootDir = ".";
-  const config = await loadConfig(rootDir);
-  const dbPath = flags.db || config.dbPath;
+  const configDir = process.cwd();
+  const config = await loadConfig(configDir);
+  const dbPath = resolveConfigPath(flags.db, configDir, config.dbPath);
   const maxDepth = parseInt(flags["max-depth"] || "3", 10) || 3;
   if (!fs.existsSync(dbPath)) {
     console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
@@ -1248,9 +1262,9 @@ async function runImpactAnalysis(args: string[]) {
 
 async function runAnalyzePatterns(args: string[]) {
   const { flags } = parseArgs(args, { db: "" });
-  const rootDir = ".";
-  const config = await loadConfig(rootDir);
-  const dbPath = flags.db || config.dbPath;
+  const configDir = process.cwd();
+  const config = await loadConfig(configDir);
+  const dbPath = resolveConfigPath(flags.db, configDir, config.dbPath);
   if (!fs.existsSync(dbPath)) {
     console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
     process.exit(1);
@@ -1279,9 +1293,9 @@ async function runAnalyzePatterns(args: string[]) {
 
 async function runGenerateEventFlow(args: string[]) {
   const { flags } = parseArgs(args, { db: "" });
-  const rootDir = ".";
-  const config = await loadConfig(rootDir);
-  const dbPath = flags.db || config.dbPath;
+  const configDir = process.cwd();
+  const config = await loadConfig(configDir);
+  const dbPath = resolveConfigPath(flags.db, configDir, config.dbPath);
   if (!fs.existsSync(dbPath)) {
     console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
     process.exit(1);
@@ -1309,10 +1323,10 @@ async function runCreateOnboarding(args: string[]) {
     console.error("Usage: docs-kit create-onboarding <topic> [--docs dir] [--db path]");
     process.exit(1);
   }
-  const rootDir = ".";
-  const config = await loadConfig(rootDir);
-  const dbPath = flags.db || config.dbPath;
-  const docsDir = flags.docs || "docs";
+  const configDir = process.cwd();
+  const config = await loadConfig(configDir);
+  const dbPath = resolveConfigPath(flags.db, configDir, config.dbPath);
+  const docsPath = resolveConfigPath(flags.docs, configDir, "docs");
   if (!fs.existsSync(dbPath)) {
     console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
     process.exit(1);
@@ -1325,7 +1339,7 @@ async function runCreateOnboarding(args: string[]) {
     embedFn: (texts: string[]) => llm.embed(texts),
   });
   if (ragIndex.chunkCount() === 0) {
-    await ragIndex.indexDocs(docsDir);
+    await ragIndex.indexDocs(docsPath);
   }
   const results = await ragIndex.search(topic, 10);
   db.close();
@@ -1347,10 +1361,10 @@ async function runAskKnowledgeBase(args: string[]) {
     console.error("Usage: docs-kit ask-knowledge-base <question> [--docs dir] [--db path]");
     process.exit(1);
   }
-  const rootDir = ".";
-  const config = await loadConfig(rootDir);
-  const dbPath = flags.db || config.dbPath;
-  const docsDir = flags.docs || "docs";
+  const configDir = process.cwd();
+  const config = await loadConfig(configDir);
+  const dbPath = resolveConfigPath(flags.db, configDir, config.dbPath);
+  const docsPath = resolveConfigPath(flags.docs, configDir, "docs");
   if (!fs.existsSync(dbPath)) {
     console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
     process.exit(1);
@@ -1363,7 +1377,7 @@ async function runAskKnowledgeBase(args: string[]) {
     embedFn: (texts: string[]) => llm.embed(texts),
   });
   if (ragIndex.chunkCount() === 0) {
-    await ragIndex.indexDocs(docsDir);
+    await ragIndex.indexDocs(docsPath);
   }
   const results = await ragIndex.search(question, 5);
   const context = results.map((r) => `${r.source}:\n${r.content}`).join("\n\n");
@@ -1377,8 +1391,8 @@ async function runAskKnowledgeBase(args: string[]) {
 
 async function runInitArchGuard(args: string[]) {
   const { flags } = parseArgs(args, { out: "arch-guard.json", lang: "ts" });
-  const rootDir = ".";
-  const outPath = path.isAbsolute(flags.out) ? flags.out : path.join(rootDir, flags.out);
+  const configDir = process.cwd();
+  const outPath = path.isAbsolute(flags.out) ? flags.out : path.join(configDir, flags.out);
   const langRaw = (flags.lang || "ts").toLowerCase();
   const langMap: Record<string, "ts" | "js" | "php" | "python" | "go"> = {
     ts: "ts",
@@ -1413,10 +1427,10 @@ async function runInitArchGuard(args: string[]) {
 
 async function runBuildTraceabilityMatrix(args: string[]) {
   const { flags } = parseArgs(args, { docs: "docs", db: "" });
-  const rootDir = ".";
-  const config = await loadConfig(rootDir);
-  const dbPath = flags.db || config.dbPath;
-  const docsDir = flags.docs || "docs";
+  const configDir = process.cwd();
+  const config = await loadConfig(configDir);
+  const dbPath = resolveConfigPath(flags.db, configDir, config.dbPath);
+  const docsPath = resolveConfigPath(flags.docs, configDir, "docs");
   if (!fs.existsSync(dbPath)) {
     console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
     process.exit(1);
@@ -1424,7 +1438,7 @@ async function runBuildTraceabilityMatrix(args: string[]) {
   const db = new Database(dbPath);
   const registry = createDocRegistry(db);
   const contextMapper = createContextMapper();
-  await registry.rebuild(docsDir);
+  await registry.rebuild(docsPath);
   const refs = await contextMapper.extractRefs(config.projectRoot);
   const rtm = await contextMapper.buildRTM(refs, registry);
   db.close();
@@ -1446,10 +1460,10 @@ async function runDescribeInBusinessTerms(args: string[]) {
     console.error("Usage: docs-kit describe-business <symbol> [--docs dir] [--db path]");
     process.exit(1);
   }
-  const rootDir = ".";
-  const config = await loadConfig(rootDir);
-  const dbPath = flags.db || config.dbPath;
-  const docsDir = flags.docs || "docs";
+  const configDir = process.cwd();
+  const config = await loadConfig(configDir);
+  const dbPath = resolveConfigPath(flags.db, configDir, config.dbPath);
+  const docsPath = resolveConfigPath(flags.docs, configDir, "docs");
   if (!fs.existsSync(dbPath)) {
     console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
     process.exit(1);
@@ -1459,7 +1473,7 @@ async function runDescribeInBusinessTerms(args: string[]) {
   const symbolRepo = createSymbolRepository(db);
   const llm = createLlmProvider(config);
   const businessTranslator = createBusinessTranslator(llm);
-  await registry.rebuild(docsDir);
+  await registry.rebuild(docsPath);
   const symbols = symbolRepo.findByName(symbolName);
   if (symbols.length === 0) {
     db.close();
@@ -1480,7 +1494,7 @@ async function runDescribeInBusinessTerms(args: string[]) {
   const mappings = await registry.findDocBySymbol(symbolName);
   for (const m of mappings) {
     try {
-      existingContext = fs.readFileSync(path.join(docsDir, m.docPath), "utf-8");
+      existingContext = fs.readFileSync(path.join(docsPath, m.docPath), "utf-8");
       break;
     } catch {
       /* skip */
@@ -1499,11 +1513,11 @@ async function runDescribeInBusinessTerms(args: string[]) {
 
 async function runValidateExamples(args: string[]) {
   const { positional, flags } = parseArgs(args, { docs: "docs", db: "" });
-  const docsDir = flags.docs || "docs";
   const docPath = positional[0]; // optional: specific doc file
-  const rootDir = ".";
-  const config = await loadConfig(rootDir);
-  const dbPath = flags.db || config.dbPath;
+  const configDir = process.cwd();
+  const config = await loadConfig(configDir);
+  const dbPath = resolveConfigPath(flags.db, configDir, config.dbPath);
+  const docsPath = resolveConfigPath(flags.docs, configDir, "docs");
   if (!fs.existsSync(dbPath)) {
     console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
     process.exit(1);
@@ -1511,9 +1525,9 @@ async function runValidateExamples(args: string[]) {
   const codeExampleValidator = createCodeExampleValidator();
   let results: Awaited<ReturnType<typeof codeExampleValidator.validateAll>>;
   if (docPath) {
-    results = await codeExampleValidator.validateDoc(path.join(docsDir, docPath));
+    results = await codeExampleValidator.validateDoc(path.join(docsPath, docPath));
   } else {
-    results = await codeExampleValidator.validateAll(docsDir);
+    results = await codeExampleValidator.validateAll(docsPath);
   }
   const report = results
     .map((r) => {
@@ -1536,10 +1550,10 @@ async function runGetRelevantContext(args: string[]) {
     console.error("Usage: docs-kit relevant-context --symbol <name> OR --file <path> [--docs dir] [--db path]");
     process.exit(1);
   }
-  const rootDir = ".";
-  const config = await loadConfig(rootDir);
-  const dbPath = flags.db || config.dbPath;
-  const docsDir = flags.docs || "docs";
+  const configDir = process.cwd();
+  const config = await loadConfig(configDir);
+  const dbPath = resolveConfigPath(flags.db, configDir, config.dbPath);
+  const docsPath = resolveConfigPath(flags.docs, configDir, "docs");
   if (!fs.existsSync(dbPath)) {
     console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
     process.exit(1);
@@ -1548,10 +1562,10 @@ async function runGetRelevantContext(args: string[]) {
   const registry = createDocRegistry(db);
   const symbolRepo = createSymbolRepository(db);
   const graph = createKnowledgeGraph(db);
-  await registry.rebuild(docsDir);
+  await registry.rebuild(docsPath);
   const result = await buildRelevantContext(
     { symbolName, filePath },
-    { projectRoot: config.projectRoot, docsDir, registry, symbolRepo, graph },
+    { projectRoot: config.projectRoot, docsDir: docsPath, registry, symbolRepo, graph },
   );
   db.close();
   console.log(result.text);
