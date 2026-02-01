@@ -66,7 +66,7 @@ export function layout(
       : "";
 
   const rightSidebar = `
-    <aside class="w-64 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 p-6 hidden xl:block flex-shrink-0 sticky top-16 self-start max-h-[calc(100vh-4rem)] overflow-y-auto">
+    <aside class="w-64 bg-white dark:bg-gray-800 border-l border-gray-200 dark:border-gray-700 p-6 hidden xl:block flex-shrink-0">
       ${facetsHtml ? `<div class="mb-8">${facetsHtml}</div>` : ""}
       <div id="on-this-page-wrap">
         <h3 class="px-3 text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">On this page</h3>
