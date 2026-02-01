@@ -11,6 +11,21 @@ import {
 
 export { fileSlug };
 
+/** Doc entry for docs index and nav (matches generator DocEntry). */
+export interface DocEntry {
+  path: string;
+  title?: string;
+  name?: string;
+  category?: string;
+  /** Tag: several docs can share the same module for grouping. */
+  module?: string;
+  /** Path of the next doc (for sequential navigation). */
+  next?: string;
+  /** Path of the previous doc (for sequential navigation). */
+  prev?: string;
+  sourcePath?: string;
+}
+
 function escapeHtml(str: string): string {
   return str
     .replace(/&/g, "&amp;")
@@ -492,7 +507,68 @@ export interface SiteData {
   generatedAt?: string;
 }
 
-export function renderMarkdownWrapper(title: string, mdFilename: string): string {
+export function renderMarkdownWrapper(
+  title: string,
+  mdFilename: string,
+  docPath?: string,
+  docEntries?: DocEntry[],
+): string {
+  const depth = docPath ? Math.max(0, docPath.split("/").length - 1) : 1;
+  const prefix = depth > 0 ? "../".repeat(depth) : "";
+
+  const entryByPath = docEntries?.length ? new Map(docEntries.map((e) => [e.path, e])) : new Map<string, DocEntry>();
+  const currentEntry = docPath ? entryByPath.get(docPath) : undefined;
+  const prevEntry = currentEntry?.prev ? entryByPath.get(currentEntry.prev) : undefined;
+  const nextEntry = currentEntry?.next ? entryByPath.get(currentEntry.next) : undefined;
+
+  let facetsHtml = "";
+  if (docEntries?.length && docPath) {
+    const others = docEntries.filter((e) => e.path !== docPath);
+    const byCategory = new Map<string, DocEntry[]>();
+    for (const e of others) {
+      const cat = e.category ?? "";
+      if (!byCategory.has(cat)) byCategory.set(cat, []);
+      byCategory.get(cat)!.push(e);
+    }
+    const prevNextHtml =
+      prevEntry || nextEntry
+        ? `
+      <div class="mb-3 pb-3 border-b border-gray-200 space-y-1">
+        ${prevEntry ? `<a href="${prefix}${prevEntry.path.replace(/\.md$/i, ".html")}" class="block px-3 py-1 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900 text-sm">← ${escapeHtml(docEntryLabel(prevEntry))}</a>` : ""}
+        ${nextEntry ? `<a href="${prefix}${nextEntry.path.replace(/\.md$/i, ".html")}" class="block px-3 py-1 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900 text-sm">${escapeHtml(docEntryLabel(nextEntry))} →</a>` : ""}
+      </div>`
+        : "";
+    facetsHtml = `
+    <h3 class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Documentation</h3>
+    <nav class="space-y-1 text-sm">
+      <a href="${prefix}docs.html" class="block px-3 py-1 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">All docs</a>
+      ${prevNextHtml}
+      ${others.length > 0 ? Array.from(byCategory.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([category, entries]) => {
+          const label = category || "General";
+          return `
+      <div class="mt-3">
+        <span class="px-3 text-xs font-medium text-gray-500 uppercase tracking-wider">${escapeHtml(label)}</span>
+        ${entries.map((e) => {
+          const href = prefix + e.path.replace(/\.md$/i, ".html");
+          const labelE = docEntryLabel(e);
+          return `<a href="${escapeHtml(href)}" class="block px-3 py-1 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">${escapeHtml(labelE)}</a>`;
+        }).join("")}
+      </div>`;
+        }).join("") : ""}
+    </nav>`;
+  }
+
+  const prevNextFooter =
+    prevEntry || nextEntry
+      ? `
+    <nav class="mt-8 pt-6 border-t border-gray-200 flex flex-wrap justify-between gap-4 text-sm" aria-label="Doc navigation">
+      ${prevEntry ? `<a href="${prefix}${prevEntry.path.replace(/\.md$/i, ".html")}" class="text-blue-600 hover:underline font-medium">← ${escapeHtml(docEntryLabel(prevEntry))}</a>` : "<span></span>"}
+      ${nextEntry ? `<a href="${prefix}${nextEntry.path.replace(/\.md$/i, ".html")}" class="text-blue-600 hover:underline font-medium">${escapeHtml(docEntryLabel(nextEntry))} →</a>` : "<span></span>"}
+    </nav>`
+      : "";
+
   const body = `
     <article id="doc" class="prose max-w-none prose-blue">
        <div class="flex items-center justify-center h-32">
@@ -524,9 +600,10 @@ export function renderMarkdownWrapper(title: string, mdFilename: string): string
         }
       })();
     </script>
+    ${prevNextFooter}
   `;
 
-  return layout(title, "", body, 1);
+  return layout(title, "", body, depth, facetsHtml);
 }
 
 export function renderDashboard(data: SiteData): string {
@@ -1938,30 +2015,118 @@ export function renderPatternsPage(patterns: DetectedPattern[], symbols: CodeSym
   return layout("Patterns", "patterns.html", body);
 }
 
-export function renderDocsPage(docRefs: string[]): string {
-  const sorted = [...docRefs].sort();
+function docEntryLabel(entry: DocEntry): string {
+  return entry.title ?? entry.name ?? (entry.path.split("/").pop() || entry.path).replace(/\.md$/i, "");
+}
+
+export function renderDocsPage(docEntries: DocEntry[]): string {
+  const sorted = [...docEntries].sort((a, b) => {
+    const catA = a.category ?? "";
+    const catB = b.category ?? "";
+    if (catA !== catB) return catA.localeCompare(catB);
+    return (a.title ?? a.name ?? a.path).localeCompare(b.title ?? b.name ?? b.path);
+  });
+
+  const byCategory = new Map<string, DocEntry[]>();
+  const byModule = new Map<string, DocEntry[]>();
+  for (const e of sorted) {
+    const cat = e.category ?? "";
+    if (!byCategory.has(cat)) byCategory.set(cat, []);
+    byCategory.get(cat)!.push(e);
+    if (e.module) {
+      if (!byModule.has(e.module)) byModule.set(e.module, []);
+      byModule.get(e.module)!.push(e);
+    }
+  }
+
+  const facetsHtml = sorted.length > 0
+    ? `
+    <h3 class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Documentation</h3>
+    <nav class="space-y-1 text-sm">
+      <a href="docs.html" class="block px-3 py-1 rounded-md text-blue-600 font-medium bg-blue-50">All docs</a>
+      ${Array.from(byCategory.entries())
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([category, entries]) => {
+          const label = category || "General";
+          return `
+      <div class="mt-3">
+        <span class="px-3 text-xs font-medium text-gray-500 uppercase tracking-wider">${escapeHtml(label)}</span>
+        ${entries.map((e) => {
+          const href = e.path.replace(/\.md$/i, ".html");
+          const labelE = docEntryLabel(e);
+          return `<a href="${escapeHtml(href)}" class="block px-3 py-1 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">${escapeHtml(labelE)}</a>`;
+        }).join("")}
+      </div>`;
+        }).join("")}
+      ${byModule.size > 0 ? `
+      <div class="mt-4 pt-3 border-t border-gray-200">
+        <span class="px-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Module</span>
+        ${Array.from(byModule.entries())
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([mod, entries]) => `
+        <div class="mt-2">
+          <span class="px-3 text-xs text-gray-500">${escapeHtml(mod)}</span>
+          ${entries.map((e) => {
+            const href = e.path.replace(/\.md$/i, ".html");
+            const labelE = docEntryLabel(e);
+            return `<a href="${escapeHtml(href)}" class="block px-3 py-1 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">${escapeHtml(labelE)}</a>`;
+          }).join("")}
+        </div>`).join("")}
+      </div>` : ""}
+    </nav>`
+    : "";
+
   const body = `
     <h1 class="text-3xl font-bold text-gray-900 mb-8 pb-4 border-b border-gray-200">Documentation</h1>
-    <p class="text-gray-600 mb-6">Markdown docs referenced by symbols. Open the HTML version to read in the site.</p>
+    <p class="text-gray-600 mb-6">Markdown docs referenced by symbols or listed in <code class="text-sm bg-gray-100 px-1 rounded">docs-config.json</code>. Open the HTML version to read in the site.</p>
     ${sorted.length === 0
-      ? "<div class='text-center py-12 text-gray-500'>No doc references yet. Add doc_ref to symbols or link docs in frontmatter.</div>"
-      : `
-    <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
-      <ul class="divide-y divide-gray-200">
-        ${sorted
-          .map(
-            (ref) => {
-              const htmlRef = ref.replace(/\.md$/i, ".html");
-              const name = ref.split("/").pop() || ref;
-              return `<li class="px-6 py-4"><a href="${escapeHtml(htmlRef)}" class="text-blue-600 hover:underline font-medium">${escapeHtml(name)}</a><span class="text-gray-400 text-sm ml-2">${escapeHtml(ref)}</span></li>`;
-            },
-          )
+      ? "<div class='text-center py-12 text-gray-500'>No doc references yet. Add <code class='text-sm bg-gray-100 px-1 rounded'>doc_ref</code> to symbols, link docs in frontmatter, or add entries to <code class='text-sm bg-gray-100 px-1 rounded'>docs-config.json</code>.</div>"
+      : Array.from(byCategory.entries())
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([category, entries]) => {
+            const label = category ? escapeHtml(category) : "General";
+            return `
+    <div class="mb-10">
+      <h2 class="text-xl font-bold text-gray-900 mb-4">${label}</h2>
+      <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
+        <ul class="divide-y divide-gray-200">
+          ${entries
+            .map((e) => {
+              const htmlRef = e.path.replace(/\.md$/i, ".html");
+              const displayLabel = docEntryLabel(e);
+              const moduleBadge = e.module ? `<span class="ml-2 px-2 py-0.5 text-xs font-medium rounded bg-indigo-50 text-indigo-700 border border-indigo-200">module: ${escapeHtml(e.module)}</span>` : "";
+              return `<li class="px-6 py-4"><a href="${escapeHtml(htmlRef)}" class="text-blue-600 hover:underline font-medium">${escapeHtml(displayLabel)}</a>${moduleBadge}<span class="text-gray-400 text-sm ml-2">${escapeHtml(e.path)}</span></li>`;
+            })
+            .join("")}
+        </ul>
+      </div>
+    </div>`;
+          })
           .join("")}
-      </ul>
-    </div>`}
+    ${byModule.size > 0 ? `
+    <div class="mb-10">
+      <h2 class="text-xl font-bold text-gray-900 mb-4">By module</h2>
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
+        ${Array.from(byModule.entries())
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([mod, entries]) => `
+        <div class="bg-white shadow rounded-lg border border-gray-200 overflow-hidden">
+          <div class="px-4 py-3 bg-gray-50 border-b border-gray-200">
+            <span class="text-sm font-semibold text-gray-800">${escapeHtml(mod)}</span>
+          </div>
+          <ul class="divide-y divide-gray-100 px-4 py-2">
+            ${entries.map((e) => {
+              const htmlRef = e.path.replace(/\.md$/i, ".html");
+              const displayLabel = docEntryLabel(e);
+              return `<li class="py-2"><a href="${escapeHtml(htmlRef)}" class="text-blue-600 hover:underline text-sm font-medium">${escapeHtml(displayLabel)}</a></li>`;
+            }).join("")}
+          </ul>
+        </div>`).join("")}
+      </div>
+    </div>` : ""}
   `;
 
-  return layout("Docs", "docs.html", body);
+  return layout("Docs", "docs.html", body, 0, facetsHtml);
 }
 
 export function renderDeprecatedPage(symbols: CodeSymbol[]): string {

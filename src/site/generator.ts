@@ -26,6 +26,69 @@ export interface GeneratorOptions {
   rootDir?: string;
 }
 
+/** Doc entry for docs index and nav. From docs-config.json or symbol doc_ref. */
+export interface DocEntry {
+  path: string;
+  title?: string;
+  name?: string;
+  category?: string;
+  /** Tag: several docs can share the same module for grouping. */
+  module?: string;
+  /** Path of the next doc (for sequential navigation). */
+  next?: string;
+  /** Path of the previous doc (for sequential navigation). */
+  prev?: string;
+  /** If set, copy from rootDir/sourcePath to outDir/path (for docs from another location). */
+  sourcePath?: string;
+}
+
+interface DocsConfig {
+  docs: DocEntry[];
+}
+
+/** Path inside the site (no leading ../). Used for output and URLs. */
+function normalizeSitePath(p: string): string {
+  return p.replace(/^\.\.\/+/, "").replace(/\\/g, "/").trim() || p;
+}
+
+interface LoadDocsConfigResult {
+  entries: DocEntry[];
+  /** Directory where docs-config.json was found (for resolving sourcePath with ../). */
+  configDir: string | null;
+}
+
+function loadDocsConfig(_rootDir?: string): LoadDocsConfigResult {
+  // Always load from project root (cwd). The index path (e.g. "src") is only for
+  // indexing source files, not for config lookup.
+  const configPath = path.join(process.cwd(), "docs-config.json");
+  let raw: string | null = null;
+  let configDir: string | null = null;
+  try {
+    if (fs.existsSync(configPath)) {
+      raw = fs.readFileSync(configPath, "utf-8");
+      configDir = path.dirname(path.resolve(configPath));
+    }
+  } catch {
+    // ignore
+  }
+  if (!raw) return { entries: [], configDir: null };
+  try {
+    const parsed = JSON.parse(raw) as DocsConfig;
+    const docs = Array.isArray(parsed.docs) ? parsed.docs : [];
+    const entries = docs.map((e) => ({
+      ...e,
+      path: normalizeSitePath(e.path),
+      // Keep sourcePath as-is so we can resolve relative to configDir when it starts with ../
+      sourcePath: e.sourcePath,
+      prev: e.prev ? normalizeSitePath(e.prev) : undefined,
+      next: e.next ? normalizeSitePath(e.next) : undefined,
+    }));
+    return { entries, configDir };
+  } catch {
+    return { entries: [], configDir: null };
+  }
+}
+
 interface PatternRow {
   kind: string;
   symbols: string;
@@ -213,19 +276,45 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
     }),
   );
 
-  // Copy markdown docs referenced by symbols into the site output so links work
+  // Build doc entries: from docs-config.json first, then symbol doc_ref (dedupe by path)
   for (const s of symbols) {
     if (s.docRef) docRefs.add(s.docRef);
   }
-
-  for (const docRef of Array.from(docRefs)) {
-    // Try multiple source locations: root/docs/<docRef>, root/<docRef>, docs-output/<docRef>
-    const candidates = [] as string[];
-    if (rootDir) {
-      candidates.push(path.join(rootDir, "docs", docRef));
-      candidates.push(path.join(rootDir, docRef));
+  const { entries: configDocs, configDir: docsConfigDir } = loadDocsConfig(rootDir);
+  const docEntriesMap = new Map<string, DocEntry>();
+  for (const entry of configDocs) {
+    docEntriesMap.set(entry.path, entry);
+  }
+  for (const ref of docRefs) {
+    const normalized = normalizeSitePath(ref);
+    if (!docEntriesMap.has(normalized)) {
+      docEntriesMap.set(normalized, { path: normalized });
     }
-    candidates.push(path.join(process.cwd(), "docs-output", docRef));
+  }
+  const docEntries = Array.from(docEntriesMap.values());
+
+  const cwd = process.cwd();
+  const resolvedRoot = rootDir ? path.resolve(rootDir) : null;
+
+  for (const entry of docEntries) {
+    const docRef = entry.path;
+    const sourceRef = entry.sourcePath ?? docRef;
+    const sourceRefNormalized = normalizeSitePath(sourceRef);
+    const candidates = [] as string[];
+    if (docsConfigDir) {
+      if (sourceRef.startsWith("../") || sourceRef.startsWith("..\\")) {
+        candidates.push(path.resolve(docsConfigDir, sourceRef));
+      } else if (!path.isAbsolute(sourceRef)) {
+        candidates.push(path.join(docsConfigDir, sourceRef));
+      }
+    }
+    candidates.push(path.join(cwd, sourceRefNormalized));
+    candidates.push(path.join(cwd, "docs", sourceRefNormalized));
+    if (resolvedRoot) {
+      candidates.push(path.join(resolvedRoot, sourceRefNormalized));
+      candidates.push(path.join(resolvedRoot, "docs", sourceRefNormalized));
+    }
+    candidates.push(path.join(cwd, "docs-output", sourceRefNormalized));
 
     let content: string | undefined = undefined;
     for (const c of candidates) {
@@ -244,18 +333,16 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
       const outDirPath = path.dirname(outPath);
       fs.mkdirSync(outDirPath, { recursive: true });
       fs.writeFileSync(outPath, content, "utf-8");
-      // Also create an HTML wrapper that will render the markdown in-browser
       try {
         const mdName = path.basename(docRef);
         const outHtmlPath = outPath.replace(/\.md$/i, ".html");
-        const wrapper = renderMarkdownWrapper(mdName, mdName);
+        const wrapper = renderMarkdownWrapper(mdName, mdName, docRef, docEntries);
 
         fs.writeFileSync(outHtmlPath, wrapper, "utf-8");
       } catch (e) {
         // ignore wrapper errors
       }
     } else {
-      // Create a placeholder markdown if the referenced doc doesn't exist
       const linked = symbols.filter((s) => s.docRef === docRef);
       if (linked.length > 0) {
         const title = path.basename(docRef, path.extname(docRef));
@@ -279,11 +366,10 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
         const outDirPath = path.dirname(outPath);
         fs.mkdirSync(outDirPath, { recursive: true });
         fs.writeFileSync(outPath, lines.join("\n"), "utf-8");
-        // Also create an HTML wrapper for the placeholder so links to .html work
         try {
           const mdName = path.basename(docRef);
           const outHtmlPath = outPath.replace(/\.md$/i, ".html");
-          const wrapper = renderMarkdownWrapper(mdName, mdName);
+          const wrapper = renderMarkdownWrapper(mdName, mdName, docRef, docEntries);
 
           fs.writeFileSync(outHtmlPath, wrapper, "utf-8");
         } catch (e) {
@@ -336,7 +422,7 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   fs.writeFileSync(path.join(outDir, "deprecated.html"), renderDeprecatedPage(symbols));
 
   // Generate docs index page
-  fs.writeFileSync(path.join(outDir, "docs.html"), renderDocsPage(Array.from(docRefs)));
+  fs.writeFileSync(path.join(outDir, "docs.html"), renderDocsPage(docEntries));
 
   // Generate search index
   // Historically tests expect search.json to be an array of items.
@@ -347,6 +433,6 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   return {
     symbolPages: symbols.length,
     filePages: files.length,
-    totalFiles: symbols.length + files.length + 7 + docRefs.size, // index + relationships + patterns + governance + deprecated + docs + search.json + doc copies
+    totalFiles: symbols.length + files.length + 7 + docEntries.length,
   };
 }

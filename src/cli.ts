@@ -160,7 +160,7 @@ function printHelp() {
 Usage:
   docs-kit init [dir]                                    Create docs.config.js with defaults
   docs-kit index [dir] [--db path] [--docs dir] [--full]
-                                                        Index repository (incremental by default)
+                                                        Index repository (config from cwd; [dir] = folder to index)
   docs-kit build-site [--out dir] [--db path] [--root dir]
                                                         Generate static HTML site
   docs-kit build-docs [--out dir] [--db path] [--root dir]
@@ -266,15 +266,17 @@ async function runIndex(args: string[]) {
     full: undefined as unknown as string,
   });
 
+  // Config is always read from project root (cwd), not from the directory being indexed
+  const configDir = process.cwd();
   const rootDir = positional[0] || ".";
   const fullRebuild = "full" in flags;
 
-  if (!configExists(rootDir)) {
-    const configPath = createDefaultConfig(rootDir);
+  if (!configExists(configDir)) {
+    const configPath = createDefaultConfig(configDir);
     console.log(`  No docs.config.js found. Created ${configPath} with defaults.\n`);
   }
 
-  const config = await loadConfig(rootDir);
+  const config = await loadConfig(configDir);
   const dbPath = flags.db || config.dbPath;
   const docsDir = flags.docs || "docs";
 

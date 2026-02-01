@@ -267,6 +267,41 @@ Para lista completa de comandos CLI, veja a seção [Comandos CLI](#-comandos-cl
    docs-kit index
    docs-kit build-site
 
+### docs-config.json (página Docs do site)
+
+O `docs-config.json` é procurado **sempre na raiz de onde você roda o comando** (`process.cwd()`). O argumento do comando (ex.: `docs-kit index src`) não altera onde o config é procurado: coloque o arquivo na raiz do projeto (não dentro de `src/`). Ele lista documentos Markdown que aparecem na página **Docs** do site, com **nome**, **título** e **categoria**, e navegação na lateral direita.
+
+- **path**: caminho do doc no site (ex.: `docs/cip/cip-polling-confirmation.md`). Pode ter `../` no início; será normalizado (ex.: `../docs/cip/foo.md` vira `docs/cip/foo.md`). O gerador procura o arquivo em: raiz do projeto (cwd), depois `cwd/docs/<path>`, depois `--root/<path>` e `--root/docs/<path>`.
+- **title**: título exibido no índice e na navegação.
+- **name**: nome curto (opcional).
+- **category**: agrupa docs na lista e na sidebar (ex.: `domain`, `api`).
+- **module** (opcional): tag para agrupar vários docs no mesmo módulo; aparece como badge na lista e na seção "By module" da sidebar e do índice.
+- **prev** (opcional): path do doc anterior (para navegação sequencial). Se preenchido, aparece "← Previous" na sidebar e no rodapé da página do doc.
+- **next** (opcional): path do doc seguinte (para navegação sequencial). Se preenchido, aparece "Next →" na sidebar e no rodapé da página do doc.
+- **sourcePath** (opcional): se o arquivo estiver em outro lugar (outro repositório ou path), use `sourcePath`. Se começar com `../`, é resolvido em relação ao diretório onde está o `docs-config.json`; caso contrário, em relação à raiz do projeto (e a `--root`). O conteúdo é copiado para `out/<path>`.
+
+Exemplo (copie para `docs-config.json` e ajuste):
+
+```json
+{
+  "docs": [
+    {
+      "path": "docs/domain/arch-guard-rules.md",
+      "title": "Arch Guard Rules",
+      "name": "arch-guard-rules",
+      "category": "domain"
+    },
+    {
+      "path": "docs/domain/other-doc.md",
+      "title": "Outro Doc",
+      "category": "domain",
+      "sourcePath": "../outro-repo/docs/other-doc.md"
+    }
+  ]
+}
+```
+
+Os docs referenciados por símbolos (`doc_ref`) continuam aparecendo; entradas do config são mescladas (e podem definir título/categoria para esses paths).
 
 ---
 
