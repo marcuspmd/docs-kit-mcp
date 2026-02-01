@@ -24,6 +24,8 @@ export interface DocEntry {
   /** Path of the previous doc (for sequential navigation). */
   prev?: string;
   sourcePath?: string;
+  /** Show this doc in the sidebar menu. Defaults to false. */
+  showOnMenu?: boolean;
 }
 
 function escapeHtml(str: string): string {
@@ -185,10 +187,14 @@ function layerBadge(layer?: string): string {
 function statusBadges(symbol: CodeSymbol): string {
   const badges = [];
   if (symbol.exported) {
-    badges.push(`<span class="px-2 py-0.5 rounded text-xs font-medium border bg-blue-50 text-blue-700 border-blue-200 ml-2">exported</span>`);
+    badges.push(
+      `<span class="px-2 py-0.5 rounded text-xs font-medium border bg-blue-50 text-blue-700 border-blue-200 ml-2">exported</span>`,
+    );
   }
   if (symbol.deprecated) {
-    badges.push(`<span class="px-2 py-0.5 rounded text-xs font-medium border bg-red-50 text-red-700 border-red-200 ml-2 line-through">deprecated</span>`);
+    badges.push(
+      `<span class="px-2 py-0.5 rounded text-xs font-medium border bg-red-50 text-red-700 border-red-200 ml-2 line-through">deprecated</span>`,
+    );
   }
   return badges.join("");
 }
@@ -209,6 +215,7 @@ function layout(
   body: string,
   depth = 0,
   facetsHtml = "",
+  docEntries: DocEntry[] = [],
 ): string {
   const prefix = depth > 0 ? "../".repeat(depth) : "";
   const navLinks = [
@@ -221,11 +228,41 @@ function layout(
   const sidebarNav = navLinks
     .map(([href, label]) => {
       const isActive = currentPage === href.split("/").pop();
-      return `<a href="${href}" class="block px-4 py-2 rounded-md text-sm font-medium ${isActive
-          ? "bg-blue-50 text-blue-700"
-          : "text-gray-700 hover:bg-gray-50 hover:text-gray-900"}">${label}</a>`;
+      return `<a href="${href}" class="block px-4 py-2 rounded-md text-sm font-medium ${
+        isActive ? "bg-blue-50 text-blue-700" : "text-gray-700 hover:bg-gray-50 hover:text-gray-900"
+      }">${label}</a>`;
     })
     .join("");
+
+  // Build documentation menu from docEntries with showOnMenu: true, grouped by module
+  const menuDocs = docEntries.filter((d) => d.showOnMenu);
+  const docsByModule = new Map<string, DocEntry[]>();
+  for (const doc of menuDocs) {
+    const mod = doc.module || "General";
+    if (!docsByModule.has(mod)) docsByModule.set(mod, []);
+    docsByModule.get(mod)!.push(doc);
+  }
+  const docsMenuHtml =
+    menuDocs.length > 0
+      ? Array.from(docsByModule.entries())
+          .sort(([a], [b]) => a.localeCompare(b))
+          .map(([mod, docs]) => {
+            const docsLinks = docs
+              .map((d) => {
+                const href = `${prefix}${d.path.replace(/\.md$/i, ".html")}`;
+                const label =
+                  d.title || d.name || d.path.split("/").pop()?.replace(/\.md$/i, "") || d.path;
+                return `<a href="${escapeHtml(href)}" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-50 hover:text-gray-900 pl-6">${escapeHtml(label)}</a>`;
+              })
+              .join("");
+            return `
+          <div class="mt-1">
+            <span class="block px-4 py-1 text-xs font-medium text-gray-500 uppercase tracking-wider">${escapeHtml(mod)}</span>
+            ${docsLinks}
+          </div>`;
+          })
+          .join("")
+      : "";
 
   const rightSidebar = `
     <aside class="w-64 bg-white border-l border-gray-200 p-6 overflow-y-auto hidden xl:block flex-shrink-0">
@@ -253,7 +290,30 @@ function layout(
           colors: {
             primary: '#2563eb',
             secondary: '#475569',
-          }
+          },
+          typography: {
+            DEFAULT: {
+              css: {
+                'code::before': { content: '""' },
+                'code::after': { content: '""' },
+                'pre': {
+                  backgroundColor: '#f8fafc',
+                  color: '#1e293b',
+                },
+                'pre code': {
+                  backgroundColor: 'transparent',
+                  color: 'inherit',
+                },
+                'code': {
+                  backgroundColor: '#f1f5f9',
+                  color: '#1e293b',
+                  padding: '0.125rem 0.25rem',
+                  borderRadius: '0.25rem',
+                  fontWeight: '400',
+                },
+              },
+            },
+          },
         }
       }
     }
@@ -288,10 +348,11 @@ function layout(
         <nav class="space-y-1">
           ${sidebarNav}
         </nav>
-        
+
         <h3 class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mt-8 mb-2">Documentation</h3>
         <nav class="space-y-1">
-          <a href="${prefix}docs.html" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900">Docs</a>
+          <a href="${prefix}docs.html" class="block px-4 py-2 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 hover:text-gray-900">All Docs</a>
+          ${docsMenuHtml}
         </nav>
 
         <h3 class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mt-8 mb-2">Health</h3>
@@ -505,6 +566,8 @@ export interface SiteData {
   reaperFindings?: ReaperFindingRow[];
   /** ISO date string when the site was generated */
   generatedAt?: string;
+  /** Docs for menu (showOnMenu: true) */
+  docEntries?: DocEntry[];
 }
 
 export function renderMarkdownWrapper(
@@ -512,11 +575,14 @@ export function renderMarkdownWrapper(
   mdFilename: string,
   docPath?: string,
   docEntries?: DocEntry[],
+  markdownContent?: string,
 ): string {
   const depth = docPath ? Math.max(0, docPath.split("/").length - 1) : 1;
   const prefix = depth > 0 ? "../".repeat(depth) : "";
 
-  const entryByPath = docEntries?.length ? new Map(docEntries.map((e) => [e.path, e])) : new Map<string, DocEntry>();
+  const entryByPath = docEntries?.length
+    ? new Map(docEntries.map((e) => [e.path, e]))
+    : new Map<string, DocEntry>();
   const currentEntry = docPath ? entryByPath.get(docPath) : undefined;
   const prevEntry = currentEntry?.prev ? entryByPath.get(currentEntry.prev) : undefined;
   const nextEntry = currentEntry?.next ? entryByPath.get(currentEntry.next) : undefined;
@@ -543,20 +609,27 @@ export function renderMarkdownWrapper(
     <nav class="space-y-1 text-sm">
       <a href="${prefix}docs.html" class="block px-3 py-1 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">All docs</a>
       ${prevNextHtml}
-      ${others.length > 0 ? Array.from(byCategory.entries())
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([category, entries]) => {
-          const label = category || "General";
-          return `
+      ${
+        others.length > 0
+          ? Array.from(byCategory.entries())
+              .sort(([a], [b]) => a.localeCompare(b))
+              .map(([category, entries]) => {
+                const label = category || "General";
+                return `
       <div class="mt-3">
         <span class="px-3 text-xs font-medium text-gray-500 uppercase tracking-wider">${escapeHtml(label)}</span>
-        ${entries.map((e) => {
-          const href = prefix + e.path.replace(/\.md$/i, ".html");
-          const labelE = docEntryLabel(e);
-          return `<a href="${escapeHtml(href)}" class="block px-3 py-1 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">${escapeHtml(labelE)}</a>`;
-        }).join("")}
+        ${entries
+          .map((e) => {
+            const href = prefix + e.path.replace(/\.md$/i, ".html");
+            const labelE = docEntryLabel(e);
+            return `<a href="${escapeHtml(href)}" class="block px-3 py-1 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">${escapeHtml(labelE)}</a>`;
+          })
+          .join("")}
       </div>`;
-        }).join("") : ""}
+              })
+              .join("")
+          : ""
+      }
     </nav>`;
   }
 
@@ -569,7 +642,32 @@ export function renderMarkdownWrapper(
     </nav>`
       : "";
 
-  const body = `
+  // If markdown content is provided, embed it directly to avoid CORS issues with file:// protocol
+  const escapedMarkdown = markdownContent
+    ? markdownContent.replace(/\\/g, "\\\\").replace(/`/g, "\\`").replace(/\$/g, "\\$")
+    : null;
+
+  const body = markdownContent
+    ? `
+    <article id="doc" class="prose max-w-none prose-blue"></article>
+    <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script>
+      (function(){
+        const md = \`${escapedMarkdown}\`;
+        const html = marked.parse(md);
+        document.getElementById('doc').innerHTML = html;
+        // Convert internal .md links to .html so navigation stays within site
+        document.querySelectorAll('#doc a').forEach(function(a){
+          const href = a.getAttribute('href');
+          if (!href) return;
+          if (href.toLowerCase().endsWith('.md')) a.setAttribute('href', href.slice(0, -3) + '.html');
+        });
+        hljs.highlightAll();
+      })();
+    </script>
+    ${prevNextFooter}
+  `
+    : `
     <article id="doc" class="prose max-w-none prose-blue">
        <div class="flex items-center justify-center h-32">
           <svg class="animate-spin h-8 w-8 text-blue-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
@@ -603,11 +701,20 @@ export function renderMarkdownWrapper(
     ${prevNextFooter}
   `;
 
-  return layout(title, "", body, depth, facetsHtml);
+  return layout(title, "", body, depth, facetsHtml, docEntries ?? []);
 }
 
 export function renderDashboard(data: SiteData): string {
-  const { symbols, relationships, patterns, files, archViolations = [], reaperFindings = [], generatedAt } = data;
+  const {
+    symbols,
+    relationships,
+    patterns,
+    files,
+    archViolations = [],
+    reaperFindings = [],
+    generatedAt,
+    docEntries = [],
+  } = data;
 
   const kindCounts: Record<string, number> = {};
   for (const s of symbols) {
@@ -664,24 +771,37 @@ export function renderDashboard(data: SiteData): string {
     ? (() => {
         try {
           const d = new Date(generatedAt);
-          return d.toLocaleDateString(undefined, { dateStyle: "medium" }) + " " + d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" });
+          return (
+            d.toLocaleDateString(undefined, { dateStyle: "medium" }) +
+            " " +
+            d.toLocaleTimeString(undefined, { hour: "2-digit", minute: "2-digit" })
+          );
         } catch {
           return generatedAt;
         }
       })()
     : "";
-  const highComplexityCount = symbols.filter((s) => (s.metrics?.cyclomaticComplexity ?? 0) > 10).length;
+  const highComplexityCount = symbols.filter(
+    (s) => (s.metrics?.cyclomaticComplexity ?? 0) > 10,
+  ).length;
 
   // Code metrics for dashboard
   const symbolsWithMetrics = symbols.filter((s) => s.metrics).length;
   const withComplexity = symbols.filter((s) => s.metrics?.cyclomaticComplexity != null);
   const avgComplexity =
     withComplexity.length > 0
-      ? (withComplexity.reduce((sum, s) => sum + (s.metrics!.cyclomaticComplexity ?? 0), 0) / withComplexity.length).toFixed(1)
+      ? (
+          withComplexity.reduce((sum, s) => sum + (s.metrics!.cyclomaticComplexity ?? 0), 0) /
+          withComplexity.length
+        ).toFixed(1)
       : null;
   const topByLoc = symbols
     .filter((s) => (s.metrics?.linesOfCode ?? s.endLine - s.startLine + 1) > 0)
-    .sort((a, b) => (b.metrics?.linesOfCode ?? b.endLine - b.startLine + 1) - (a.metrics?.linesOfCode ?? a.endLine - a.startLine + 1))
+    .sort(
+      (a, b) =>
+        (b.metrics?.linesOfCode ?? b.endLine - b.startLine + 1) -
+        (a.metrics?.linesOfCode ?? a.endLine - a.startLine + 1),
+    )
     .slice(0, 5);
   const symbolsWithoutDocRef = symbols.filter((s) => !s.docRef).length;
 
@@ -691,15 +811,17 @@ export function renderDashboard(data: SiteData): string {
       ${generatedLabel ? `<p class="text-sm text-gray-500" title="Index build time">Generated: ${escapeHtml(generatedLabel)}</p>` : ""}
     </div>
 
-    ${deprecatedSymbols.length > 0 || archViolations.length > 0 || highComplexityCount > 0
-      ? `
+    ${
+      deprecatedSymbols.length > 0 || archViolations.length > 0 || highComplexityCount > 0
+        ? `
     <div class="flex flex-wrap gap-3 mb-8 p-4 bg-gray-50 rounded-lg border border-gray-200">
       <span class="text-sm font-medium text-gray-700">Health:</span>
       ${deprecatedSymbols.length > 0 ? `<a href="#deprecated-symbols" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200 hover:bg-amber-200">${deprecatedSymbols.length} deprecated</a>` : ""}
       ${archViolations.length > 0 ? `<a href="#arch-violations" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-red-100 text-red-800 border border-red-200 hover:bg-red-200">${archViolations.length} violations</a>` : ""}
       ${highComplexityCount > 0 ? `<a href="#top-complex-symbols" class="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium bg-orange-100 text-orange-800 border border-orange-200 hover:bg-orange-200">${highComplexityCount} high complexity</a>` : ""}
     </div>`
-      : ""}
+        : ""
+    }
 
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-12">
       <div class="bg-white overflow-hidden shadow rounded-lg">
@@ -729,26 +851,34 @@ export function renderDashboard(data: SiteData): string {
     </div>
 
     <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-10">
-      ${avgComplexity != null ? `
+      ${
+        avgComplexity != null
+          ? `
       <div class="bg-white overflow-hidden shadow rounded-lg">
         <div class="px-4 py-4 text-center">
           <dt class="text-xs font-medium text-gray-500 truncate">Avg complexity</dt>
           <dd class="mt-1 text-2xl font-semibold text-gray-900">${avgComplexity}</dd>
         </div>
-      </div>` : ""}
+      </div>`
+          : ""
+      }
       <div class="bg-white overflow-hidden shadow rounded-lg">
         <div class="px-4 py-4 text-center">
           <dt class="text-xs font-medium text-gray-500 truncate">With metrics</dt>
           <dd class="mt-1 text-2xl font-semibold text-gray-900">${symbolsWithMetrics}</dd>
         </div>
       </div>
-      ${symbolsWithoutDocRef > 0 ? `
+      ${
+        symbolsWithoutDocRef > 0
+          ? `
       <div class="bg-white overflow-hidden shadow rounded-lg">
         <div class="px-4 py-4 text-center">
           <dt class="text-xs font-medium text-gray-500 truncate">Without doc ref</dt>
           <dd class="mt-1 text-2xl font-semibold text-amber-600">${symbolsWithoutDocRef}</dd>
         </div>
-      </div>` : ""}
+      </div>`
+          : ""
+      }
       <div class="bg-white overflow-hidden shadow rounded-lg">
         <div class="px-4 py-4 text-center">
           <dt class="text-xs font-medium text-gray-500 truncate">Symbol kinds</dt>
@@ -764,15 +894,19 @@ export function renderDashboard(data: SiteData): string {
           <ul class="divide-y divide-gray-200 max-h-64 overflow-y-auto">
             ${Object.entries(kindCounts)
               .sort((a, b) => b[1] - a[1])
-              .map(([k, n]) => `<li class="px-4 py-2 flex justify-between items-center"><span class="text-sm font-medium text-gray-700">${escapeHtml(k)}</span><span class="text-sm text-gray-500">${n}</span></li>`)
+              .map(
+                ([k, n]) =>
+                  `<li class="px-4 py-2 flex justify-between items-center"><span class="text-sm font-medium text-gray-700">${escapeHtml(k)}</span><span class="text-sm text-gray-500">${n}</span></li>`,
+              )
               .join("")}
           </ul>
         </div>
       </div>
       <div>
         <h2 class="text-xl font-bold text-gray-900 mb-4">Longest symbols (LOC)</h2>
-        ${topByLoc.length > 0
-          ? `<div class="bg-white shadow rounded-lg border border-gray-200 overflow-hidden">
+        ${
+          topByLoc.length > 0
+            ? `<div class="bg-white shadow rounded-lg border border-gray-200 overflow-hidden">
           <table class="min-w-full divide-y divide-gray-200">
             <thead class="bg-gray-50"><tr><th class="px-4 py-2 text-left text-xs font-medium text-gray-500 uppercase">Symbol</th><th class="px-4 py-2 text-right text-xs font-medium text-gray-500 uppercase">LOC</th></tr></thead>
             <tbody class="divide-y divide-gray-200">
@@ -780,12 +914,14 @@ export function renderDashboard(data: SiteData): string {
             </tbody>
           </table>
         </div>`
-          : "<p class=\"text-sm text-gray-500\">No LOC data.</p>"}
+            : '<p class="text-sm text-gray-500">No LOC data.</p>'
+        }
       </div>
     </div>
 
-    ${deprecatedSymbols.length > 0
-      ? `
+    ${
+      deprecatedSymbols.length > 0
+        ? `
     <div id="deprecated-symbols" class="mb-12">
       <h2 class="text-2xl font-bold text-gray-900 mb-6">Deprecated Symbols</h2>
       <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
@@ -813,10 +949,12 @@ export function renderDashboard(data: SiteData): string {
       </div>
       <p class="mt-2 text-sm text-gray-500"><a href="deprecated.html" class="text-blue-600 hover:underline">View all deprecated</a></p>
     </div>`
-      : ""}
+        : ""
+    }
 
-    ${highImpactSymbols.length > 0
-      ? `
+    ${
+      highImpactSymbols.length > 0
+        ? `
     <div id="high-impact-symbols" class="mb-12">
       <h2 class="text-2xl font-bold text-gray-900 mb-6">High-Impact Symbols</h2>
       <p class="text-sm text-gray-600 mb-4">Symbols with the most dependents. Changing these may affect many callers.</p>
@@ -844,10 +982,12 @@ export function renderDashboard(data: SiteData): string {
         </table>
       </div>
     </div>`
-      : ""}
+        : ""
+    }
 
-    ${archViolations.length > 0
-      ? `
+    ${
+      archViolations.length > 0
+        ? `
     <div id="arch-violations" class="mb-12">
       <h2 class="text-2xl font-bold text-gray-900 mb-6">Architecture Violations</h2>
       <p class="text-sm text-gray-600 mb-4"><a href="governance.html#arch" class="text-blue-600 hover:underline">View all</a></p>
@@ -877,10 +1017,12 @@ export function renderDashboard(data: SiteData): string {
         </table>
       </div>
     </div>`
-      : ""}
+        : ""
+    }
 
-    ${reaperFindings.length > 0
-      ? `
+    ${
+      reaperFindings.length > 0
+        ? `
     <div id="reaper-findings" class="mb-12">
       <h2 class="text-2xl font-bold text-gray-900 mb-6">Code Quality (Reaper)</h2>
       <p class="text-sm text-gray-600 mb-4"><a href="governance.html#reaper" class="text-blue-600 hover:underline">View all</a></p>
@@ -910,7 +1052,8 @@ export function renderDashboard(data: SiteData): string {
         </table>
       </div>
     </div>`
-      : ""}
+        : ""
+    }
 
     <div id="architecture-layers" class="mb-12">
       <h2 class="text-2xl font-bold text-gray-900 mb-6">Architecture Layers</h2>
@@ -950,14 +1093,18 @@ export function renderDashboard(data: SiteData): string {
 
     <div class="mb-12" id="architecture-overview">
       <h2 class="text-2xl font-bold text-gray-900 mb-4">Architecture Overview</h2>
-      ${overviewGraph ? `
+      ${
+        overviewGraph
+          ? `
       <div class="flex gap-2 mb-4" role="tablist" aria-label="Overview view">
         <button type="button" id="arch-tab-graph" role="tab" aria-selected="true" aria-controls="arch-panel-graph" class="arch-tab px-4 py-2 rounded-md text-sm font-medium bg-blue-100 text-blue-800 border border-blue-200">Graph</button>
         <button type="button" id="arch-tab-dirs" role="tab" aria-selected="false" aria-controls="arch-panel-dirs" class="arch-tab px-4 py-2 rounded-md text-sm font-medium text-gray-600 hover:bg-gray-100 border border-transparent">Directory map</button>
       </div>
       <div id="arch-panel-graph" role="tabpanel" class="arch-panel bg-white shadow rounded-lg p-6 overflow-x-auto border border-gray-200">
         ${mermaidDiagramWrap(overviewGraph)}
-      </div>` : ""}
+      </div>`
+          : ""
+      }
       <div id="arch-panel-dirs" role="tabpanel" class="arch-panel grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 ${overviewGraph ? "hidden" : ""}" aria-hidden="${overviewGraph ? "true" : "false"}">
         ${Object.entries(dirGroups)
           .sort((a, b) => b[1].symbols - a[1].symbols)
@@ -1130,52 +1277,52 @@ export function renderDashboard(data: SiteData): string {
         }
         results.slice(0, 100).forEach(function(it){
           var li = document.createElement('li');
-          
+
           var div = document.createElement('div');
           div.className = "px-4 py-4 sm:px-6 hover:bg-gray-50";
-          
+
           var flex = document.createElement('div');
           flex.className = "flex items-center justify-between";
-          
+
           var nameP = document.createElement('p');
           nameP.className = "text-sm font-medium text-blue-600 truncate";
-          var a = document.createElement('a'); a.href='symbols/'+it.id+'.html'; a.textContent=it.name; 
-          nameP.appendChild(a); 
-          
+          var a = document.createElement('a'); a.href='symbols/'+it.id+'.html'; a.textContent=it.name;
+          nameP.appendChild(a);
+
           var badgeDiv = document.createElement('div');
           badgeDiv.className = "ml-2 flex-shrink-0 flex";
-          var span = document.createElement('span'); span.className=it.badgeClass; span.textContent=it.kind; 
+          var span = document.createElement('span'); span.className=it.badgeClass; span.textContent=it.kind;
           badgeDiv.appendChild(span);
-          
+
           flex.appendChild(nameP);
           flex.appendChild(badgeDiv);
-          
+
           var detailsDiv = document.createElement('div');
           detailsDiv.className = "mt-2 sm:flex sm:justify-between";
-          
+
           var leftDetails = document.createElement('div');
           leftDetails.className = "sm:flex";
-          
-          if (it.signature) { 
+
+          if (it.signature) {
              var pSig = document.createElement('p'); pSig.className = "flex items-center text-sm text-gray-500 font-mono bg-gray-50 px-1 rounded truncate max-w-md";
-             pSig.textContent = it.signature; 
+             pSig.textContent = it.signature;
              leftDetails.appendChild(pSig);
           }
-          
+
           var rightDetails = document.createElement('div');
           rightDetails.className = "mt-2 flex items-center text-sm text-gray-500 sm:mt-0 sm:ml-6";
-          
+
           if (it.file) {
               var pFile = document.createElement('p'); pFile.textContent = it.file;
               rightDetails.appendChild(pFile);
           }
-          
+
           detailsDiv.appendChild(leftDetails);
           detailsDiv.appendChild(rightDetails);
-          
+
           div.appendChild(flex);
           div.appendChild(detailsDiv);
-          
+
           if (it.summary) {
              var pSum = document.createElement('p'); pSum.className="mt-2 text-sm text-gray-600 italic";
              pSum.textContent = it.summary;
@@ -1217,10 +1364,14 @@ export function renderDashboard(data: SiteData): string {
   `;
 
   // No filters in sidebar for dashboard
-  return layout("Dashboard", "index.html", body);
+  return layout("Dashboard", "index.html", body, 0, "", docEntries);
 }
 
-export function renderFilesPage(files: string[], symbols: CodeSymbol[]): string {
+export function renderFilesPage(
+  files: string[],
+  symbols: CodeSymbol[],
+  docEntries: DocEntry[] = [],
+): string {
   // 1. Build the tree
   interface TreeNode {
     name: string;
@@ -1392,7 +1543,7 @@ export function renderFilesPage(files: string[], symbols: CodeSymbol[]): string 
     </script>
   `;
 
-  return layout("Files", "files.html", body);
+  return layout("Files", "files.html", body, 0, "", docEntries);
 }
 
 export interface ArchViolationRow {
@@ -1409,6 +1560,7 @@ export function renderSymbolPage(
   relationships: RelationshipRow[],
   sourceCode?: string,
   archViolationsForSymbol: ArchViolationRow[] = [],
+  docEntries: DocEntry[] = [],
 ): string {
   const children = allSymbols.filter((s) => s.parent === symbol.id);
   const outgoing = relationships.filter((r) => r.source_id === symbol.id);
@@ -1429,7 +1581,11 @@ export function renderSymbolPage(
   if (symbol.parent) {
     const parent = allSymbols.find((s) => s.id === symbol.parent);
     if (parent) {
-      breadcrumb.splice(1, 0, `<a href="${parent.id}.html" class="hover:text-gray-700">${escapeHtml(parent.name)}</a>`);
+      breadcrumb.splice(
+        1,
+        0,
+        `<a href="${parent.id}.html" class="hover:text-gray-700">${escapeHtml(parent.name)}</a>`,
+      );
     }
   }
   breadcrumb.push(`<span class="text-gray-900 font-semibold">${escapeHtml(symbol.name)}</span>`);
@@ -1440,14 +1596,18 @@ export function renderSymbolPage(
   const body = `
     <nav class="flex mb-6" aria-label="Breadcrumb">
       <ol class="flex items-center space-x-2 text-sm text-gray-500">
-        ${breadcrumb.map((item, i) => `
+        ${breadcrumb
+          .map(
+            (item, i) => `
           <li>
             <div class="flex items-center">
-              ${i > 0 ? '<svg class="flex-shrink-0 h-5 w-5 text-gray-300 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" /></svg>' : ''}
+              ${i > 0 ? '<svg class="flex-shrink-0 h-5 w-5 text-gray-300 mr-2" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20" fill="currentColor"><path fill-rule="evenodd" d="M7.293 14.707a1 1 0 010-1.414L10.586 10 7.293 6.707a1 1 0 011.414-1.414l4 4a1 1 0 010 1.414l-4 4a1 1 0 01-1.414 0z" clip-rule="evenodd" /></svg>' : ""}
               ${item}
             </div>
           </li>
-        `).join("")}
+        `,
+          )
+          .join("")}
       </ol>
     </nav>
 
@@ -1473,45 +1633,66 @@ export function renderSymbolPage(
               <a href="../files/${fileSlug(symbol.file)}.html" class="text-blue-600 hover:underline truncate block" title="${escapeHtml(symbol.file)}:${symbol.startLine}-${symbol.endLine}">${escapeHtml(symbol.file)}:${symbol.startLine}-${symbol.endLine}</a>
             </p>
           </div>
-          ${symbol.metrics ? `
+          ${
+            symbol.metrics
+              ? `
           <div class="min-w-0">
             <h3 class="text-sm font-medium text-gray-500">Metrics</h3>
             <div class="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-sm text-gray-900">
               <span>LOC: ${symbol.metrics.linesOfCode ?? "-"}</span>
-              <span>Complexity: <span class="${(symbol.metrics.cyclomaticComplexity ?? 0) > 10 ? 'text-red-600 font-bold' : ''}">${symbol.metrics.cyclomaticComplexity ?? "-"}</span></span>
+              <span>Complexity: <span class="${(symbol.metrics.cyclomaticComplexity ?? 0) > 10 ? "text-red-600 font-bold" : ""}">${symbol.metrics.cyclomaticComplexity ?? "-"}</span></span>
               <span>Params: ${symbol.metrics.parameterCount ?? "-"}</span>
             </div>
-          </div>` : ""}
+          </div>`
+              : ""
+          }
         </div>
 
-        ${symbol.signature ? `
+        ${
+          symbol.signature
+            ? `
         <div>
           <h3 class="text-sm font-medium text-gray-500">Signature</h3>
           <div class="mt-1 bg-gray-50 rounded-md p-3 font-mono text-sm text-gray-800 border border-gray-200 overflow-x-auto">
             ${escapeHtml(symbol.signature)}
           </div>
-        </div>` : ""}
+        </div>`
+            : ""
+        }
 
-        ${symbol.pattern ? `
+        ${
+          symbol.pattern
+            ? `
         <div>
           <h3 class="text-sm font-medium text-gray-500">Pattern</h3>
           <p class="mt-1 text-sm text-gray-900 bg-green-50 text-green-700 px-2 py-1 rounded inline-block border border-green-200">${escapeHtml(symbol.pattern)}</p>
-        </div>` : ""}
+        </div>`
+            : ""
+        }
 
-        ${symbol.docRef ? `
+        ${
+          symbol.docRef
+            ? `
         <div>
           <h3 class="text-sm font-medium text-gray-500">Documentation</h3>
           <p class="mt-1 text-sm"><a href="../${escapeHtml(symbol.docRef.replace(/\.md$/, ".html"))}" class="text-blue-600 hover:underline flex items-center"><svg class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>${escapeHtml(symbol.docRef)}</a></p>
-        </div>` : ""}
-        
-        ${symbol.summary ? `
+        </div>`
+            : ""
+        }
+
+        ${
+          symbol.summary
+            ? `
         <div class="prose prose-sm max-w-none text-gray-700">
            <h3 class="text-sm font-medium text-gray-500 mb-1">Summary</h3>
            <p>${escapeHtml(symbol.summary)}</p>
-        </div>` : ""}
+        </div>`
+            : ""
+        }
 
-        ${symbol.violations?.length
-    ? `
+        ${
+          symbol.violations?.length
+            ? `
         <div>
           <h3 class="text-sm font-medium text-gray-500 mb-2">Code quality</h3>
           <p class="text-sm text-gray-600 mb-2">This symbol has governance findings. <a href="../governance.html#reaper" class="text-blue-600 hover:underline">View all</a>.</p>
@@ -1519,10 +1700,12 @@ export function renderSymbolPage(
             ${symbol.violations.map((v) => `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 border border-amber-200">${escapeHtml(v)}</span>`).join("")}
           </div>
         </div>`
-    : ""}
+            : ""
+        }
 
-        ${archViolationsForSymbol.length > 0
-    ? `
+        ${
+          archViolationsForSymbol.length > 0
+            ? `
         <div>
           <h3 class="text-sm font-medium text-gray-500 mb-2">Architecture violations</h3>
           <p class="text-sm text-gray-600 mb-2"><a href="../governance.html#arch" class="text-blue-600 hover:underline">View all</a></p>
@@ -1530,30 +1713,38 @@ export function renderSymbolPage(
             ${archViolationsForSymbol.map((v) => `<li><span class="font-medium ${v.severity === "error" ? "text-red-600" : "text-amber-700"}">[${escapeHtml(v.severity)}]</span> ${escapeHtml(v.rule)}: ${escapeHtml(v.message)}</li>`).join("")}
           </ul>
         </div>`
-    : ""}
+            : ""
+        }
 
-        ${symbol.tags ? `
+        ${
+          symbol.tags
+            ? `
         <div>
           <h3 class="text-sm font-medium text-gray-500 mb-2">Tags</h3>
           <div class="flex flex-wrap gap-2">
             ${symbol.tags.map((t) => `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800 border border-gray-200">#${escapeHtml(t)}</span>`).join("")}
           </div>
-        </div>` : ""}
+        </div>`
+            : ""
+        }
       </div>
     </div>
 
-    ${sourceSnippet
-      ? `<div class="mb-12">
+    ${
+      sourceSnippet
+        ? `<div class="mb-12">
             <h2 class="text-xl font-bold text-gray-900 mb-4">Source Code</h2>
             <div class="rounded-lg overflow-hidden border border-gray-200">
               <pre class="bg-gray-50 p-4 overflow-x-auto text-sm font-mono leading-tight"><code class="language-typescript">${escapeCodeBlocks(sourceSnippet)}</code></pre>
             </div>
            </div>
            <script>hljs.highlightAll();</script>`
-      : ""}
+        : ""
+    }
 
-    ${children.length > 0
-      ? `<div class="mb-12">
+    ${
+      children.length > 0
+        ? `<div class="mb-12">
             <h2 class="text-xl font-bold text-gray-900 mb-4">Members</h2>
             <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
               <table class="min-w-full divide-y divide-gray-200">
@@ -1582,7 +1773,8 @@ export function renderSymbolPage(
               </table>
             </div>
           </div>`
-      : ""}
+        : ""
+    }
 
     ${(() => {
       const listeners = incoming.filter((r) => r.type === "listens_to");
@@ -1617,17 +1809,20 @@ export function renderSymbolPage(
 
     <div class="grid grid-cols-1 xl:grid-cols-2 gap-8">
        <div>
-          ${depGraph
-            ? `<div class="mb-8">
+          ${
+            depGraph
+              ? `<div class="mb-8">
                   <h2 class="text-xl font-bold text-gray-900 mb-4">Dependencies (Outgoing)</h2>
                   <div class="bg-white shadow rounded-lg p-4 border border-gray-200 overflow-x-auto">
                     ${mermaidDiagramWrap(depGraph)}
                   </div>
                 </div>`
-            : ""}
-          
-          ${outgoing.length > 0
-            ? `<div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200 mb-8">
+              : ""
+          }
+
+          ${
+            outgoing.length > 0
+              ? `<div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200 mb-8">
                 <table class="min-w-full divide-y divide-gray-200">
                   <thead class="bg-gray-50">
                     <tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Target</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th></tr>
@@ -1645,21 +1840,25 @@ export function renderSymbolPage(
                   </tbody>
                 </table>
               </div>`
-            : "<p class='text-gray-500 italic mb-8'>No outgoing dependencies.</p>"}
+              : "<p class='text-gray-500 italic mb-8'>No outgoing dependencies.</p>"
+          }
        </div>
-       
+
        <div>
-          ${impactGraph
-            ? `<div class="mb-8">
+          ${
+            impactGraph
+              ? `<div class="mb-8">
                   <h2 class="text-xl font-bold text-gray-900 mb-4">Impact (Incoming)</h2>
                   <div class="bg-white shadow rounded-lg p-4 border border-gray-200 overflow-x-auto">
                     ${mermaidDiagramWrap(impactGraph)}
                   </div>
                 </div>`
-            : ""}
-          
-          ${incoming.length > 0
-            ? `<div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200 mb-8">
+              : ""
+          }
+
+          ${
+            incoming.length > 0
+              ? `<div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200 mb-8">
                 <table class="min-w-full divide-y divide-gray-200">
                   <thead class="bg-gray-50">
                     <tr><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Source</th><th scope="col" class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Type</th></tr>
@@ -1677,7 +1876,8 @@ export function renderSymbolPage(
                   </tbody>
                 </table>
               </div>`
-            : "<p class='text-gray-500 italic mb-8'>No incoming dependencies.</p>"}
+              : "<p class='text-gray-500 italic mb-8'>No incoming dependencies.</p>"
+          }
        </div>
     </div>
 
@@ -1686,10 +1886,19 @@ export function renderSymbolPage(
     ${getMermaidExpandModalAndScript()}
   `;
 
-  return layout(symbol.name, "", body, 1);
+  return layout(symbol.name, "", body, 1, "", docEntries);
 }
 
-const GHOST_SYMBOL_NAMES = new Set(["class", "interface", "enum", "trait", "function", "type", "struct", "abstract"]);
+const GHOST_SYMBOL_NAMES = new Set([
+  "class",
+  "interface",
+  "enum",
+  "trait",
+  "function",
+  "type",
+  "struct",
+  "abstract",
+]);
 
 export function renderFilePage(
   filePath: string,
@@ -1698,6 +1907,7 @@ export function renderFilePage(
   relationships?: RelationshipRow[],
   allSymbols?: CodeSymbol[],
   archViolationsForFile: ArchViolationRow[] = [],
+  docEntries: DocEntry[] = [],
 ): string {
   const displaySymbols = symbols.filter((s) => !GHOST_SYMBOL_NAMES.has(s.name));
   const topLevel = displaySymbols.filter((s) => !s.parent);
@@ -1708,7 +1918,8 @@ export function renderFilePage(
     displaySymbols.length > 0
       ? displaySymbols
           .filter((s) => s.metrics?.cyclomaticComplexity)
-          .reduce((sum, s) => sum + (s.metrics!.cyclomaticComplexity || 0), 0) / displaySymbols.length
+          .reduce((sum, s) => sum + (s.metrics!.cyclomaticComplexity || 0), 0) /
+        displaySymbols.length
       : 0;
 
   const kindCounts: Record<string, number> = {};
@@ -1729,7 +1940,7 @@ export function renderFilePage(
          <li><span class="text-gray-900 font-semibold">${escapeHtml(filePath)}</span></li>
        </ol>
     </nav>
-  
+
     <h1 class="text-2xl font-bold text-gray-900 mb-6 flex items-center">
       <svg class="h-8 w-8 text-gray-400 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
       ${escapeHtml(filePath)}
@@ -1754,18 +1965,21 @@ export function renderFilePage(
       </div>
     </div>
 
-    ${fileGraph
-      ? `
+    ${
+      fileGraph
+        ? `
     <div class="mb-12">
       <h2 class="text-xl font-bold text-gray-900 mb-4">File Relationships</h2>
       <div class="bg-white shadow rounded-lg p-6 border border-gray-200 overflow-x-auto">
         ${mermaidDiagramWrap(fileGraph)}
       </div>
     </div>`
-      : ""}
+        : ""
+    }
 
-    ${archViolationsForFile.length > 0
-      ? `
+    ${
+      archViolationsForFile.length > 0
+        ? `
     <div class="mb-12">
       <h2 class="text-xl font-bold text-gray-900 mb-4">Architecture violations</h2>
       <p class="text-sm text-gray-600 mb-4"><a href="../governance.html#arch" class="text-blue-600 hover:underline">View all</a></p>
@@ -1773,7 +1987,8 @@ export function renderFilePage(
         ${archViolationsForFile.map((v) => `<li><span class="font-medium ${v.severity === "error" ? "text-red-600" : "text-amber-700"}">[${escapeHtml(v.severity)}]</span> ${escapeHtml(v.rule)}: ${escapeHtml(v.message)}</li>`).join("")}
       </ul>
     </div>`
-      : ""}
+        : ""
+    }
 
     <div class="mb-12">
       <h2 class="text-xl font-bold text-gray-900 mb-4">Symbols by Kind</h2>
@@ -1837,27 +2052,30 @@ export function renderFilePage(
       </div>
     </div>
 
-    ${sourceCode
-      ? `<div class="mb-12">
+    ${
+      sourceCode
+        ? `<div class="mb-12">
             <h2 class="text-xl font-bold text-gray-900 mb-4">Full Source</h2>
             <div class="rounded-lg overflow-hidden border border-gray-200">
               <pre class="bg-gray-50 p-4 overflow-x-auto text-sm font-mono leading-tight"><code class="language-typescript">${escapeCodeBlocks(sourceCode)}</code></pre>
             </div>
            </div>
            <script>hljs.highlightAll();</script>`
-      : ""}
+        : ""
+    }
 
     <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <script>mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose',maxTextSize:300000});</script>
     ${getMermaidExpandModalAndScript()}
   `;
 
-  return layout(filePath, "", body, 1);
+  return layout(filePath, "", body, 1, "", docEntries);
 }
 
 export function renderRelationshipsPage(
   relationships: RelationshipRow[],
   symbols: CodeSymbol[],
+  docEntries: DocEntry[] = [],
 ): string {
   const symbolMap = new Map(symbols.map((s) => [s.id, s]));
 
@@ -1884,15 +2102,17 @@ export function renderRelationshipsPage(
         .join("")}
     </div>
 
-    ${topConnectedGraph
-      ? `
+    ${
+      topConnectedGraph
+        ? `
     <div class="mb-12">
       <h2 class="text-xl font-bold text-gray-900 mb-4">Architecture Overview (Top 30 Connected)</h2>
       <div class="bg-white shadow rounded-lg p-6 border border-gray-200 overflow-x-auto">
         ${mermaidDiagramWrap(topConnectedGraph)}
       </div>
     </div>`
-      : ""}
+        : ""
+    }
 
     <div class="mb-8 p-4 bg-blue-50 rounded-md border border-blue-100 text-blue-800 text-sm">
        Each symbol page contains focused dependency and impact graphs. Below is the full relationship table.
@@ -1960,25 +2180,30 @@ export function renderRelationshipsPage(
     ${getMermaidExpandModalAndScript()}
   `;
 
-  return layout("Relationships", "relationships.html", body);
+  return layout("Relationships", "relationships.html", body, 0, "", docEntries);
 }
 
-export function renderPatternsPage(patterns: DetectedPattern[], symbols: CodeSymbol[]): string {
+export function renderPatternsPage(
+  patterns: DetectedPattern[],
+  symbols: CodeSymbol[],
+  docEntries: DocEntry[] = [],
+): string {
   const symbolMap = new Map(symbols.map((s) => [s.id, s]));
 
   const body = `
     <h1 class="text-3xl font-bold text-gray-900 mb-8 pb-4 border-b border-gray-200">Detected Patterns</h1>
 
-    ${patterns.length === 0
-      ? "<div class='text-center py-12 text-gray-500'>No patterns detected.</div>"
-      : `<div class="grid grid-cols-1 gap-6">
+    ${
+      patterns.length === 0
+        ? "<div class='text-center py-12 text-gray-500'>No patterns detected.</div>"
+        : `<div class="grid grid-cols-1 gap-6">
             ${patterns
               .map(
                 (p) => `
           <div class="bg-white shadow rounded-lg border border-gray-200 overflow-hidden">
             <div class="px-6 py-4 border-b border-gray-200 bg-gray-50 flex justify-between items-center">
                <h3 class="text-lg font-medium text-gray-900">${escapeHtml(p.kind)}</h3>
-               <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${p.confidence > 0.8 ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'}">
+               <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${p.confidence > 0.8 ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}">
                  Confidence: ${(p.confidence * 100).toFixed(0)}%
                </span>
             </div>
@@ -1989,20 +2214,23 @@ export function renderPatternsPage(patterns: DetectedPattern[], symbols: CodeSym
                    ${p.symbols
                      .map((id) => {
                        const s = symbolMap.get(id);
-                       return s ? `<a href="symbols/${s.id}.html" class="inline-flex items-center px-3 py-1 rounded-md text-sm font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors">${escapeHtml(s.name)}</a>` : `<span class="text-gray-500">${id}</span>`;
+                       return s
+                         ? `<a href="symbols/${s.id}.html" class="inline-flex items-center px-3 py-1 rounded-md text-sm font-medium bg-blue-50 text-blue-700 hover:bg-blue-100 transition-colors">${escapeHtml(s.name)}</a>`
+                         : `<span class="text-gray-500">${id}</span>`;
                      })
                      .join("")}
                 </div>
               </div>
-              
-              ${p.violations.length > 0
-                ? `<div>
+
+              ${
+                p.violations.length > 0
+                  ? `<div>
                       <span class="text-sm font-medium text-red-500 uppercase tracking-wider block mb-2">Violations</span>
                       <ul class="list-disc pl-5 space-y-1 text-sm text-gray-700">
                         ${p.violations.map((v) => `<li>${escapeHtml(v)}</li>`).join("")}
                       </ul>
                     </div>`
-                : "<p class='text-sm text-green-600 flex items-center'><svg class='h-4 w-4 mr-1' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M5 13l4 4L19 7'/></svg> No violations found</p>"
+                  : "<p class='text-sm text-green-600 flex items-center'><svg class='h-4 w-4 mr-1' fill='none' viewBox='0 0 24 24' stroke='currentColor'><path stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M5 13l4 4L19 7'/></svg> No violations found</p>"
               }
             </div>
           </div>`,
@@ -2012,11 +2240,13 @@ export function renderPatternsPage(patterns: DetectedPattern[], symbols: CodeSym
     }
   `;
 
-  return layout("Patterns", "patterns.html", body);
+  return layout("Patterns", "patterns.html", body, 0, "", docEntries);
 }
 
 function docEntryLabel(entry: DocEntry): string {
-  return entry.title ?? entry.name ?? (entry.path.split("/").pop() || entry.path).replace(/\.md$/i, "");
+  return (
+    entry.title ?? entry.name ?? (entry.path.split("/").pop() || entry.path).replace(/\.md$/i, "")
+  );
 }
 
 export function renderDocsPage(docEntries: DocEntry[]): string {
@@ -2039,8 +2269,9 @@ export function renderDocsPage(docEntries: DocEntry[]): string {
     }
   }
 
-  const facetsHtml = sorted.length > 0
-    ? `
+  const facetsHtml =
+    sorted.length > 0
+      ? `
     <h3 class="px-3 text-xs font-semibold text-gray-500 uppercase tracking-wider mb-2">Documentation</h3>
     <nav class="space-y-1 text-sm">
       <a href="docs.html" class="block px-3 py-1 rounded-md text-blue-600 font-medium bg-blue-50">All docs</a>
@@ -2051,41 +2282,54 @@ export function renderDocsPage(docEntries: DocEntry[]): string {
           return `
       <div class="mt-3">
         <span class="px-3 text-xs font-medium text-gray-500 uppercase tracking-wider">${escapeHtml(label)}</span>
-        ${entries.map((e) => {
-          const href = e.path.replace(/\.md$/i, ".html");
-          const labelE = docEntryLabel(e);
-          return `<a href="${escapeHtml(href)}" class="block px-3 py-1 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">${escapeHtml(labelE)}</a>`;
-        }).join("")}
+        ${entries
+          .map((e) => {
+            const href = e.path.replace(/\.md$/i, ".html");
+            const labelE = docEntryLabel(e);
+            return `<a href="${escapeHtml(href)}" class="block px-3 py-1 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">${escapeHtml(labelE)}</a>`;
+          })
+          .join("")}
       </div>`;
-        }).join("")}
-      ${byModule.size > 0 ? `
+        })
+        .join("")}
+      ${
+        byModule.size > 0
+          ? `
       <div class="mt-4 pt-3 border-t border-gray-200">
         <span class="px-3 text-xs font-medium text-gray-500 uppercase tracking-wider">Module</span>
         ${Array.from(byModule.entries())
           .sort(([a], [b]) => a.localeCompare(b))
-          .map(([mod, entries]) => `
+          .map(
+            ([mod, entries]) => `
         <div class="mt-2">
           <span class="px-3 text-xs text-gray-500">${escapeHtml(mod)}</span>
-          ${entries.map((e) => {
-            const href = e.path.replace(/\.md$/i, ".html");
-            const labelE = docEntryLabel(e);
-            return `<a href="${escapeHtml(href)}" class="block px-3 py-1 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">${escapeHtml(labelE)}</a>`;
-          }).join("")}
-        </div>`).join("")}
-      </div>` : ""}
+          ${entries
+            .map((e) => {
+              const href = e.path.replace(/\.md$/i, ".html");
+              const labelE = docEntryLabel(e);
+              return `<a href="${escapeHtml(href)}" class="block px-3 py-1 rounded-md text-gray-600 hover:bg-gray-50 hover:text-gray-900">${escapeHtml(labelE)}</a>`;
+            })
+            .join("")}
+        </div>`,
+          )
+          .join("")}
+      </div>`
+          : ""
+      }
     </nav>`
-    : "";
+      : "";
 
   const body = `
     <h1 class="text-3xl font-bold text-gray-900 mb-8 pb-4 border-b border-gray-200">Documentation</h1>
     <p class="text-gray-600 mb-6">Markdown docs referenced by symbols or listed in <code class="text-sm bg-gray-100 px-1 rounded">docs-config.json</code>. Open the HTML version to read in the site.</p>
-    ${sorted.length === 0
-      ? "<div class='text-center py-12 text-gray-500'>No doc references yet. Add <code class='text-sm bg-gray-100 px-1 rounded'>doc_ref</code> to symbols, link docs in frontmatter, or add entries to <code class='text-sm bg-gray-100 px-1 rounded'>docs-config.json</code>.</div>"
-      : Array.from(byCategory.entries())
-          .sort(([a], [b]) => a.localeCompare(b))
-          .map(([category, entries]) => {
-            const label = category ? escapeHtml(category) : "General";
-            return `
+    ${
+      sorted.length === 0
+        ? "<div class='text-center py-12 text-gray-500'>No doc references yet. Add <code class='text-sm bg-gray-100 px-1 rounded'>doc_ref</code> to symbols, link docs in frontmatter, or add entries to <code class='text-sm bg-gray-100 px-1 rounded'>docs-config.json</code>.</div>"
+        : Array.from(byCategory.entries())
+            .sort(([a], [b]) => a.localeCompare(b))
+            .map(([category, entries]) => {
+              const label = category ? escapeHtml(category) : "General";
+              return `
     <div class="mb-10">
       <h2 class="text-xl font-bold text-gray-900 mb-4">${label}</h2>
       <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
@@ -2094,50 +2338,65 @@ export function renderDocsPage(docEntries: DocEntry[]): string {
             .map((e) => {
               const htmlRef = e.path.replace(/\.md$/i, ".html");
               const displayLabel = docEntryLabel(e);
-              const moduleBadge = e.module ? `<span class="ml-2 px-2 py-0.5 text-xs font-medium rounded bg-indigo-50 text-indigo-700 border border-indigo-200">module: ${escapeHtml(e.module)}</span>` : "";
+              const moduleBadge = e.module
+                ? `<span class="ml-2 px-2 py-0.5 text-xs font-medium rounded bg-indigo-50 text-indigo-700 border border-indigo-200">module: ${escapeHtml(e.module)}</span>`
+                : "";
               return `<li class="px-6 py-4"><a href="${escapeHtml(htmlRef)}" class="text-blue-600 hover:underline font-medium">${escapeHtml(displayLabel)}</a>${moduleBadge}<span class="text-gray-400 text-sm ml-2">${escapeHtml(e.path)}</span></li>`;
             })
             .join("")}
         </ul>
       </div>
     </div>`;
-          })
-          .join("")}
-    ${byModule.size > 0 ? `
+            })
+            .join("")
+    }
+    ${
+      byModule.size > 0
+        ? `
     <div class="mb-10">
       <h2 class="text-xl font-bold text-gray-900 mb-4">By module</h2>
       <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
         ${Array.from(byModule.entries())
           .sort(([a], [b]) => a.localeCompare(b))
-          .map(([mod, entries]) => `
+          .map(
+            ([mod, entries]) => `
         <div class="bg-white shadow rounded-lg border border-gray-200 overflow-hidden">
           <div class="px-4 py-3 bg-gray-50 border-b border-gray-200">
             <span class="text-sm font-semibold text-gray-800">${escapeHtml(mod)}</span>
           </div>
           <ul class="divide-y divide-gray-100 px-4 py-2">
-            ${entries.map((e) => {
-              const htmlRef = e.path.replace(/\.md$/i, ".html");
-              const displayLabel = docEntryLabel(e);
-              return `<li class="py-2"><a href="${escapeHtml(htmlRef)}" class="text-blue-600 hover:underline text-sm font-medium">${escapeHtml(displayLabel)}</a></li>`;
-            }).join("")}
+            ${entries
+              .map((e) => {
+                const htmlRef = e.path.replace(/\.md$/i, ".html");
+                const displayLabel = docEntryLabel(e);
+                return `<li class="py-2"><a href="${escapeHtml(htmlRef)}" class="text-blue-600 hover:underline text-sm font-medium">${escapeHtml(displayLabel)}</a></li>`;
+              })
+              .join("")}
           </ul>
-        </div>`).join("")}
+        </div>`,
+          )
+          .join("")}
       </div>
-    </div>` : ""}
+    </div>`
+        : ""
+    }
   `;
 
-  return layout("Docs", "docs.html", body, 0, facetsHtml);
+  return layout("Docs", "docs.html", body, 0, facetsHtml, docEntries);
 }
 
-export function renderDeprecatedPage(symbols: CodeSymbol[]): string {
-  const deprecated = symbols.filter((s) => s.deprecated).sort((a, b) => a.name.localeCompare(b.name));
+export function renderDeprecatedPage(symbols: CodeSymbol[], docEntries: DocEntry[] = []): string {
+  const deprecated = symbols
+    .filter((s) => s.deprecated)
+    .sort((a, b) => a.name.localeCompare(b.name));
 
   const body = `
     <h1 class="text-3xl font-bold text-gray-900 mb-8 pb-4 border-b border-gray-200">Deprecated Symbols</h1>
     <p class="text-gray-600 mb-6">Symbols marked as deprecated. Consider migrating callers before removal.</p>
-    ${deprecated.length === 0
-      ? "<div class='text-center py-12 text-gray-500'>No deprecated symbols.</div>"
-      : `
+    ${
+      deprecated.length === 0
+        ? "<div class='text-center py-12 text-gray-500'>No deprecated symbols.</div>"
+        : `
     <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
       <table class="min-w-full divide-y divide-gray-200">
         <thead class="bg-gray-50">
@@ -2161,16 +2420,18 @@ export function renderDeprecatedPage(symbols: CodeSymbol[]): string {
             .join("")}
         </tbody>
       </table>
-    </div>`}
+    </div>`
+    }
   `;
 
-  return layout("Deprecated", "deprecated.html", body);
+  return layout("Deprecated", "deprecated.html", body, 0, "", docEntries);
 }
 
 export function renderGovernancePage(
   archViolations: ArchViolationRow[],
   reaperFindings: ReaperFindingRow[],
   symbols: CodeSymbol[],
+  docEntries: DocEntry[] = [],
 ): string {
   const symbolMap = new Map(symbols.map((s) => [s.id, s]));
 
@@ -2180,9 +2441,10 @@ export function renderGovernancePage(
 
     <div id="arch" class="mb-12">
       <h2 class="text-2xl font-bold text-gray-900 mb-6">Architecture Violations</h2>
-      ${archViolations.length === 0
-        ? "<p class='text-gray-500'>No architecture violations.</p>"
-        : `
+      ${
+        archViolations.length === 0
+          ? "<p class='text-gray-500'>No architecture violations.</p>"
+          : `
       <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
@@ -2196,32 +2458,34 @@ export function renderGovernancePage(
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
             ${archViolations
-              .map(
-                (v) => {
-                  const sym = v.symbol_id ? symbolMap.get(v.symbol_id) : undefined;
-                  const symbolCell = sym
-                    ? `<a href="symbols/${v.symbol_id}.html" class="text-blue-600 hover:underline">${escapeHtml(sym.name)}</a>`
-                    : (v.symbol_id ? escapeHtml(v.symbol_id) : "-");
-                  return `<tr>
+              .map((v) => {
+                const sym = v.symbol_id ? symbolMap.get(v.symbol_id) : undefined;
+                const symbolCell = sym
+                  ? `<a href="symbols/${v.symbol_id}.html" class="text-blue-600 hover:underline">${escapeHtml(sym.name)}</a>`
+                  : v.symbol_id
+                    ? escapeHtml(v.symbol_id)
+                    : "-";
+                return `<tr>
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${escapeHtml(v.rule)}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHtml(v.file)}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm">${symbolCell}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm"><span class="px-2 py-0.5 rounded text-xs font-medium ${v.severity === "error" ? "bg-red-100 text-red-800" : "bg-yellow-100 text-yellow-800"}">${escapeHtml(v.severity)}</span></td>
                 <td class="px-6 py-4 text-sm text-gray-600">${escapeHtml(v.message)}</td>
               </tr>`;
-                },
-              )
+              })
               .join("")}
           </tbody>
         </table>
-      </div>`}
+      </div>`
+      }
     </div>
 
     <div id="reaper" class="mb-12">
       <h2 class="text-2xl font-bold text-gray-900 mb-6">Code Quality (Reaper)</h2>
-      ${reaperFindings.length === 0
-        ? "<p class='text-gray-500'>No Reaper findings.</p>"
-        : `
+      ${
+        reaperFindings.length === 0
+          ? "<p class='text-gray-500'>No Reaper findings.</p>"
+          : `
       <div class="bg-white shadow overflow-x-auto sm:rounded-lg border border-gray-200">
         <table class="min-w-full divide-y divide-gray-200">
           <thead class="bg-gray-50">
@@ -2234,28 +2498,27 @@ export function renderGovernancePage(
           </thead>
           <tbody class="bg-white divide-y divide-gray-200">
             ${reaperFindings
-              .map(
-                (f) => {
-                  const sym = symbolMap.get(f.target);
-                  const targetCell = sym
-                    ? `<a href="symbols/${f.target}.html" class="text-blue-600 hover:underline">${escapeHtml(sym.name)}</a>`
-                    : escapeHtml(f.target);
-                  return `<tr>
+              .map((f) => {
+                const sym = symbolMap.get(f.target);
+                const targetCell = sym
+                  ? `<a href="symbols/${f.target}.html" class="text-blue-600 hover:underline">${escapeHtml(sym.name)}</a>`
+                  : escapeHtml(f.target);
+                return `<tr>
                 <td class="px-6 py-4 whitespace-nowrap text-sm font-medium text-gray-900">${escapeHtml(f.type)}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm">${targetCell}</td>
                 <td class="px-6 py-4 whitespace-nowrap text-sm text-gray-500">${escapeHtml(f.suggested_action)}</td>
                 <td class="px-6 py-4 text-sm text-gray-600">${escapeHtml(f.reason)}</td>
               </tr>`;
-                },
-              )
+              })
               .join("")}
           </tbody>
         </table>
-      </div>`}
+      </div>`
+      }
     </div>
   `;
 
-  return layout("Governance", "governance.html", body);
+  return layout("Governance", "governance.html", body, 0, "", docEntries);
 }
 
 export function buildSearchIndex(symbols: CodeSymbol[]): {

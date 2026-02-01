@@ -15,6 +15,21 @@ const PromptRuleSchema = z
     message: "Each rule must have at least `language` or `pattern`",
   });
 
+export const DocEntrySchema = z.object({
+  path: z.string(),
+  title: z.string().optional(),
+  name: z.string().optional(),
+  category: z.string().optional(),
+  module: z.string().optional(),
+  symbols: z.array(z.string()).optional(),
+  previous: z.string().optional(),
+  next: z.string().optional(),
+  /** Show this doc in the sidebar menu. Defaults to false. */
+  showOnMenu: z.boolean().optional(),
+});
+
+export type DocEntry = z.infer<typeof DocEntrySchema>;
+
 export const ConfigSchema = z.object({
   projectRoot: z.string(),
 
@@ -60,6 +75,8 @@ export const ConfigSchema = z.object({
   dbPath: z.string().default(".doc-kit/index.db"),
 
   promptRules: z.array(PromptRuleSchema).default([]),
+
+  docs: z.array(DocEntrySchema).default([]),
 
   defaultPrompts: z
     .object({

@@ -12,6 +12,8 @@ function mockRegistry(mappings: Record<string, DocMapping[]>): DocRegistry {
     findAllMappings: async () => Object.values(mappings).flat(),
     register: async () => {},
     unregister: async () => {},
+    findAllDocs: () => [],
+    findDocByPath: () => undefined,
   };
 }
 

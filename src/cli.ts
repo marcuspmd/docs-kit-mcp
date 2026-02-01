@@ -483,24 +483,26 @@ async function runIndex(args: string[]) {
 
   // Phase 6: Scan docs and populate doc_mappings
   let docMappingsCount = 0;
+  let registeredDocsCount = 0;
   const docsPath = path.resolve(rootDir, docsDir);
   if (fs.existsSync(docsPath)) {
     step("Scanning docs for symbol mappings");
     const registry = createDocRegistry(db);
-    await registry.rebuild(docsDir);
+    await registry.rebuild(docsDir, { configDocs: config.docs });
 
     // Link symbols to their docs via docRef
     const updateDocRef = db.prepare("UPDATE symbols SET doc_ref = ? WHERE name = ?");
     const getMappings = db.prepare("SELECT symbol_name, doc_path FROM doc_mappings");
     const mappings = getMappings.all() as Array<{ symbol_name: string; doc_path: string }>;
     docMappingsCount = mappings.length;
+    registeredDocsCount = registry.findAllDocs().length;
 
     db.transaction(() => {
       for (const m of mappings) {
         updateDocRef.run(m.doc_path, m.symbol_name);
       }
     })();
-    done(`${docMappingsCount} mappings`);
+    done(`${registeredDocsCount} docs, ${docMappingsCount} symbol mappings`);
   }
 
   // Phase 6.5: Governance (arch violations + reaper findings) for site
@@ -612,7 +614,8 @@ async function runIndex(args: string[]) {
       .map(([kind, count]) => [`  ${kind}`, count] as [string, number]),
     ["Relationships", relationships.length],
     ["Patterns", patterns.length],
-    ["Doc mappings", docMappingsCount],
+    ["Registered docs", registeredDocsCount],
+    ["Symbol mappings", docMappingsCount],
     ["Database", dbPath],
   ]);
   console.log();

@@ -19,7 +19,6 @@ import {
   fileSlug,
 } from "./templates.js";
 
-
 export interface GeneratorOptions {
   dbPath: string;
   outDir: string;
@@ -48,7 +47,12 @@ interface DocsConfig {
 
 /** Path inside the site (no leading ../). Used for output and URLs. */
 function normalizeSitePath(p: string): string {
-  return p.replace(/^\.\.\/+/, "").replace(/\\/g, "/").trim() || p;
+  return (
+    p
+      .replace(/^\.\.\/+/, "")
+      .replace(/\\/g, "/")
+      .trim() || p
+  );
 }
 
 interface LoadDocsConfigResult {
@@ -57,7 +61,8 @@ interface LoadDocsConfigResult {
   configDir: string | null;
 }
 
-function loadDocsConfig(_rootDir?: string): LoadDocsConfigResult {
+/** Load docs from docs-config.json (legacy) */
+function loadDocsConfigJson(_rootDir?: string): LoadDocsConfigResult {
   // Always load from project root (cwd). The index path (e.g. "src") is only for
   // indexing source files, not for config lookup.
   const configPath = path.join(process.cwd(), "docs-config.json");
@@ -87,6 +92,58 @@ function loadDocsConfig(_rootDir?: string): LoadDocsConfigResult {
   } catch {
     return { entries: [], configDir: null };
   }
+}
+
+interface RegisteredDocRow {
+  path: string;
+  title: string;
+  name: string;
+  category: string;
+  module: string;
+  previous: string | null;
+  next: string | null;
+  show_on_menu: number;
+}
+
+/** Load docs from registered_docs table in database */
+function loadDocsFromDb(db: Database.Database): DocEntry[] {
+  try {
+    const rows = db
+      .prepare(
+        "SELECT path, title, name, category, module, previous, next, show_on_menu FROM registered_docs ORDER BY category, title",
+      )
+      .all() as RegisteredDocRow[];
+    return rows.map((r) => ({
+      path: normalizeSitePath(r.path),
+      title: r.title,
+      name: r.name,
+      category: r.category,
+      module: r.module,
+      prev: r.previous ? normalizeSitePath(r.previous) : undefined,
+      next: r.next ? normalizeSitePath(r.next) : undefined,
+      showOnMenu: r.show_on_menu === 1,
+    }));
+  } catch {
+    // Table may not exist in older databases
+    return [];
+  }
+}
+
+/** Merge docs from database and config file (db takes precedence) */
+function loadDocsConfig(db: Database.Database, _rootDir?: string): LoadDocsConfigResult {
+  const dbDocs = loadDocsFromDb(db);
+  const { entries: jsonDocs, configDir } = loadDocsConfigJson(_rootDir);
+
+  // Merge: DB docs take precedence, then JSON docs
+  const entriesMap = new Map<string, DocEntry>();
+  for (const entry of jsonDocs) {
+    entriesMap.set(entry.path, entry);
+  }
+  for (const entry of dbDocs) {
+    entriesMap.set(entry.path, entry);
+  }
+
+  return { entries: Array.from(entriesMap.values()), configDir };
 }
 
 interface PatternRow {
@@ -204,17 +261,22 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   let archViolations: ArchViolationRow[] = [];
   let reaperFindings: ReaperFindingRow[] = [];
   try {
-    archViolations = db.prepare("SELECT rule, file, symbol_id, message, severity FROM arch_violations").all() as ArchViolationRow[];
+    archViolations = db
+      .prepare("SELECT rule, file, symbol_id, message, severity FROM arch_violations")
+      .all() as ArchViolationRow[];
   } catch {
     archViolations = [];
   }
   try {
-    reaperFindings = db.prepare("SELECT type, target, reason, suggested_action FROM reaper_findings").all() as ReaperFindingRow[];
+    reaperFindings = db
+      .prepare("SELECT type, target, reason, suggested_action FROM reaper_findings")
+      .all() as ReaperFindingRow[];
   } catch {
     reaperFindings = [];
   }
 
-  db.close();
+  // NOTE: Do NOT close db here - we need it for loadDocsConfig later
+
   const files = [...new Set(symbols.map((s) => s.file))];
   const docRefs = new Set<string>();
 
@@ -262,25 +324,15 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
     return sourceCache.get(file);
   }
 
-  // Generate index.html
-  fs.writeFileSync(
-    path.join(outDir, "index.html"),
-    renderDashboard({
-      symbols,
-      relationships,
-      patterns,
-      files,
-      archViolations,
-      reaperFindings,
-      generatedAt: new Date().toISOString(),
-    }),
-  );
-
-  // Build doc entries: from docs-config.json first, then symbol doc_ref (dedupe by path)
+  // Build doc entries: from database and config, then symbol doc_ref (dedupe by path)
   for (const s of symbols) {
     if (s.docRef) docRefs.add(s.docRef);
   }
-  const { entries: configDocs, configDir: docsConfigDir } = loadDocsConfig(rootDir);
+  const { entries: configDocs, configDir: docsConfigDir } = loadDocsConfig(db, rootDir);
+
+  // Now we can close the database - all queries are done
+  db.close();
+
   const docEntriesMap = new Map<string, DocEntry>();
   for (const entry of configDocs) {
     docEntriesMap.set(entry.path, entry);
@@ -292,6 +344,21 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
     }
   }
   const docEntries = Array.from(docEntriesMap.values());
+
+  // Generate index.html with docEntries for menu
+  fs.writeFileSync(
+    path.join(outDir, "index.html"),
+    renderDashboard({
+      symbols,
+      relationships,
+      patterns,
+      files,
+      archViolations,
+      reaperFindings,
+      generatedAt: new Date().toISOString(),
+      docEntries,
+    }),
+  );
 
   const cwd = process.cwd();
   const resolvedRoot = rootDir ? path.resolve(rootDir) : null;
@@ -336,7 +403,7 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
       try {
         const mdName = path.basename(docRef);
         const outHtmlPath = outPath.replace(/\.md$/i, ".html");
-        const wrapper = renderMarkdownWrapper(mdName, mdName, docRef, docEntries);
+        const wrapper = renderMarkdownWrapper(mdName, mdName, docRef, docEntries, content);
 
         fs.writeFileSync(outHtmlPath, wrapper, "utf-8");
       } catch (e) {
@@ -362,14 +429,21 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
           lines.push(`- [${s.name}](../symbols/${s.id}.html) - ${s.signature ?? ""}`);
         }
 
+        const generatedContent = lines.join("\n");
         const outPath = path.join(outDir, docRef);
         const outDirPath = path.dirname(outPath);
         fs.mkdirSync(outDirPath, { recursive: true });
-        fs.writeFileSync(outPath, lines.join("\n"), "utf-8");
+        fs.writeFileSync(outPath, generatedContent, "utf-8");
         try {
           const mdName = path.basename(docRef);
           const outHtmlPath = outPath.replace(/\.md$/i, ".html");
-          const wrapper = renderMarkdownWrapper(mdName, mdName, docRef, docEntries);
+          const wrapper = renderMarkdownWrapper(
+            mdName,
+            mdName,
+            docRef,
+            docEntries,
+            generatedContent,
+          );
 
           fs.writeFileSync(outHtmlPath, wrapper, "utf-8");
         } catch (e) {
@@ -385,7 +459,7 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
     const symbolViolations = archViolations.filter((v) => v.symbol_id === symbol.id);
     fs.writeFileSync(
       path.join(outDir, "symbols", `${symbol.id}.html`),
-      renderSymbolPage(symbol, symbols, relationships, source, symbolViolations),
+      renderSymbolPage(symbol, symbols, relationships, source, symbolViolations, docEntries),
     );
   }
 
@@ -396,30 +470,33 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
     const fileViolations = archViolations.filter((v) => v.file === file);
     fs.writeFileSync(
       path.join(outDir, "files", `${fileSlug(file)}.html`),
-      renderFilePage(file, fileSymbols, source, relationships, symbols, fileViolations),
+      renderFilePage(file, fileSymbols, source, relationships, symbols, fileViolations, docEntries),
     );
   }
 
   // Generate files directory page
-  fs.writeFileSync(path.join(outDir, "files.html"), renderFilesPage(files, symbols));
+  fs.writeFileSync(path.join(outDir, "files.html"), renderFilesPage(files, symbols, docEntries));
 
   // Generate relationships page
   fs.writeFileSync(
     path.join(outDir, "relationships.html"),
-    renderRelationshipsPage(relationships, symbols),
+    renderRelationshipsPage(relationships, symbols, docEntries),
   );
 
   // Generate patterns page
-  fs.writeFileSync(path.join(outDir, "patterns.html"), renderPatternsPage(patterns, symbols));
+  fs.writeFileSync(
+    path.join(outDir, "patterns.html"),
+    renderPatternsPage(patterns, symbols, docEntries),
+  );
 
   // Generate governance page
   fs.writeFileSync(
     path.join(outDir, "governance.html"),
-    renderGovernancePage(archViolations, reaperFindings, symbols),
+    renderGovernancePage(archViolations, reaperFindings, symbols, docEntries),
   );
 
   // Generate deprecated page
-  fs.writeFileSync(path.join(outDir, "deprecated.html"), renderDeprecatedPage(symbols));
+  fs.writeFileSync(path.join(outDir, "deprecated.html"), renderDeprecatedPage(symbols, docEntries));
 
   // Generate docs index page
   fs.writeFileSync(path.join(outDir, "docs.html"), renderDocsPage(docEntries));

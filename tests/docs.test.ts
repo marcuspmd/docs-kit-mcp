@@ -275,6 +275,82 @@ symbols:
     const docs = await registry.findDocBySymbol("NonExistent");
     expect(docs).toEqual([]);
   });
+
+  test("rebuild registers docs from configDocs option", async () => {
+    const registry = createDocRegistry(db);
+    await registry.rebuild(tmpDir, {
+      configDocs: [
+        {
+          path: "docs/guide.md",
+          title: "Getting Started Guide",
+          name: "guide",
+          category: "guides",
+          module: "Core",
+        },
+        {
+          path: "docs/api.md",
+          title: "API Reference",
+          name: "api-ref",
+          category: "reference",
+          module: "API",
+          symbols: ["ApiClient"],
+        },
+      ],
+    });
+
+    const allDocs = registry.findAllDocs();
+    expect(allDocs).toHaveLength(2);
+    expect(allDocs[0].title).toBe("Getting Started Guide");
+    expect(allDocs[0].category).toBe("guides");
+    expect(allDocs[1].title).toBe("API Reference");
+  });
+
+  test("findDocByPath returns correct doc", async () => {
+    const registry = createDocRegistry(db);
+    await registry.rebuild(tmpDir, {
+      configDocs: [
+        {
+          path: "docs/guide.md",
+          title: "Getting Started Guide",
+          name: "guide",
+          category: "guides",
+          module: "Core",
+          next: "docs/api.md",
+        },
+      ],
+    });
+
+    const doc = registry.findDocByPath("docs/guide.md");
+    expect(doc).toBeDefined();
+    expect(doc?.title).toBe("Getting Started Guide");
+    expect(doc?.next).toBe("docs/api.md");
+  });
+
+  test("findDocByPath returns undefined for unknown path", async () => {
+    const registry = createDocRegistry(db);
+    const doc = registry.findDocByPath("nonexistent.md");
+    expect(doc).toBeUndefined();
+  });
+
+  test("configDocs symbols create symbol mappings", async () => {
+    const registry = createDocRegistry(db);
+    await registry.rebuild(tmpDir, {
+      configDocs: [
+        {
+          path: "docs/api.md",
+          title: "API Reference",
+          name: "api-ref",
+          category: "reference",
+          module: "API",
+          symbols: ["ApiClient", "ApiClient.request"],
+        },
+      ],
+    });
+
+    const docs = await registry.findDocBySymbol("ApiClient");
+    expect(docs).toHaveLength(1);
+    expect(docs[0].docPath).toBe("docs/api.md");
+  });
 });
 
 /* ====================== parseSections ====================== */
@@ -609,25 +685,21 @@ echo "Hello World"
   });
 
   describe("validateExample", () => {
-    it(
-      "validates TypeScript code",
-      async () => {
-        const validator = createCodeExampleValidator();
+    it("validates TypeScript code", async () => {
+      const validator = createCodeExampleValidator();
 
-        const example = {
-          language: "typescript",
-          code: "const x: number = 42; console.log(x);",
-          lineStart: 1,
-          lineEnd: 1,
-        };
+      const example = {
+        language: "typescript",
+        code: "const x: number = 42; console.log(x);",
+        lineStart: 1,
+        lineEnd: 1,
+      };
 
-        const result = await validator.validateExample(example);
+      const result = await validator.validateExample(example);
 
-        expect(result.valid).toBe(true);
-        expect(result.example).toBe(example);
-      },
-      15000,
-    );
+      expect(result.valid).toBe(true);
+      expect(result.example).toBe(example);
+    }, 15000);
 
     it("validates JavaScript code", async () => {
       const validator = createCodeExampleValidator();

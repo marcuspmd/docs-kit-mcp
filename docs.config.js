@@ -33,4 +33,27 @@ export default {
   maxFileSize: 512_000,
   dbPath: ".doc-kit/index.db",
   promptRules: [],
+  docs: [
+    {
+      path: "docs/domain/arch-guard-rules.md",
+      title: "Arch Guard Rules",
+      name: "arch-guard-rules",
+      category: "domain",
+      module: "Main",
+      symbols: ["createArchGuard", "ArchGuard", "ArchGuardRule", "ArchViolation"],
+      next: "docs/domain/projectStatus.md",
+      showOnMenu: true
+    },
+    {
+      path: "docs/domain/projectStatus.md",
+      title: "Project Status",
+      name: "project-status",
+      category: "domain",
+      module: "Main",
+      symbols: ["projectStatus", "ProjectStatusReport"],
+      previous: "docs/domain/arch-guard-rules.md",
+      showOnMenu: true
+    }
+  ],
+
 };

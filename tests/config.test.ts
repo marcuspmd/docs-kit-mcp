@@ -97,6 +97,7 @@ describe("resolvePrompts", () => {
         changePrompt: "Test change prompt",
       },
     ],
+    docs: [],
     defaultPrompts: {
       symbolPrompt: "Default symbol",
       docPrompt: "Default doc",
