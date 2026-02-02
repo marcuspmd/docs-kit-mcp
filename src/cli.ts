@@ -1129,6 +1129,8 @@ async function runExplainSymbol(args: string[]) {
   const registry = createDocRegistry(db);
   const symbolRepo = createSymbolRepository(db);
   const graph = createKnowledgeGraph(db);
+  const llm = createLlmProvider(config);
+
   await registry.rebuild(docsPath);
   const result = await buildExplainSymbolContext(symbolName, {
     projectRoot: config.projectRoot,
@@ -1137,12 +1139,19 @@ async function runExplainSymbol(args: string[]) {
     symbolRepo,
     graph,
   });
-  db.close();
+
   if (!result.found) {
+    db.close();
     console.log(`No symbol or documentation found for: ${symbolName}`);
     return;
   }
-  console.log(result.prompt);
+
+  step("Generating explanation with LLM");
+  const explanation = await llm.chat([{ role: "user", content: result.prompt }]) || "No explanation generated.";
+  done();
+
+  db.close();
+  console.log(explanation);
 }
 
 /* ================== generate-mermaid (server: generateMermaid) ================== */

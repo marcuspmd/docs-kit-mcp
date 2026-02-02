@@ -163,8 +163,12 @@ server.registerTool(
           ],
         };
       }
+
+      // Call LLM to generate explanation
+      const explanation = await llm.chat([{ role: "user", content: result.prompt }]) || "No explanation generated.";
+
       return {
-        content: [{ type: "text" as const, text: result.prompt }],
+        content: [{ type: "text" as const, text: explanation }],
       };
     } catch (err) {
       return {

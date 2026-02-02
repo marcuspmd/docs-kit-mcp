@@ -1,6 +1,6 @@
 {
 	"servers": {
-		"agent-doc": {
+		"docs-kit": {
 			"type": "stdio",
 			"command": "node",
 			"args": [

@@ -37,6 +37,12 @@ export default {
     lcovPath: "./coverage/lcov.info",
     enabled: true,
   },
+  llm: {
+    provider: "ollama",
+    model: "qwen2.5:3b",
+    embeddingModel: "nomic-embed-text:latest",
+    baseUrl: "http://localhost:11434",
+  },
   docs: [
     {
       path: "./docs/README.md",
