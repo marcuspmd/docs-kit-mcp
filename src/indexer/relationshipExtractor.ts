@@ -73,6 +73,8 @@ function walkForRelationships(
   ) => void,
   strategy: ReturnType<typeof getStrategy>,
 ) {
+  if (!node) return;
+
   if (node.type === "class_declaration" || node.type === "abstract_class_declaration") {
     const className = node.childForFieldName("name")?.text;
     const classSymbol = symsInFile.find(

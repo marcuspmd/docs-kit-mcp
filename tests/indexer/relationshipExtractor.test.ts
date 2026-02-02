@@ -5,7 +5,6 @@ import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { indexFile } from "../../src/indexer/indexer.js";
 import { extractRelationships } from "../../src/indexer/relationshipExtractor.js";
-import type { CodeSymbol } from "../../src/indexer/symbol.types.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = resolve(__dirname, "fixtures");
@@ -56,15 +55,11 @@ describe("extractRelationships", () => {
     const cacheable = symbols.find((s) => s.name === "Cacheable");
 
     expect(
-      implRels.some(
-        (r) => r.sourceId === orderRepo!.id && r.targetId === serializable!.id,
-      ),
+      implRels.some((r) => r.sourceId === orderRepo!.id && r.targetId === serializable!.id),
     ).toBe(true);
-    expect(
-      implRels.some(
-        (r) => r.sourceId === orderRepo!.id && r.targetId === cacheable!.id,
-      ),
-    ).toBe(true);
+    expect(implRels.some((r) => r.sourceId === orderRepo!.id && r.targetId === cacheable!.id)).toBe(
+      true,
+    );
   });
 
   it("detects instantiates relationships (new expressions)", () => {

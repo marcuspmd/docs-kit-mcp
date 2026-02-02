@@ -19,7 +19,11 @@ function parseFixture(name: string) {
 
 describe("indexFile", () => {
   describe("class with methods", () => {
-    const symbols = parseFixture("class-with-methods.ts");
+    let symbols: ReturnType<typeof indexFile>;
+
+    beforeAll(() => {
+      symbols = parseFixture("class-with-methods.ts");
+    });
 
     it("extracts the class", () => {
       const cls = symbols.find((s) => s.kind === "class");
@@ -89,7 +93,11 @@ describe("indexFile", () => {
   });
 
   describe("standalone functions", () => {
-    const symbols = parseFixture("standalone-functions.ts");
+    let symbols: ReturnType<typeof indexFile>;
+
+    beforeAll(() => {
+      symbols = parseFixture("standalone-functions.ts");
+    });
 
     it("extracts all functions", () => {
       const fns = symbols.filter((s) => s.kind === "function");
@@ -116,7 +124,11 @@ describe("indexFile", () => {
   });
 
   describe("interfaces", () => {
-    const symbols = parseFixture("interfaces.ts");
+    let symbols: ReturnType<typeof indexFile>;
+
+    beforeAll(() => {
+      symbols = parseFixture("interfaces.ts");
+    });
 
     it("extracts all interfaces", () => {
       const ifaces = symbols.filter((s) => s.kind === "interface");
@@ -140,7 +152,11 @@ describe("indexFile", () => {
   });
 
   describe("relationships fixture", () => {
-    const symbols = parseFixture("relationships.ts");
+    let symbols: ReturnType<typeof indexFile>;
+
+    beforeAll(() => {
+      symbols = parseFixture("relationships.ts");
+    });
 
     it("extracts extends from class", () => {
       const orderRepo = symbols.find((s) => s.name === "OrderRepository")!;
