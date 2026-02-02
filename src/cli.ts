@@ -34,13 +34,11 @@ import type { CodeSymbol, SymbolRelationship } from "./indexer/symbol.types.js";
 import { analyzeChanges } from "./analyzer/changeAnalyzer.js";
 import { createDocUpdater } from "./docs/docUpdater.js";
 import { buildExplainSymbolContext } from "./handlers/explainSymbol.js";
+import { generateExplanationHash } from "./handlers/explainSymbol.js";
 import { generateMermaid } from "./docs/mermaidGenerator.js";
 import { scanFileAndCreateDocs } from "./docs/docScanner.js";
 import { buildImpactAnalysisPrompt } from "./prompts/impactAnalysis.prompt.js";
-import {
-  createEventFlowAnalyzer,
-  formatEventFlowsAsMermaid,
-} from "./events/eventFlowAnalyzer.js";
+import { createEventFlowAnalyzer, formatEventFlowsAsMermaid } from "./events/eventFlowAnalyzer.js";
 import { createRagIndex } from "./knowledge/rag.js";
 import { createLlmProvider } from "./llm/provider.js";
 import { buildRelevantContext } from "./knowledge/contextBuilder.js";
@@ -247,7 +245,11 @@ function parseArgs(
  * Resolve a path from config or flags relative to the project root (configDir).
  * If the path is already absolute, return as-is.
  */
-function resolveConfigPath(pathValue: string | undefined, configDir: string, defaultValue: string): string {
+function resolveConfigPath(
+  pathValue: string | undefined,
+  configDir: string,
+  defaultValue: string,
+): string {
   const actualValue = pathValue || defaultValue;
   return path.isAbsolute(actualValue) ? actualValue : path.resolve(configDir, actualValue);
 }
@@ -328,7 +330,7 @@ async function runIndex(args: string[]) {
   // Convert to paths relative to configDir for consistency
   const knownFiles = fileHashRepo.getAll();
   const currentFileSet = new Set(
-    relativeFiles.map((f) => path.relative(configDir, path.resolve(rootDir, f)))
+    relativeFiles.map((f) => path.relative(configDir, path.resolve(rootDir, f))),
   );
   const removedFiles: string[] = [];
   for (const { filePath: knownPath } of knownFiles) {
@@ -456,7 +458,9 @@ async function runIndex(args: string[]) {
         coverageData = await parseLcov(lcovPath);
         done(`loaded from ${config.coverage.lcovPath}`);
       } catch (err) {
-        console.warn(`  ⚠ Failed to parse lcov file: ${err instanceof Error ? err.message : String(err)}`);
+        console.warn(
+          `  ⚠ Failed to parse lcov file: ${err instanceof Error ? err.message : String(err)}`,
+        );
       }
     } else {
       console.warn(`  ⚠ Coverage enabled but lcov file not found: ${config.coverage.lcovPath}`);
@@ -499,6 +503,39 @@ async function runIndex(args: string[]) {
 
   const upsertSymbols = db.transaction(() => {
     for (const symbol of allSymbols) {
+      // Check if symbol exists and has changed
+      const existingSymbol = symbolRepo.findById(symbol.id);
+
+      if (existingSymbol?.explanation && existingSymbol?.explanationHash) {
+        // Check if the symbol has changed by comparing hash
+        try {
+          const filePath = path.resolve(config.projectRoot, symbol.file);
+          const fullSource = fs.readFileSync(filePath, "utf-8");
+          const lines = fullSource.split("\n").slice(symbol.startLine - 1, symbol.endLine);
+          const sourceCode = lines.join("\n");
+          const currentHash = generateExplanationHash(
+            symbol.id,
+            symbol.startLine,
+            symbol.endLine,
+            sourceCode,
+          );
+
+          // If hash changed, clear the explanation
+          if (currentHash !== existingSymbol.explanationHash) {
+            symbol.explanation = undefined;
+            symbol.explanationHash = undefined;
+          } else {
+            // Preserve the explanation if hash matches
+            symbol.explanation = existingSymbol.explanation;
+            symbol.explanationHash = existingSymbol.explanationHash;
+          }
+        } catch {
+          // If we can't read source, clear explanation to be safe
+          symbol.explanation = undefined;
+          symbol.explanationHash = undefined;
+        }
+      }
+
       symbolRepo.upsert(symbol);
     }
   });
@@ -511,7 +548,15 @@ async function runIndex(args: string[]) {
   });
   upsertRels();
 
-  replaceAllPatterns(db, patterns.map((p) => ({ kind: p.kind, symbols: p.symbols, confidence: p.confidence, violations: p.violations })));
+  replaceAllPatterns(
+    db,
+    patterns.map((p) => ({
+      kind: p.kind,
+      symbols: p.symbols,
+      confidence: p.confidence,
+      violations: p.violations,
+    })),
+  );
   done(dbPath);
 
   // Phase 6: Scan docs and populate doc_mappings
@@ -574,7 +619,12 @@ async function runIndex(args: string[]) {
       })),
     );
 
-    const docMappingsForReaper = (db.prepare("SELECT symbol_name, doc_path FROM doc_mappings").all() as Array<{ symbol_name: string; doc_path: string }>).map((m) => ({ symbolName: m.symbol_name, docPath: m.doc_path }));
+    const docMappingsForReaper = (
+      db.prepare("SELECT symbol_name, doc_path FROM doc_mappings").all() as Array<{
+        symbol_name: string;
+        doc_path: string;
+      }>
+    ).map((m) => ({ symbolName: m.symbol_name, docPath: m.doc_path }));
     const reaper = createReaper();
     const reaperFindings = reaper.scan(allSymbols, graph, docMappingsForReaper);
     replaceAllReaperFindings(
@@ -1034,12 +1084,14 @@ async function runDeadCodeScan(args: string[]) {
   const mappings = await registry.findAllMappings();
 
   // Debug: Check relationships
-  const relCount = db.prepare("SELECT COUNT(*) as count FROM relationships").get() as { count: number };
+  const relCount = db.prepare("SELECT COUNT(*) as count FROM relationships").get() as {
+    count: number;
+  };
   console.log(`Found ${relCount.count} relationships in database`);
 
   step("Scanning for dead code");
   const findings = reaper.scan(allSymbols, graph, mappings);
-  const deadCodeFindings = findings.filter(f => f.type === "dead_code");
+  const deadCodeFindings = findings.filter((f) => f.type === "dead_code");
   done(`${deadCodeFindings.length} dead code issues found`);
 
   if (deadCodeFindings.length > 0) {
@@ -1146,9 +1198,42 @@ async function runExplainSymbol(args: string[]) {
     return;
   }
 
+  // Check if we have a cached explanation
+  if (result.cachedExplanation && !result.needsUpdate) {
+    db.close();
+    console.log("(Cached explanation)\n");
+    console.log(result.cachedExplanation);
+    return;
+  }
+
+  // Generate new explanation
   step("Generating explanation with LLM");
-  const explanation = await llm.chat([{ role: "user", content: result.prompt }]) || "No explanation generated.";
+  const explanation =
+    (await llm.chat([{ role: "user", content: result.prompt }])) || "No explanation generated.";
   done();
+
+  // Save explanation to database
+  const symbols = symbolRepo.findByName(symbolName);
+  if (symbols.length > 0) {
+    const sym = symbols[0];
+    try {
+      const filePath = path.resolve(config.projectRoot, sym.file);
+      const fullSource = fs.readFileSync(filePath, "utf-8");
+      const lines = fullSource.split("\n").slice(sym.startLine - 1, sym.endLine);
+      const sourceCode = lines.join("\n");
+      const hash = generateExplanationHash(sym.id, sym.startLine, sym.endLine, sourceCode);
+
+      // Update symbol with explanation
+      symbolRepo.upsert({
+        ...sym,
+        explanation,
+        explanationHash: hash,
+      });
+    } catch (err) {
+      // If we can't save, just log the error but still show the explanation
+      console.error("Warning: Failed to cache explanation:", err);
+    }
+  }
 
   db.close();
   console.log(explanation);
@@ -1160,7 +1245,9 @@ async function runGenerateMermaid(args: string[]) {
   const { positional, flags } = parseArgs(args, { type: "classDiagram", db: "" });
   const symbolsStr = positional[0];
   if (!symbolsStr) {
-    console.error("Usage: docs-kit generate-mermaid <comma-separated symbols> [--type classDiagram|sequenceDiagram|flowchart]");
+    console.error(
+      "Usage: docs-kit generate-mermaid <comma-separated symbols> [--type classDiagram|sequenceDiagram|flowchart]",
+    );
     process.exit(1);
   }
   const configDir = process.cwd();
@@ -1170,18 +1257,18 @@ async function runGenerateMermaid(args: string[]) {
     console.error(`Error: Database not found at ${dbPath}. Run docs-kit index first.`);
     process.exit(1);
   }
-  const symbolNames = symbolsStr.split(",").map((s) => s.trim()).filter(Boolean);
-  const diagramType = (flags.type === "sequenceDiagram" || flags.type === "flowchart") ? flags.type : "classDiagram";
+  const symbolNames = symbolsStr
+    .split(",")
+    .map((s) => s.trim())
+    .filter(Boolean);
+  const diagramType =
+    flags.type === "sequenceDiagram" || flags.type === "flowchart" ? flags.type : "classDiagram";
   const db = new Database(dbPath);
   const symbolRepo = createSymbolRepository(db);
   const relRepo = createRelationshipRepository(db);
   const allSymbols = symbolRepo.findAll();
   const allRels = relationshipRowsToSymbolRelationships(relRepo.findAll());
-  const diagram = generateMermaid(
-    { symbols: symbolNames, type: diagramType },
-    allSymbols,
-    allRels,
-  );
+  const diagram = generateMermaid({ symbols: symbolNames, type: diagramType }, allSymbols, allRels);
   db.close();
   console.log("```mermaid");
   console.log(diagram);
@@ -1227,10 +1314,14 @@ async function runScanFile(args: string[]) {
   });
   db.close();
   if (createdCount === 0) {
-    console.log(`No new symbols to document in ${filePathParam}. All symbols are already documented.`);
+    console.log(
+      `No new symbols to document in ${filePathParam}. All symbols are already documented.`,
+    );
     return;
   }
-  console.log(`Created documentation for ${createdCount} symbols:\n${createdSymbols.map((s) => `- ${s}`).join("\n")}`);
+  console.log(
+    `Created documentation for ${createdCount} symbols:\n${createdSymbols.map((s) => `- ${s}`).join("\n")}`,
+  );
 }
 
 /* ================== impact-analysis (server: impactAnalysis) ================== */
@@ -1391,7 +1482,7 @@ async function runAskKnowledgeBase(args: string[]) {
   const results = await ragIndex.search(question, 5);
   const context = results.map((r) => `${r.source}:\n${r.content}`).join("\n\n");
   const prompt = `Based on the following context, answer the question. If the context doesn't contain enough information, say so.\n\nContext:\n${context}\n\nQuestion: ${question}`;
-  const answer = await llm.chat([{ role: "user", content: prompt }]) || "No answer generated.";
+  const answer = (await llm.chat([{ role: "user", content: prompt }])) || "No answer generated.";
   db.close();
   console.log(answer);
 }
@@ -1493,7 +1584,11 @@ async function runDescribeInBusinessTerms(args: string[]) {
   const filePath = path.resolve(config.projectRoot, sym.file);
   let sourceCode = "";
   try {
-    sourceCode = fs.readFileSync(filePath, "utf-8").split("\n").slice(sym.startLine - 1, sym.endLine).join("\n");
+    sourceCode = fs
+      .readFileSync(filePath, "utf-8")
+      .split("\n")
+      .slice(sym.startLine - 1, sym.endLine)
+      .join("\n");
   } catch {
     db.close();
     console.error(`Could not read source for: ${sym.file}`);
@@ -1556,7 +1651,9 @@ async function runGetRelevantContext(args: string[]) {
   const symbolName = flags.symbol || undefined;
   const filePath = flags.file || undefined;
   if (!symbolName && !filePath) {
-    console.error("Usage: docs-kit relevant-context --symbol <name> OR --file <path> [--docs dir] [--db path]");
+    console.error(
+      "Usage: docs-kit relevant-context --symbol <name> OR --file <path> [--docs dir] [--db path]",
+    );
     process.exit(1);
   }
   const configDir = process.cwd();

@@ -51,7 +51,9 @@ CREATE TABLE IF NOT EXISTS symbols (
   generated         INTEGER,
   source            TEXT,
   last_modified     TEXT,
-  signature         TEXT
+  signature         TEXT,
+  explanation       TEXT,
+  explanation_hash  TEXT
 );
 
 CREATE TABLE IF NOT EXISTS relationships (
@@ -118,6 +120,12 @@ export function initializeSchema(db: Database.Database): void {
     if (!info.some((r) => r.name === "doc_comment")) {
       db.prepare("ALTER TABLE symbols ADD COLUMN doc_comment TEXT").run();
     }
+    if (!info.some((r) => r.name === "explanation")) {
+      db.prepare("ALTER TABLE symbols ADD COLUMN explanation TEXT").run();
+    }
+    if (!info.some((r) => r.name === "explanation_hash")) {
+      db.prepare("ALTER TABLE symbols ADD COLUMN explanation_hash TEXT").run();
+    }
   } catch {
     // Table may not exist yet (fresh DB)
   }
@@ -170,6 +178,8 @@ interface SymbolRow {
   source: string | null;
   last_modified: string | null;
   signature: string | null;
+  explanation: string | null;
+  explanation_hash: string | null;
 }
 
 function parseJsonArray(value: string | null): string[] | undefined {
@@ -215,6 +225,8 @@ function rowToSymbol(row: SymbolRow): CodeSymbol {
     source: (row.source as CodeSymbol["source"]) ?? undefined,
     lastModified: row.last_modified ? new Date(row.last_modified) : undefined,
     signature: row.signature ?? undefined,
+    explanation: row.explanation ?? undefined,
+    explanationHash: row.explanation_hash ?? undefined,
   };
 }
 
@@ -225,13 +237,13 @@ export function createSymbolRepository(db: Database.Database): SymbolRepository 
       visibility, exported, language, doc_ref, summary, doc_comment, tags, domain, bounded_context,
       sym_extends, sym_implements, uses_traits, sym_references, referenced_by, layer, metrics,
       pattern, violations, deprecated, since, stability, generated, source,
-      last_modified, signature
+      last_modified, signature, explanation, explanation_hash
     ) VALUES (
       @id, @name, @qualified_name, @kind, @file, @start_line, @end_line, @parent,
       @visibility, @exported, @language, @doc_ref, @summary, @doc_comment, @tags, @domain, @bounded_context,
       @sym_extends, @sym_implements, @uses_traits, @sym_references, @referenced_by, @layer, @metrics,
       @pattern, @violations, @deprecated, @since, @stability, @generated, @source,
-      @last_modified, @signature
+      @last_modified, @signature, @explanation, @explanation_hash
     )
   `);
 
@@ -284,6 +296,8 @@ export function createSymbolRepository(db: Database.Database): SymbolRepository 
         source: symbol.source ?? null,
         last_modified: symbol.lastModified?.toISOString() ?? null,
         signature: symbol.signature ?? null,
+        explanation: symbol.explanation ?? null,
+        explanation_hash: symbol.explanationHash ?? null,
       });
     },
 
@@ -337,7 +351,9 @@ export interface FileHashRepository {
 }
 
 export function createFileHashRepository(db: Database.Database): FileHashRepository {
-  const getStmt = db.prepare("SELECT content_hash, last_indexed_at FROM file_hashes WHERE file_path = ?");
+  const getStmt = db.prepare(
+    "SELECT content_hash, last_indexed_at FROM file_hashes WHERE file_path = ?",
+  );
   const upsertStmt = db.prepare(
     "INSERT OR REPLACE INTO file_hashes (file_path, content_hash, last_indexed_at) VALUES (?, ?, datetime('now'))",
   );
@@ -347,8 +363,12 @@ export function createFileHashRepository(db: Database.Database): FileHashReposit
 
   return {
     get(filePath) {
-      const row = getStmt.get(filePath) as { content_hash: string; last_indexed_at: string } | undefined;
-      return row ? { contentHash: row.content_hash, lastIndexedAt: row.last_indexed_at } : undefined;
+      const row = getStmt.get(filePath) as
+        | { content_hash: string; last_indexed_at: string }
+        | undefined;
+      return row
+        ? { contentHash: row.content_hash, lastIndexedAt: row.last_indexed_at }
+        : undefined;
     },
     upsert(filePath, contentHash) {
       upsertStmt.run(filePath, contentHash);
@@ -375,7 +395,9 @@ export interface RelationshipRow {
 }
 
 /** Map storage RelationshipRow to SymbolRelationship for analyzers and generators. */
-export function relationshipRowsToSymbolRelationships(rows: RelationshipRow[]): SymbolRelationship[] {
+export function relationshipRowsToSymbolRelationships(
+  rows: RelationshipRow[],
+): SymbolRelationship[] {
   return rows.map((r) => ({
     sourceId: r.source_id,
     targetId: r.target_id,

@@ -1,10 +1,10 @@
-import type { Config } from "../../config.js";
+import type { ResolvedConfig } from "../../configLoader.js";
 import type { LlmProvider } from "../provider.js";
 
 export class GeminiProvider implements LlmProvider {
   private apiKey: string;
 
-  constructor(private config: Config) {
+  constructor(private config: ResolvedConfig) {
     this.apiKey = this.config.llm.apiKey || process.env.GEMINI_API_KEY!;
     if (!this.apiKey) throw new Error("Gemini API key not configured. Set GEMINI_API_KEY.");
   }

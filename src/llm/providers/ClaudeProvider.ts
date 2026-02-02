@@ -1,4 +1,4 @@
-import type { Config } from "../../config.js";
+import type { ResolvedConfig } from "../../configLoader.js";
 import type { LlmProvider } from "../provider.js";
 import Anthropic from "@anthropic-ai/sdk";
 
@@ -8,7 +8,7 @@ export class ClaudeProvider implements LlmProvider {
   private client: AnthropicClient | undefined;
 
   constructor(
-    private config: Config,
+    private config: ResolvedConfig,
     client?: AnthropicClient,
   ) {
     if (client) this.client = client;

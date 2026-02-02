@@ -4,7 +4,7 @@ import { ChangeImpact } from "../indexer/symbol.types.js";
 import { DocRegistry } from "./docRegistry.js";
 import { updateFrontmatter } from "./frontmatter.js";
 import { buildUpdateSectionPrompt } from "../prompts/updateSection.prompt.js";
-import { Config } from "../config.js";
+import { ResolvedConfig } from "../configLoader.js";
 import type { LlmProvider } from "../llm/provider.js";
 
 export interface MarkdownSection {
@@ -28,7 +28,7 @@ export interface DocUpdater {
     impacts: ChangeImpact[],
     registry: DocRegistry,
     docsDir: string,
-    config: Config,
+    config: ResolvedConfig,
   ): Promise<UpdateResult[]>;
 }
 
@@ -102,7 +102,7 @@ export function updateSection(
   sections: MarkdownSection[],
   symbolName: string,
   impact: ChangeImpact,
-  config: Config,
+  config: ResolvedConfig,
   llm?: LlmProvider,
 ): Promise<{ result: string; heading?: string }> {
   return updateSectionAsync(markdown, sections, symbolName, impact, config, llm);
@@ -113,7 +113,7 @@ async function updateSectionAsync(
   sections: MarkdownSection[],
   symbolName: string,
   impact: ChangeImpact,
-  config: Config,
+  config: ResolvedConfig,
   llm?: LlmProvider,
 ): Promise<{ result: string; heading?: string }> {
   const section = findSection(sections, symbolName);
@@ -159,7 +159,7 @@ export function createDocUpdater(options?: { dryRun?: boolean; llm?: LlmProvider
       impacts: ChangeImpact[],
       registry: DocRegistry,
       docsDir: string,
-      config: Config,
+      config: ResolvedConfig,
     ): Promise<UpdateResult[]> {
       const results: UpdateResult[] = [];
 

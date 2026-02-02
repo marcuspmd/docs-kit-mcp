@@ -125,6 +125,9 @@ export const CodeSymbolSchema = z
 
     lastModified: z.date().optional(),
     signature: z.string().optional(),
+
+    explanation: z.string().optional(),
+    explanationHash: z.string().optional(),
   })
   .refine((s) => s.endLine >= s.startLine, {
     message: "endLine must be greater than or equal to startLine",

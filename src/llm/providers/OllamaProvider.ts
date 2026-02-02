@@ -1,10 +1,10 @@
-import type { Config } from "../../config.js";
+import type { ResolvedConfig } from "../../configLoader.js";
 import type { LlmProvider } from "../provider.js";
 
 export class OllamaProvider implements LlmProvider {
   private baseUrl: string;
 
-  constructor(private config: Config) {
+  constructor(private config: ResolvedConfig) {
     this.baseUrl = this.config.llm.baseUrl ?? "http://localhost:11434";
   }
 

@@ -1,4 +1,4 @@
-import type { Config } from "../config.js";
+import type { ResolvedConfig } from "../configLoader.js";
 import { OpenAiProvider } from "./providers/OpenAiProvider.js";
 import { OllamaProvider } from "./providers/OllamaProvider.js";
 import { GeminiProvider } from "./providers/GeminiProvider.js";
@@ -14,7 +14,7 @@ export interface LlmProvider {
 
 /* ── Factory ────────────────────────────────────────── */
 
-export function createLlmProvider(config: Config): LlmProvider {
+export function createLlmProvider(config: ResolvedConfig): LlmProvider {
   switch (config.llm.provider) {
     case "openai":
       return new OpenAiProvider(config);

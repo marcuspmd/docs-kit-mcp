@@ -175,6 +175,7 @@ interface SymbolRow {
   layer: string | null;
   deprecated: number | null;
   violations: string | null;
+  explanation: string | null;
 }
 
 function parseJsonArray(value: string | null): string[] | undefined {
@@ -203,6 +204,7 @@ function rowToSymbol(row: SymbolRow): CodeSymbol {
     layer: (row.layer as CodeSymbol["layer"]) ?? undefined,
     deprecated: row.deprecated !== null ? row.deprecated === 1 : undefined,
     violations: parseJsonArray(row.violations),
+    explanation: row.explanation ?? undefined,
   };
 }
 

@@ -159,6 +159,23 @@ export function renderSymbolPage(
         }
 
         ${
+          symbol.explanation
+            ? `
+        <div class="prose prose-sm dark:prose-invert max-w-none">
+          <div class="bg-blue-50 dark:bg-blue-900/20 border border-blue-200 dark:border-blue-800 rounded-lg p-4">
+            <h3 class="text-sm font-medium text-blue-900 dark:text-blue-300 mb-2 flex items-center">
+              <svg class="h-5 w-5 mr-2" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+              </svg>
+              AI Generated Explanation
+            </h3>
+            <div class="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">${escapeHtml(symbol.explanation)}</div>
+          </div>
+        </div>`
+            : ""
+        }
+
+        ${
           symbol.violations?.length
             ? `
         <div>

@@ -104,7 +104,12 @@ export const ConfigSchema = z.object({
   llm: z
     .object({
       provider: z.enum(["openai", "ollama", "gemini", "claude"]).default("openai"),
-      apiKey: z.string().optional(),
+      apiKey: z
+        .union([
+          z.string(), // Direct API key (not recommended for production)
+          z.object({ env: z.string() }), // Reference to environment variable
+        ])
+        .optional(),
       model: z.string().default("gpt-4"),
       embeddingModel: z.string().optional(),
       baseUrl: z.string().optional(),

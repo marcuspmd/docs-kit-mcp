@@ -1,4 +1,4 @@
-import type { Config } from "../../config.js";
+import type { ResolvedConfig } from "../../configLoader.js";
 import type { LlmProvider } from "../provider.js";
 import OpenAI from "openai";
 
@@ -8,7 +8,7 @@ export class OpenAiProvider implements LlmProvider {
   private client: OpenAIClient | undefined;
 
   constructor(
-    private config: Config,
+    private config: ResolvedConfig,
     client?: OpenAIClient,
   ) {
     if (client) this.client = client;
@@ -26,15 +26,33 @@ export class OpenAiProvider implements LlmProvider {
     opts?: { maxTokens?: number; temperature?: number },
   ): Promise<string> {
     const client = this.getClient();
-    const res = await client.chat.completions.create({
+    const maxTokensValue = opts?.maxTokens ?? this.config.llm.maxTokens;
+
+    // GPT-5 and newer models have different parameter requirements
+    const isGpt5OrNewer =
+      this.config.llm.model.startsWith("gpt-5") ||
+      this.config.llm.model.startsWith("o1") ||
+      this.config.llm.model.startsWith("o3");
+
+    const baseParams = {
       model: this.config.llm.model,
       messages: messages.map((m) => ({
         role: m.role as "user" | "assistant" | "system",
         content: m.content,
       })),
-      max_tokens: opts?.maxTokens ?? this.config.llm.maxTokens,
-      temperature: opts?.temperature ?? this.config.llm.temperature,
-    });
+    };
+
+    // GPT-5+ only accepts temperature=1 (default), so we omit it
+    // Older models can use custom temperature values
+    const requestParams = isGpt5OrNewer
+      ? { ...baseParams, max_completion_tokens: maxTokensValue }
+      : {
+          ...baseParams,
+          max_tokens: maxTokensValue,
+          temperature: opts?.temperature ?? this.config.llm.temperature,
+        };
+
+    const res = await client.chat.completions.create(requestParams);
     return res.choices[0]?.message?.content?.trim() ?? "";
   }
 

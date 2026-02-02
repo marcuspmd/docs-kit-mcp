@@ -1,4 +1,4 @@
-import type { Config } from "../config.js";
+import type { ResolvedConfig } from "../configLoader.js";
 import type { LlmProvider } from "../llm/provider.js";
 
 /**
@@ -14,7 +14,7 @@ export interface UpdateSectionPromptInput {
 
 export async function buildUpdateSectionPrompt(
   input: UpdateSectionPromptInput,
-  config: Config,
+  config: ResolvedConfig,
   llm?: LlmProvider,
 ): Promise<string> {
   if (!llm) {

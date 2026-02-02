@@ -37,11 +37,18 @@ export default {
     lcovPath: "./coverage/lcov.info",
     enabled: true,
   },
+  // llm: {
+  //   provider: "ollama",
+  //   model: "qwen2.5:3b",
+  //   embeddingModel: "nomic-embed-text:latest",
+  //   baseUrl: "http://localhost:11434",
+  // },
+  // To use OpenAI instead, uncomment below and set your .env file:
   llm: {
-    provider: "ollama",
-    model: "qwen2.5:3b",
-    embeddingModel: "nomic-embed-text:latest",
-    baseUrl: "http://localhost:11434",
+    provider: "openai",
+    apiKey: { env: "OPENAI_API_KEY" }, // References .env
+    model: "gpt-5",
+    embeddingModel: "text-embedding-ada-002",
   },
   docs: [
     {

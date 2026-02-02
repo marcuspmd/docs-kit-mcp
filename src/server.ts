@@ -14,10 +14,7 @@ import {
   relationshipRowsToSymbolRelationships,
 } from "./storage/db.js";
 import { createPatternAnalyzer } from "./patterns/patternAnalyzer.js";
-import {
-  createEventFlowAnalyzer,
-  formatEventFlowsAsMermaid,
-} from "./events/eventFlowAnalyzer.js";
+import { createEventFlowAnalyzer, formatEventFlowsAsMermaid } from "./events/eventFlowAnalyzer.js";
 import { createRagIndex } from "./knowledge/rag.js";
 import { createArchGuard } from "./governance/archGuard.js";
 import { createReaper } from "./governance/reaper.js";
@@ -35,6 +32,8 @@ import { indexFile } from "./indexer/indexer.js";
 import * as fs from "node:fs";
 import * as path from "node:path";
 import { buildExplainSymbolContext } from "./handlers/explainSymbol.js";
+import { generateExplanationHash } from "./handlers/explainSymbol.js";
+import { buildExplainSymbolPromptForMcp } from "./prompts/explainSymbol.prompt.js";
 import { buildImpactAnalysisPrompt } from "./prompts/impactAnalysis.prompt.js";
 import { buildSmartCodeReviewPrompt } from "./prompts/smartCodeReview.prompt.js";
 import { buildCodeReviewPrompt } from "./prompts/codeReview.prompt.js";
@@ -137,7 +136,8 @@ server.registerTool(
 server.registerTool(
   "explainSymbol",
   {
-    description: "Explain a code symbol combining code analysis and existing docs",
+    description:
+      "Get the prompt to explain a code symbol. The AI should analyze the prompt and call updateSymbolExplanation with the result.",
     inputSchema: {
       symbol: z.string().describe("Symbol name (e.g. OrderService.createOrder)"),
       docsDir: z.string().default("docs").describe("Docs directory"),
@@ -153,6 +153,7 @@ server.registerTool(
         symbolRepo,
         graph,
       });
+
       if (!result.found) {
         return {
           content: [
@@ -164,11 +165,120 @@ server.registerTool(
         };
       }
 
-      // Call LLM to generate explanation
-      const explanation = await llm.chat([{ role: "user", content: result.prompt }]) || "No explanation generated.";
+      // Return cached explanation if available and valid
+      if (result.cachedExplanation && !result.needsUpdate) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `## Cached Explanation (still valid)\n\n${result.cachedExplanation}`,
+            },
+          ],
+        };
+      }
+
+      // Build prompt with instruction to call updateSymbolExplanation
+      const symbols = symbolRepo.findByName(symbolName);
+      const sym = symbols[0];
+
+      if (!sym) {
+        return {
+          content: [{ type: "text" as const, text: result.prompt }],
+        };
+      }
+
+      // Get dependencies for the prompt
+      let sourceCode: string | undefined;
+      try {
+        const filePath = path.resolve(config.projectRoot, sym.file);
+        const fullSource = fs.readFileSync(filePath, "utf-8");
+        const lines = fullSource.split("\n").slice(sym.startLine - 1, sym.endLine);
+        sourceCode = lines.join("\n");
+      } catch {
+        /* skip */
+      }
+
+      const depRels = graph.getDependencies(sym.id);
+      const dependencies = symbolRepo.findByIds(depRels.map((r) => r.targetId));
+      const depByRels = graph.getDependents(sym.id);
+      const dependents = symbolRepo.findByIds(depByRels.map((r) => r.sourceId));
+
+      // Build prompt for MCP with update instructions
+      const prompt = buildExplainSymbolPromptForMcp(
+        {
+          symbol: sym,
+          sourceCode,
+          dependencies,
+          dependents,
+        },
+        result.cachedExplanation,
+      );
 
       return {
-        content: [{ type: "text" as const, text: explanation }],
+        content: [{ type: "text" as const, text: prompt }],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }],
+        isError: true,
+      };
+    }
+  },
+);
+
+server.registerTool(
+  "updateSymbolExplanation",
+  {
+    description:
+      "Update the cached explanation for a symbol. Call this after generating an explanation via explainSymbol.",
+    inputSchema: {
+      symbol: z.string().describe("Symbol name (e.g. OrderService.createOrder)"),
+      explanation: z.string().describe("The generated explanation to cache"),
+    },
+  },
+  async ({ symbol: symbolName, explanation }) => {
+    try {
+      const symbols = symbolRepo.findByName(symbolName);
+      if (symbols.length === 0) {
+        return {
+          content: [
+            {
+              type: "text" as const,
+              text: `Symbol not found: ${symbolName}`,
+            },
+          ],
+        };
+      }
+
+      const sym = symbols[0];
+
+      // Generate hash for the current state
+      let sourceCode: string | undefined;
+      try {
+        const filePath = path.resolve(config.projectRoot, sym.file);
+        const fullSource = fs.readFileSync(filePath, "utf-8");
+        const lines = fullSource.split("\n").slice(sym.startLine - 1, sym.endLine);
+        sourceCode = lines.join("\n");
+      } catch {
+        /* skip */
+      }
+
+      const hash = generateExplanationHash(sym.id, sym.startLine, sym.endLine, sourceCode);
+
+      // Update symbol with explanation
+      symbolRepo.upsert({
+        ...sym,
+        explanation,
+        explanationHash: hash,
+      });
+
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `✓ Explanation cached for ${symbolName}`,
+          },
+        ],
       };
     } catch (err) {
       return {
@@ -376,28 +486,32 @@ server.registerTool(
   },
 );
 
-server.registerTool("generateEventFlow", { description: "Simulate event flows and listeners" }, async () => {
-  try {
-    const allSymbols = symbolRepo.findAll();
-    const allRels = relationshipRowsToSymbolRelationships(relRepo.findAll());
-    const flows = eventFlowAnalyzer.analyze(allSymbols, allRels);
-    const diagram = formatEventFlowsAsMermaid(flows);
+server.registerTool(
+  "generateEventFlow",
+  { description: "Simulate event flows and listeners" },
+  async () => {
+    try {
+      const allSymbols = symbolRepo.findAll();
+      const allRels = relationshipRowsToSymbolRelationships(relRepo.findAll());
+      const flows = eventFlowAnalyzer.analyze(allSymbols, allRels);
+      const diagram = formatEventFlowsAsMermaid(flows);
 
-    return {
-      content: [
-        {
-          type: "text" as const,
-          text: `\`\`\`mermaid\n${diagram}\n\`\`\``,
-        },
-      ],
-    };
-  } catch (err) {
-    return {
-      content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }],
-      isError: true,
-    };
-  }
-});
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: `\`\`\`mermaid\n${diagram}\n\`\`\``,
+          },
+        ],
+      };
+    } catch (err) {
+      return {
+        content: [{ type: "text" as const, text: `Error: ${(err as Error).message}` }],
+        isError: true,
+      };
+    }
+  },
+);
 
 server.registerTool(
   "createOnboarding",
@@ -458,7 +572,8 @@ server.registerTool(
 
       const prompt = `Based on the following context, answer the question. If the context doesn't contain enough information, say so.\n\nContext:\n${context}\n\nQuestion: ${question}`;
 
-      const answer = await llm.chat([{ role: "user", content: prompt }]) || "No answer generated.";
+      const answer =
+        (await llm.chat([{ role: "user", content: prompt }])) || "No answer generated.";
 
       return {
         content: [
@@ -559,7 +674,8 @@ server.registerTool(
 server.registerTool(
   "describeInBusinessTerms",
   {
-    description: "Describe a code symbol in business terms (rules, if/else, outcomes) for product/compliance",
+    description:
+      "Describe a code symbol in business terms (rules, if/else, outcomes) for product/compliance",
     inputSchema: {
       symbol: z.string().describe("Symbol name (e.g. OrderService.createOrder)"),
       docsDir: z.string().default("docs").describe("Docs directory for existing doc context"),
@@ -595,7 +711,9 @@ server.registerTool(
         try {
           existingContext = await readFile(path.join(docsDir, m.docPath), "utf-8");
           break;
-        } catch { /* skip */ }
+        } catch {
+          /* skip */
+        }
       }
       const description = await businessTranslator.describeInBusinessTerms(
         { name: sym.name, kind: sym.kind },
@@ -662,7 +780,8 @@ server.registerTool(
 server.registerTool(
   "smartCodeReview",
   {
-    description: "Perform comprehensive code review combining architecture analysis, pattern detection, dead code scanning, and documentation validation",
+    description:
+      "Perform comprehensive code review combining architecture analysis, pattern detection, dead code scanning, and documentation validation",
     inputSchema: {
       docsDir: z.string().default("docs").describe("Docs directory"),
       includeExamples: z.boolean().default(true).describe("Include code example validation"),
@@ -709,7 +828,8 @@ server.registerTool(
 server.registerTool(
   "projectStatus",
   {
-    description: "Generate comprehensive project status report with documentation coverage, patterns, and metrics",
+    description:
+      "Generate comprehensive project status report with documentation coverage, patterns, and metrics",
     inputSchema: {
       docsDir: z.string().default("docs").describe("Docs directory"),
     },
@@ -754,7 +874,8 @@ server.registerTool(
 server.registerTool(
   "getRelevantContext",
   {
-    description: "Get comprehensive context for understanding or modifying a symbol or file — combines index, graph, docs, and source code",
+    description:
+      "Get comprehensive context for understanding or modifying a symbol or file — combines index, graph, docs, and source code",
     inputSchema: {
       symbol: z.string().optional().describe("Symbol name to get context for"),
       file: z.string().optional().describe("File path to get context for"),

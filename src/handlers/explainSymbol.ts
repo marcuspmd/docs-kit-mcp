@@ -1,5 +1,6 @@
 import { readFile } from "node:fs/promises";
 import { join, resolve } from "node:path";
+import { createHash } from "node:crypto";
 import type { DocRegistry } from "../docs/docRegistry.js";
 import type { KnowledgeGraph } from "../knowledge/graph.js";
 import type { SymbolRepository } from "../storage/db.js";
@@ -17,6 +18,22 @@ export interface ExplainSymbolDeps {
 export interface ExplainSymbolResult {
   prompt: string;
   found: boolean;
+  cachedExplanation?: string;
+  needsUpdate: boolean;
+}
+
+/**
+ * Generate a hash for the current state of a symbol to detect changes.
+ * This hash is based on the symbol's source code location and content.
+ */
+export function generateExplanationHash(
+  symbolId: string,
+  startLine: number,
+  endLine: number,
+  sourceCode?: string,
+): string {
+  const content = `${symbolId}:${startLine}:${endLine}:${sourceCode || ""}`;
+  return createHash("sha256").update(content).digest("hex").slice(0, 16);
 }
 
 /**
@@ -32,7 +49,7 @@ export async function buildExplainSymbolContext(
   const mappings = await registry.findDocBySymbol(symbolName);
 
   if (symbols.length === 0 && mappings.length === 0) {
-    return { prompt: "", found: false };
+    return { prompt: "", found: false, needsUpdate: false };
   }
 
   let docContent: string | undefined;
@@ -64,6 +81,18 @@ export async function buildExplainSymbolContext(
     dependencies = symbolRepo.findByIds(depRels.map((r) => r.targetId));
     const depByRels = graph.getDependents(sym.id);
     dependents = symbolRepo.findByIds(depByRels.map((r) => r.sourceId));
+
+    // Check if we have a cached explanation and if it's still valid
+    const currentHash = generateExplanationHash(sym.id, sym.startLine, sym.endLine, sourceCode);
+    if (sym.explanation && sym.explanationHash === currentHash) {
+      // Cache is valid, return it
+      return {
+        prompt: "",
+        found: true,
+        cachedExplanation: sym.explanation,
+        needsUpdate: false,
+      };
+    }
   }
 
   const symbol = sym ?? createStubCodeSymbol(symbolName);
@@ -75,5 +104,5 @@ export async function buildExplainSymbolContext(
     dependents,
   });
 
-  return { prompt, found: true };
+  return { prompt, found: true, needsUpdate: true };
 }

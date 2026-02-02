@@ -1,5 +1,22 @@
 /** @type {import('docs-kit').Config} */
 export default {
+  // LLM Configuration
+  // RECOMMENDED: Reference environment variables from .env for security
+  llm: {
+    provider: "openai",
+    apiKey: { env: "OPENAI_API_KEY" }, // References OPENAI_API_KEY from .env
+    model: "gpt-4",
+    embeddingModel: "text-embedding-ada-002",
+    maxTokens: 2000,
+    temperature: 0.7,
+  },
+  // Alternative (NOT RECOMMENDED): Direct API key
+  // llm: {
+  //   provider: "openai",
+  //   apiKey: "sk-...", // Never commit this to version control!
+  //   model: "gpt-4",
+  // },
+
   include: [
     "**/*.ts",
     "**/*.tsx",

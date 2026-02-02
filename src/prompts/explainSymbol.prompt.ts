@@ -61,3 +61,32 @@ export function buildExplainSymbolPrompt(input: ExplainSymbolInput): string {
 
   return parts.join("\n");
 }
+
+/**
+ * Build the prompt for MCP with instructions to update the explanation cache.
+ */
+export function buildExplainSymbolPromptForMcp(
+  input: ExplainSymbolInput,
+  cachedExplanation?: string,
+): string {
+  const basePrompt = buildExplainSymbolPrompt(input);
+
+  if (cachedExplanation) {
+    return `${basePrompt}
+
+## Cached Explanation
+The following explanation is cached. If the symbol has changed, provide a fresh explanation:
+
+${cachedExplanation}
+
+---
+
+**Important**: After providing your explanation, you MUST call the docs-kit 'updateSymbolExplanation' tool to update the cache with your response. Pass the symbol name and your explanation to that tool.`;
+  }
+
+  return `${basePrompt}
+
+---
+
+**Important**: After providing your explanation, you MUST call the docs-kit 'updateSymbolExplanation' tool to cache your response for future use. Pass the symbol name and your explanation to that tool.`;
+}
