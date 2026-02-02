@@ -415,7 +415,12 @@ describe("ArchGuard", () => {
 
       const symbols = [
         sym({ id: "a", name: "badClass", kind: "class", file: "src/domain/Foo.php" }),
-        sym({ id: "b", name: "TestCase", kind: "class", file: "0.Presentation/auth/tests/TestCase.php" }),
+        sym({
+          id: "b",
+          name: "TestCase",
+          kind: "class",
+          file: "0.Presentation/auth/tests/TestCase.php",
+        }),
         sym({ id: "c", name: "OtherTest", kind: "class", file: "tests/unit/OtherTest.php" }),
       ];
 
@@ -428,13 +433,23 @@ describe("ArchGuard", () => {
   describe("max_complexity", () => {
     it("flags symbols exceeding cyclomatic complexity", () => {
       const guard = createArchGuard();
-      guard.setRules([
-        { name: "max-cc", type: "max_complexity", config: { max: 5 } },
-      ]);
+      guard.setRules([{ name: "max-cc", type: "max_complexity", config: { max: 5 } }]);
 
       const symbols = [
-        sym({ id: "a", name: "simple", kind: "function", file: "src/a.ts", metrics: { cyclomaticComplexity: 3 } }),
-        sym({ id: "b", name: "complex", kind: "function", file: "src/b.ts", metrics: { cyclomaticComplexity: 8 } }),
+        sym({
+          id: "a",
+          name: "simple",
+          kind: "function",
+          file: "src/a.ts",
+          metrics: { cyclomaticComplexity: 3 },
+        }),
+        sym({
+          id: "b",
+          name: "complex",
+          kind: "function",
+          file: "src/b.ts",
+          metrics: { cyclomaticComplexity: 8 },
+        }),
       ];
 
       const violations = guard.analyze(symbols, []);
@@ -448,13 +463,23 @@ describe("ArchGuard", () => {
   describe("max_parameters", () => {
     it("flags symbols exceeding parameter count", () => {
       const guard = createArchGuard();
-      guard.setRules([
-        { name: "max-params", type: "max_parameters", config: { max: 3 } },
-      ]);
+      guard.setRules([{ name: "max-params", type: "max_parameters", config: { max: 3 } }]);
 
       const symbols = [
-        sym({ id: "a", name: "few", kind: "function", file: "src/a.ts", metrics: { parameterCount: 2 } }),
-        sym({ id: "b", name: "many", kind: "function", file: "src/b.ts", metrics: { parameterCount: 6 } }),
+        sym({
+          id: "a",
+          name: "few",
+          kind: "function",
+          file: "src/a.ts",
+          metrics: { parameterCount: 2 },
+        }),
+        sym({
+          id: "b",
+          name: "many",
+          kind: "function",
+          file: "src/b.ts",
+          metrics: { parameterCount: 6 },
+        }),
       ];
 
       const violations = guard.analyze(symbols, []);
@@ -467,13 +492,25 @@ describe("ArchGuard", () => {
   describe("max_lines", () => {
     it("flags symbols exceeding line count", () => {
       const guard = createArchGuard();
-      guard.setRules([
-        { name: "max-lines", type: "max_lines", config: { max: 20 } },
-      ]);
+      guard.setRules([{ name: "max-lines", type: "max_lines", config: { max: 20 } }]);
 
       const symbols = [
-        sym({ id: "a", name: "short", kind: "function", file: "src/a.ts", startLine: 1, endLine: 10 }),
-        sym({ id: "b", name: "long", kind: "function", file: "src/b.ts", startLine: 1, endLine: 50 }),
+        sym({
+          id: "a",
+          name: "short",
+          kind: "function",
+          file: "src/a.ts",
+          startLine: 1,
+          endLine: 10,
+        }),
+        sym({
+          id: "b",
+          name: "long",
+          kind: "function",
+          file: "src/b.ts",
+          startLine: 1,
+          endLine: 50,
+        }),
       ];
 
       const violations = guard.analyze(symbols, []);
@@ -486,12 +523,16 @@ describe("ArchGuard", () => {
   describe("missing_return_type", () => {
     it("flags methods/functions without declared return type", () => {
       const guard = createArchGuard();
-      guard.setRules([
-        { name: "require-return", type: "missing_return_type", config: {} },
-      ]);
+      guard.setRules([{ name: "require-return", type: "missing_return_type", config: {} }]);
 
       const symbols = [
-        sym({ id: "a", name: "typed", kind: "function", file: "src/a.ts", signature: "foo(): number" }),
+        sym({
+          id: "a",
+          name: "typed",
+          kind: "function",
+          file: "src/a.ts",
+          signature: "foo(): number",
+        }),
         sym({ id: "b", name: "untyped", kind: "function", file: "src/b.ts", signature: "bar()" }),
       ];
 
@@ -502,8 +543,8 @@ describe("ArchGuard", () => {
     });
   });
 
-  describe("loadRules", () => {
-    it("loads rules from JSON config file", async () => {
+  describe("setRules", () => {
+    it("sets rules and analyzes violations", async () => {
       const tmpFile = join(tmpdir(), `arch-guard-test-${Date.now()}.json`);
       await writeFile(
         tmpFile,
@@ -514,7 +555,10 @@ describe("ArchGuard", () => {
 
       try {
         const guard = createArchGuard();
-        await guard.loadRules(tmpFile);
+        const rules = [
+          { name: "test-rule", type: "naming_convention" as const, config: { pattern: "^[A-Z]" } },
+        ];
+        guard.setRules(rules);
 
         const violations = guard.analyze(
           [sym({ id: "a", name: "lowercase", file: "src/a.ts" })],
@@ -531,7 +575,9 @@ describe("ArchGuard", () => {
   describe("archGuardBase", () => {
     it("buildArchGuardBaseRules includes PHP __construct in allowNames for method rule", () => {
       const rules = buildArchGuardBaseRules({ languages: ["php"], namingConvention: true });
-      const methodRule = rules.find((r) => r.type === "naming_convention" && r.config.kind === "method");
+      const methodRule = rules.find(
+        (r) => r.type === "naming_convention" && r.config.kind === "method",
+      );
       expect(methodRule).toBeDefined();
       const allowNames = methodRule!.config.allowNames as string[] | undefined;
       expect(allowNames).toContain("__construct");

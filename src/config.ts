@@ -1,5 +1,21 @@
 import { z } from "zod";
 
+const ArchRuleSchema = z.object({
+  name: z.string(),
+  description: z.string().optional(),
+  type: z.enum([
+    "layer_boundary",
+    "forbidden_import",
+    "naming_convention",
+    "max_complexity",
+    "max_parameters",
+    "max_lines",
+    "missing_return_type",
+  ]),
+  severity: z.enum(["error", "warning"]).optional(),
+  config: z.record(z.unknown()),
+});
+
 const PromptRuleSchema = z
   .object({
     name: z.string(),
@@ -117,10 +133,17 @@ export const ConfigSchema = z.object({
       temperature: z.number().default(0.7),
     })
     .default({}),
+
+  archGuard: z
+    .object({
+      rules: z.array(ArchRuleSchema).default([]),
+    })
+    .optional(),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;
 export type PromptRule = z.infer<typeof PromptRuleSchema>;
+export type ArchRule = z.infer<typeof ArchRuleSchema>;
 
 export function resolvePrompts(
   config: Config,

@@ -163,9 +163,31 @@ export default {
     provider: "openai",
     model: "gpt-4-turbo",
     embeddingModel: "text-embedding-ada-002"
+  },
+  // Regras de governança arquitetural
+  archGuard: {
+    rules: [
+      {
+        name: "max-complexity",
+        type: "max_complexity",
+        severity: "warning",
+        config: { threshold: 10, kinds: ["function", "method"] }
+      },
+      {
+        name: "naming-convention",
+        type: "naming_convention",
+        severity: "error",
+        config: {
+          pattern: "^[A-Z][a-zA-Z0-9]*$",
+          kinds: ["class", "interface"]
+        }
+      }
+    ]
   }
 };
 ```
+
+**Dica:** Use `docs-kit init-arch-guard --lang ts` para gerar um snippet de configuração com regras padrão.
 
 ## 🔄 Workflows Comuns
 

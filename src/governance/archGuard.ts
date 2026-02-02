@@ -1,4 +1,3 @@
-import { readFile } from "node:fs/promises";
 import type { CodeSymbol, SymbolRelationship } from "../indexer/symbol.types.js";
 
 export type ArchRuleType =
@@ -27,7 +26,6 @@ export interface ArchViolation {
 }
 
 export interface ArchGuard {
-  loadRules(configPath: string): Promise<void>;
   setRules(rules: ArchRule[]): void;
   analyze(symbols: CodeSymbol[], relationships: SymbolRelationship[]): ArchViolation[];
 }
@@ -172,7 +170,8 @@ function checkNamingConvention(rule: ArchRule, symbols: CodeSymbol[]): ArchViola
     if (kind && sym.kind !== kind) continue;
     if (fileGlob && !matchGlob(fileGlob, sym.file)) continue;
     const nameToCheck = nameForNamingCheck(sym);
-    if (allowedSet.has(nameToCheck.toLowerCase()) || allowedSet.has(sym.name.toLowerCase())) continue;
+    if (allowedSet.has(nameToCheck.toLowerCase()) || allowedSet.has(sym.name.toLowerCase()))
+      continue;
     if (!pattern.test(nameToCheck)) {
       violations.push({
         rule: rule.name,
@@ -276,7 +275,7 @@ function hasReturnTypeInSignature(signature: string | undefined): boolean {
   const afterParen = signature.match(/\)\s*([::\s].*)?$/);
   if (!afterParen) return false;
   const suffix = (afterParen[1] ?? "").trim();
-  return suffix.length > 0 && !/^\s*[{\[]?\s*$/.test(suffix);
+  return suffix.length > 0 && !/^\s*[{[]?\s*$/.test(suffix);
 }
 
 function checkMissingReturnType(rule: ArchRule, symbols: CodeSymbol[]): ArchViolation[] {
@@ -312,12 +311,6 @@ export function createArchGuard(): ArchGuard {
   let rules: ArchRule[] = [];
 
   return {
-    async loadRules(configPath) {
-      const content = await readFile(configPath, "utf-8");
-      const parsed = JSON.parse(content) as { rules: ArchRule[] };
-      rules = parsed.rules;
-    },
-
     setRules(newRules) {
       rules = newRules;
     },

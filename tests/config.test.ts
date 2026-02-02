@@ -75,10 +75,91 @@ describe("ConfigSchema", () => {
   it("should use default LLM config", () => {
     const config = ConfigSchema.parse({ projectRoot: "/tmp/test" });
 
-    expect(config.llm.provider).toBe("openai");
+    expect(config.llm.provider).toBe("none");
     expect(config.llm.model).toBe("gpt-4");
     expect(config.llm.maxTokens).toBe(2000);
     expect(config.llm.temperature).toBe(0.7);
+  });
+
+  it("should parse archGuard configuration", () => {
+    const config = ConfigSchema.parse({
+      projectRoot: "/tmp/test",
+      archGuard: {
+        rules: [
+          {
+            name: "max-complexity",
+            type: "max_complexity",
+            severity: "warning",
+            config: { threshold: 10 },
+          },
+          {
+            name: "naming-convention",
+            type: "naming_convention",
+            severity: "error",
+            config: { pattern: "^[A-Z]", kinds: ["class"] },
+          },
+        ],
+      },
+    });
+
+    expect(config.archGuard).toBeDefined();
+    expect(config.archGuard?.rules).toHaveLength(2);
+    expect(config.archGuard?.rules[0].name).toBe("max-complexity");
+    expect(config.archGuard?.rules[0].type).toBe("max_complexity");
+    expect(config.archGuard?.rules[0].severity).toBe("warning");
+    expect(config.archGuard?.rules[1].type).toBe("naming_convention");
+  });
+
+  it("should accept all archGuard rule types", () => {
+    const ruleTypes = [
+      "layer_boundary",
+      "forbidden_import",
+      "naming_convention",
+      "max_complexity",
+      "max_parameters",
+      "max_lines",
+      "missing_return_type",
+    ];
+
+    ruleTypes.forEach((type) => {
+      const config = ConfigSchema.parse({
+        projectRoot: "/tmp/test",
+        archGuard: {
+          rules: [
+            {
+              name: `test-${type}`,
+              type,
+              config: {},
+            },
+          ],
+        },
+      });
+
+      expect(config.archGuard?.rules[0].type).toBe(type);
+    });
+  });
+
+  it("should reject invalid archGuard rule types", () => {
+    expect(() =>
+      ConfigSchema.parse({
+        projectRoot: "/tmp/test",
+        archGuard: {
+          rules: [
+            {
+              name: "invalid-rule",
+              type: "invalid_type",
+              config: {},
+            },
+          ],
+        },
+      }),
+    ).toThrow();
+  });
+
+  it("should make archGuard optional", () => {
+    const config = ConfigSchema.parse({ projectRoot: "/tmp/test" });
+
+    expect(config.archGuard).toBeUndefined();
   });
 });
 

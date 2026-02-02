@@ -54,6 +54,51 @@ export default {
     lcovPath: "coverage/lcov.info",
     enabled: true,
   },
+
+  // Architecture governance rules (replaces arch-guard.json)
+  archGuard: {
+    rules: [
+      {
+        name: "layer-boundary-domain-infra",
+        type: "layer_boundary",
+        severity: "error",
+        config: {
+          from: "domain",
+          to: "infrastructure",
+          message: "Domain layer cannot depend on infrastructure"
+        }
+      },
+      {
+        name: "naming-convention-classes",
+        type: "naming_convention",
+        severity: "warning",
+        config: {
+          pattern: "^[A-Z][a-zA-Z0-9]*$",
+          kinds: ["class", "interface"],
+          message: "Classes and interfaces must be PascalCase"
+        }
+      },
+      {
+        name: "max-complexity",
+        type: "max_complexity",
+        severity: "warning",
+        config: {
+          threshold: 10,
+          kinds: ["function", "method"]
+        }
+      },
+      {
+        name: "max-parameters",
+        type: "max_parameters",
+        severity: "warning",
+        config: {
+          threshold: 5,
+          kinds: ["function", "method", "constructor"]
+        }
+      }
+    ]
+  },
+
   docs: [
     {
       path: "docs/domain/arch-guard-rules.md",
@@ -61,7 +106,7 @@ export default {
       name: "arch-guard-rules",
       category: "domain",
       module: "Main",
-      symbols: ["createArchGuard", "ArchGuard", "ArchGuardRule", "ArchViolation"],
+      symbols: ["createArchGuard", "ArchGuard", "ArchRule", "ArchViolation"],
       next: "docs/domain/projectStatus.md",
       showOnMenu: true
     },
@@ -71,7 +116,7 @@ export default {
       name: "project-status",
       category: "domain",
       module: "Main",
-      symbols: ["projectStatus", "ProjectStatusReport"],
+      symbols: ["generateProjectStatus", "ProjectStatusResult"],
       previous: "docs/domain/arch-guard-rules.md",
       showOnMenu: true
     },

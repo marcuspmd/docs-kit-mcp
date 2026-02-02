@@ -202,7 +202,7 @@ Usage:
                                                         Generate learning path using RAG
   docs-kit ask-knowledge-base <question> [--docs dir] [--db path]
                                                         Q&A on code + docs (uses LLM)
-  docs-kit init-arch-guard [--lang ts|js|php|python|go] [--out path]  Generate base arch-guard.json
+  docs-kit init-arch-guard [--lang ts|js|php|python|go]              Generate archGuard config snippet
   docs-kit traceability-matrix [--docs dir] [--db path]  Requirements traceability matrix
   docs-kit describe-business <symbol> [--docs dir] [--db path]
                                                         Describe symbol in business terms
@@ -229,7 +229,7 @@ Commands:
   generate-event-flow Simulate event flows and listeners (Mermaid)
   create-onboarding  Generate learning path using RAG
   ask-knowledge-base Q&A on code + docs (LLM)
-  init-arch-guard     Generate base arch-guard.json with language-aware rules
+  init-arch-guard     Generate archGuard configuration snippet for docs.config.js
   traceability-matrix Requirements traceability matrix
   describe-business  Describe symbol in business terms
   validate-examples  Validate code examples in documentation
@@ -614,15 +614,12 @@ async function runIndex(args: string[]) {
       location: r.location,
     }));
     const archGuard = createArchGuard();
-    const archRulesPath = path.join(configDir, "arch-guard.json");
-    if (fs.existsSync(archRulesPath)) {
-      try {
-        await archGuard.loadRules(archRulesPath);
-      } catch {
-        // ignore load errors
-      }
+
+    // Load rules from config.archGuard or use defaults
+    if (config.archGuard?.rules && config.archGuard.rules.length > 0) {
+      archGuard.setRules(config.archGuard.rules);
     } else {
-      // No arch-guard.json: use default rules so violations are computed and shown on the site
+      // No rules defined: use default rules so violations are computed and shown on the site
       const { buildArchGuardBaseRules } = await import("./governance/archGuardBase.js");
       archGuard.setRules(buildArchGuardBaseRules({ languages: ["ts", "js"], metricRules: true }));
     }
@@ -1519,9 +1516,7 @@ async function runAskKnowledgeBase(args: string[]) {
 /* ================== init-arch-guard ================== */
 
 async function runInitArchGuard(args: string[]) {
-  const { flags } = parseArgs(args, { out: "arch-guard.json", lang: "ts" });
-  const configDir = process.cwd();
-  const outPath = path.isAbsolute(flags.out) ? flags.out : path.join(configDir, flags.out);
+  const { flags } = parseArgs(args, { lang: "ts" });
   const langRaw = (flags.lang || "ts").toLowerCase();
   const langMap: Record<string, "ts" | "js" | "php" | "python" | "go"> = {
     ts: "ts",
@@ -1535,10 +1530,16 @@ async function runInitArchGuard(args: string[]) {
     golang: "go",
   };
   const lang = langMap[langRaw] ?? "ts";
-  const { getDefaultArchGuardJson } = await import("./governance/archGuardBase.js");
-  const languages = lang === "ts" || lang === "js" ? (["ts", "js"] as const) : ([lang] as const);
-  const json = getDefaultArchGuardJson({
-    languages: [...languages],
+  const { buildArchGuardBaseRules } = await import("./governance/archGuardBase.js");
+  const languages = (lang === "ts" || lang === "js" ? ["ts", "js"] : [lang]) as (
+    | "ts"
+    | "js"
+    | "php"
+    | "python"
+    | "go"
+  )[];
+  const rules = buildArchGuardBaseRules({
+    languages,
     layerBoundary: true,
     forbiddenImport: true,
     namingConvention: true,
@@ -1548,8 +1549,13 @@ async function runInitArchGuard(args: string[]) {
     maxLines: 80,
     requireReturnType: false,
   });
-  fs.writeFileSync(outPath, json, "utf-8");
-  console.log(`Created ${outPath} with language-aware rules (${lang}).`);
+
+  console.log("\n// Add this to your docs.config.js:");
+  console.log("\narchGuard: {");
+  console.log("  rules: " + JSON.stringify(rules, null, 4).replace(/^/gm, "  "));
+  console.log("},\n");
+  console.log(`Generated archGuard config with language-aware rules for ${lang}.`);
+  console.log("Copy the snippet above and paste it into your docs.config.js file.");
 }
 
 /* ================== traceability-matrix (server: buildTraceabilityMatrix) ================== */

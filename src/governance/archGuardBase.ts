@@ -2,7 +2,7 @@
  * Arch-Guard base configuration and language-specific reserved/special names.
  * Use these to build naming_convention rules that allow constructor and magic
  * method names (e.g. PHP __construct, __destruct) and to generate a starter
- * arch-guard.json with init-arch-guard.
+ * archGuard config with init-arch-guard.
  */
 
 import type { ArchRule } from "./archGuard.js";
@@ -153,7 +153,7 @@ export interface ArchGuardBaseOptions {
 const DEFAULT_LANGUAGES: Language[] = ["ts", "js"];
 
 /**
- * Build default rules for arch-guard.json, including language-aware naming
+ * Build default rules for arch-guard, including language-aware naming
  * (e.g. PHP __construct allowed) and optional metric rules.
  */
 export function buildArchGuardBaseRules(options: ArchGuardBaseOptions = {}): ArchRule[] {
@@ -270,7 +270,7 @@ export function buildArchGuardBaseRules(options: ArchGuardBaseOptions = {}): Arc
   return rules;
 }
 
-/** Default arch-guard.json content as a JSON string. */
+/** Default arch-guard configuration rules. */
 export function getDefaultArchGuardJson(options: ArchGuardBaseOptions = {}): string {
   const rules = buildArchGuardBaseRules(options);
   return JSON.stringify({ rules }, null, 2);

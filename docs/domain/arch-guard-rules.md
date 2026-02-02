@@ -1,6 +1,37 @@
 # Arch-Guard: Tipos de regras e referência
 
-O Arch-Guard aplica regras de arquitetura e qualidade sobre o índice de símbolos (e relações). As regras são definidas em `arch-guard.json` na raiz do projeto. Use `docs-kit init-arch-guard --lang php` (ou `ts`, `js`, `python`, `go`) para gerar uma base com padrões corretos por linguagem (ex.: PHP `__construct` permitido em convenções de nome).
+O Arch-Guard aplica regras de arquitetura e qualidade sobre o índice de símbolos (e relações). As regras são definidas diretamente no `docs.config.js` na seção `archGuard`.
+
+### Configuração no docs.config.js
+
+```javascript
+export default {
+  // ... outras configurações
+  archGuard: {
+    rules: [
+      {
+        name: "layer-boundary-domain-infra",
+        type: "layer_boundary",
+        severity: "error",
+        config: {
+          from: "domain",
+          to: "infrastructure"
+        }
+      }
+    ]
+  }
+}
+```
+
+### Gerando configuração inicial
+
+Use o comando `init-arch-guard` para gerar um snippet de configuração com regras padrão:
+
+```bash
+docs-kit init-arch-guard --lang ts
+```
+
+Isso imprimirá um snippet de código que você pode copiar e colar no seu `docs.config.js`.
 
 ---
 
