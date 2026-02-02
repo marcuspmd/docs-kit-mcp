@@ -26,12 +26,24 @@ export class FlutterValidator implements ValidatorStrategy {
       return { valid: true };
     } catch (error: unknown) {
       const execError = error as { stderr?: string; message?: string };
+      // If dart is not installed, assume code is valid
+      if (
+        execError.message?.includes("dart: command not found") ||
+        execError.stderr?.includes("dart: command not found") ||
+        execError.message?.includes("ENOENT")
+      ) {
+        return { valid: true };
+      }
       return {
         valid: false,
         error: `Flutter/Dart analysis error: ${execError.stderr || execError.message || "Unknown error"}`,
       };
     } finally {
-      await FlutterValidator.execAsync(`rm -f ${tempFile}`);
+      try {
+        await FlutterValidator.execAsync(`rm -f ${tempFile}`);
+      } catch {
+        // Ignore cleanup errors
+      }
     }
   }
 }

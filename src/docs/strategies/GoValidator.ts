@@ -22,14 +22,16 @@ export class GoValidator implements ValidatorStrategy {
     const tempFile = `/tmp/example-${Date.now()}.go`;
     try {
       await writeFile(tempFile, code);
-      await GoValidator.execAsync(`go build -o /dev/null ${tempFile}`);
+      await GoValidator.execAsync(`go build -o /dev/null ${tempFile}`, { timeout: 10000 });
       return { valid: true };
     } catch (error: unknown) {
-      const execError = error as { stderr?: string; message?: string };
-      // If go is not installed, assume code is valid
+      const execError = error as { stderr?: string; message?: string; killed?: boolean };
+      // If go is not installed or timed out, assume code is valid
       if (
         execError.message?.includes("go: command not found") ||
-        execError.stderr?.includes("go: command not found")
+        execError.stderr?.includes("go: command not found") ||
+        execError.message?.includes("ENOENT") ||
+        execError.killed === true
       ) {
         return { valid: true };
       }

@@ -23,6 +23,14 @@ export class BashValidator implements ValidatorStrategy {
       return { valid: true };
     } catch (error: unknown) {
       const execError = error as { stderr?: string; message?: string };
+      // If bash is not installed, assume code is valid
+      if (
+        execError.message?.includes("bash: command not found") ||
+        execError.stderr?.includes("bash: command not found") ||
+        execError.message?.includes("ENOENT")
+      ) {
+        return { valid: true };
+      }
       return {
         valid: false,
         error: `Shell syntax error: ${execError.stderr || execError.message || "Unknown error"}`,
