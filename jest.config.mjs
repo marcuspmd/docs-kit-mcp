@@ -23,12 +23,9 @@ const baseConfig = {
       {
         useESM: true,
         diagnostics: false,
-        // Isolate modules to prevent state leakage
-        isolatedModules: true,
       },
     ],
   },
-  testTimeout: 10000,
   clearMocks: true,
   restoreMocks: true,
 };
@@ -43,7 +40,6 @@ export default {
       // Critical: Run indexer tests serially in same process
       // tree-sitter has global state that requires sequential execution
       maxWorkers: 1,
-      maxConcurrency: 1,
       // Force fresh module cache for each test file
       workerIdleMemoryLimit: "100MB",
       // Reset modules between tests for clean tree-sitter state
