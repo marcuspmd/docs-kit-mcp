@@ -1,5 +1,9 @@
+import "reflect-metadata";
 import fs from "node:fs";
 import path from "node:path";
+import { setupContainer, resolve } from "../../di/container.js";
+import { DATABASE_TOKEN } from "../../di/tokens.js";
+import type Database from "better-sqlite3";
 import { generateSite } from "../../site/generator.js";
 import { header, step, done, summary } from "../utils/index.js";
 
@@ -19,8 +23,10 @@ export async function buildSiteUseCase(params: BuildSiteUseCaseParams): Promise<
     console.error(`Error: Database not found at ${dbPath}`);
     console.error(`Run "docs-kit index" first to create the index.`);
     process.exit(1);
-    return; // TypeScript guard (never reached but helps type system)
+    return;
   }
+
+  await setupContainer({ dbPath });
 
   header(`Generating site: ${outDir}/`);
 
@@ -28,8 +34,11 @@ export async function buildSiteUseCase(params: BuildSiteUseCaseParams): Promise<
   done(dbPath);
 
   step("Generating HTML pages");
-  const result = generateSite({ dbPath, outDir, rootDir });
+  const db = resolve<Database.Database>(DATABASE_TOKEN);
+  const result = generateSite({ db, outDir, rootDir });
   done();
+
+  db.close();
 
   header("Site Summary");
   summary([

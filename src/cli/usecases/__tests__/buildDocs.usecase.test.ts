@@ -7,6 +7,12 @@ jest.unstable_mockModule("../../../site/mdGenerator.js", () => ({
   generateDocs: mockGenerateDocs,
 }));
 
+// Mock the DI container to avoid loadConfig side effects
+jest.unstable_mockModule("../../../di/container.js", () => ({
+  setupContainer: jest.fn(),
+  resolve: jest.fn().mockReturnValue({ close: jest.fn() }),
+}));
+
 // Import use case AFTER mocks
 const { buildDocsUseCase } = await import("../buildDocs.usecase.js");
 
@@ -45,11 +51,12 @@ describe("buildDocsUseCase", () => {
     await buildDocsUseCase({});
 
     expect(existsSyncSpy).toHaveBeenCalledWith(".docs-kit/index.db");
-    expect(mockGenerateDocs).toHaveBeenCalledWith({
-      dbPath: ".docs-kit/index.db",
-      outDir: "docs-output",
-      rootDir: ".",
-    });
+    expect(mockGenerateDocs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outDir: "docs-output",
+        rootDir: ".",
+      }),
+    );
     expect(processExitSpy).not.toHaveBeenCalled();
   });
 
@@ -68,11 +75,12 @@ describe("buildDocsUseCase", () => {
     });
 
     expect(existsSyncSpy).toHaveBeenCalledWith("custom/db.db");
-    expect(mockGenerateDocs).toHaveBeenCalledWith({
-      dbPath: "custom/db.db",
-      outDir: "custom-docs",
-      rootDir: "/custom/root",
-    });
+    expect(mockGenerateDocs).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outDir: "custom-docs",
+        rootDir: "/custom/root",
+      }),
+    );
   });
 
   test("exits with error when database does not exist", async () => {

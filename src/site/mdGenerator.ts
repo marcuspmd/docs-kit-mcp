@@ -14,7 +14,8 @@ import {
 } from "./mdTemplates.js";
 
 export interface MdGeneratorOptions {
-  dbPath: string;
+  dbPath?: string;
+  db?: Database.Database;
   outDir: string;
   rootDir?: string;
 }
@@ -69,9 +70,10 @@ export interface MdGenerateResult {
 }
 
 export function generateDocs(options: MdGeneratorOptions): MdGenerateResult {
-  const { dbPath, outDir, rootDir } = options;
+  const { outDir, rootDir } = options;
 
-  const db = new Database(dbPath, { readonly: true });
+  const ownsDb = !options.db;
+  const db = options.db ?? new Database(options.dbPath!, { readonly: true });
 
   const symbolRows = db.prepare("SELECT * FROM symbols").all() as SymbolRow[];
   const symbols = symbolRows.map(rowToSymbol);
@@ -80,7 +82,7 @@ export function generateDocs(options: MdGeneratorOptions): MdGenerateResult {
     .prepare("SELECT * FROM relationships")
     .all() as RelationshipRow[];
 
-  db.close();
+  if (ownsDb) db.close();
 
   const patterns: DetectedPattern[] = [];
   const files = [...new Set(symbols.map((s) => s.file))];

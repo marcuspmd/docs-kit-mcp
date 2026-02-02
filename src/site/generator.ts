@@ -25,7 +25,8 @@ const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 export interface GeneratorOptions {
-  dbPath: string;
+  dbPath?: string;
+  db?: Database.Database;
   outDir: string;
   rootDir?: string;
 }
@@ -229,9 +230,10 @@ export interface GenerateResult {
 }
 
 export function generateSite(options: GeneratorOptions): GenerateResult {
-  const { dbPath, outDir, rootDir } = options;
+  const { outDir, rootDir } = options;
 
-  const db = new Database(dbPath, { readonly: true });
+  const ownsDb = !options.db;
+  const db = options.db ?? new Database(options.dbPath!, { readonly: true });
 
   const symbolRows = db.prepare("SELECT * FROM symbols").all() as SymbolRow[];
   const symbols = symbolRows.map(rowToSymbol);
@@ -367,8 +369,8 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   }
   const { entries: configDocs, configDir: docsConfigDir } = loadDocsConfig(db, rootDir);
 
-  // Now we can close the database - all queries are done
-  db.close();
+  // Close the database only if we opened it ourselves
+  if (ownsDb) db.close();
 
   const docEntriesMap = new Map<string, DocEntry>();
   for (const entry of configDocs) {

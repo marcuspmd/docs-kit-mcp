@@ -8,6 +8,12 @@ jest.unstable_mockModule("../../../site/generator.js", () => ({
   generateSite: mockGenerateSite,
 }));
 
+// Mock the DI container to avoid loadConfig side effects
+jest.unstable_mockModule("../../../di/container.js", () => ({
+  setupContainer: jest.fn(),
+  resolve: jest.fn().mockReturnValue({ close: jest.fn() }),
+}));
+
 // Now import the use case after mocks are set up
 const { buildSiteUseCase } = await import("../buildSite.usecase.js");
 
@@ -54,11 +60,12 @@ describe("buildSiteUseCase", () => {
     });
 
     expect(fs.existsSync).toHaveBeenCalledWith("/test/index.db");
-    expect(mockGenerateSite).toHaveBeenCalledWith({
-      dbPath: "/test/index.db",
-      outDir: "docs-site",
-      rootDir: ".",
-    });
+    expect(mockGenerateSite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outDir: "docs-site",
+        rootDir: ".",
+      }),
+    );
     expect(console.log).toHaveBeenCalledWith(expect.stringContaining("Open docs-site/index.html"));
   });
 
@@ -71,10 +78,11 @@ describe("buildSiteUseCase", () => {
 
     await buildSiteUseCase({});
 
-    expect(mockGenerateSite).toHaveBeenCalledWith({
-      dbPath: ".docs-kit/index.db",
-      outDir: "docs-site",
-      rootDir: ".",
-    });
+    expect(mockGenerateSite).toHaveBeenCalledWith(
+      expect.objectContaining({
+        outDir: "docs-site",
+        rootDir: ".",
+      }),
+    );
   });
 });
