@@ -35,8 +35,6 @@ import { buildExplainSymbolContext } from "./handlers/explainSymbol.js";
 import { generateExplanationHash } from "./handlers/explainSymbol.js";
 import { buildExplainSymbolPromptForMcp } from "./prompts/explainSymbol.prompt.js";
 import { buildImpactAnalysisPrompt } from "./prompts/impactAnalysis.prompt.js";
-import { buildSmartCodeReviewPrompt } from "./prompts/smartCodeReview.prompt.js";
-import { buildCodeReviewPrompt } from "./prompts/codeReview.prompt.js";
 import "dotenv/config";
 
 const config = await loadConfig(process.cwd());
@@ -361,7 +359,6 @@ server.registerTool(
       const symbols = indexFile(absoluteFilePath, source, parser);
 
       const { createdCount, createdSymbols } = await scanFileAndCreateDocs({
-        filePath: absoluteFilePath,
         docsDir,
         projectRoot: config.projectRoot,
         symbols,

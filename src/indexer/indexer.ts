@@ -12,12 +12,7 @@ import CSharp from "tree-sitter-c-sharp";
 import fg from "fast-glob";
 import { readFile } from "node:fs/promises";
 import { createHash } from "node:crypto";
-import {
-  type CodeSymbol,
-  type SymbolKind,
-  type Layer,
-  generateSymbolId,
-} from "./symbol.types.js";
+import { type CodeSymbol, type SymbolKind, type Layer, generateSymbolId } from "./symbol.types.js";
 import { getStrategy } from "./languages/index.js";
 import type { FileHashRepository } from "../storage/db.js";
 
@@ -103,7 +98,11 @@ function extractInterfaceExtends(node: Parser.SyntaxNode): string | undefined {
   return typeNode?.text;
 }
 
-function extractJsDoc(node: Parser.SyntaxNode): { summary?: string; tags?: string[]; docComment?: string } {
+function extractJsDoc(node: Parser.SyntaxNode): {
+  summary?: string;
+  tags?: string[];
+  docComment?: string;
+} {
   const targetNode = node.parent?.type === "export_statement" ? node.parent : node;
   const prev = targetNode.previousNamedSibling;
 
@@ -136,7 +135,10 @@ function extractJsDoc(node: Parser.SyntaxNode): { summary?: string; tags?: strin
   return { summary, tags: tags.length > 0 ? tags : undefined, docComment: text };
 }
 
-function extractPythonDocstring(node: Parser.SyntaxNode): { summary?: string; docComment?: string } {
+function extractPythonDocstring(node: Parser.SyntaxNode): {
+  summary?: string;
+  docComment?: string;
+} {
   // Python docstrings are the first expression_statement > string in a function/class body
   const body = node.childForFieldName("body");
   if (!body) return {};
@@ -198,7 +200,7 @@ function languageForFile(file: string) {
   if (file.endsWith(".js") || file.endsWith(".jsx")) return JavaScript;
   if (file.endsWith(".py")) return Python;
   if (file.endsWith(".go")) return GoLang;
-  if (file.endsWith(".php")) return (PHP as any).php ?? PHP;
+  if (file.endsWith(".php")) return (PHP as { php?: unknown }).php ?? PHP;
   if (file.endsWith(".dart")) return undefined;
   if (file.endsWith(".rb")) return Ruby;
   if (file.endsWith(".cs")) return CSharp;
@@ -323,7 +325,8 @@ function walkNode(
       usesTraits = strategy.extractTraits(node);
     } else if (kind === "interface") {
       // Interface extends uses different AST nodes in TS vs PHP
-      extendsName = language === "php" ? strategy.extractExtends(node) : extractInterfaceExtends(node);
+      extendsName =
+        language === "php" ? strategy.extractExtends(node) : extractInterfaceExtends(node);
     }
 
     // Refine kind
@@ -424,7 +427,9 @@ export async function indexProject(options: IndexerOptions): Promise<IndexResult
   const { rootDir, include, exclude, fileHashRepo, full } = options;
 
   if (!include || !exclude) {
-    throw new Error("indexProject requires explicit include and exclude patterns. Use loadConfig() to get defaults.");
+    throw new Error(
+      "indexProject requires explicit include and exclude patterns. Use loadConfig() to get defaults.",
+    );
   }
 
   const files = await fg(include, {

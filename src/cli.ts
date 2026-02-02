@@ -1332,7 +1332,6 @@ async function runScanFile(args: string[]) {
   parser.setLanguage(TypeScript.typescript);
   const symbols = indexFile(absoluteFilePath, source, parser);
   const { createdCount, createdSymbols } = await scanFileAndCreateDocs({
-    filePath: absoluteFilePath,
     docsDir: docsPath,
     projectRoot: config.projectRoot,
     symbols,

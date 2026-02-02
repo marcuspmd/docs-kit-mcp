@@ -4,7 +4,6 @@ import type { CodeSymbol } from "../indexer/symbol.types.js";
 import type { DocRegistry } from "./docRegistry.js";
 
 export interface ScanFileOptions {
-  filePath: string;
   docsDir: string;
   projectRoot: string;
   symbols: CodeSymbol[];
@@ -41,9 +40,8 @@ TODO: Add usage examples here.
  * Reusable by MCP server and CLI.
  */
 export async function scanFileAndCreateDocs(options: ScanFileOptions): Promise<ScanFileResult> {
-  const { filePath, docsDir, projectRoot, symbols, registry } = options;
+  const { docsDir, projectRoot, symbols, registry } = options;
 
-  const absoluteFilePath = path.resolve(filePath);
   const createdSymbols: string[] = [];
   let createdCount = 0;
 

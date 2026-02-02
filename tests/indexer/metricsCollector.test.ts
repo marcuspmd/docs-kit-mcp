@@ -9,12 +9,26 @@ import { collectMetrics } from "../../src/indexer/metricsCollector.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = resolve(__dirname, "fixtures");
 
-function parseFixtureWithTree(name: string) {
+/**
+ * Create a fresh parser for each test to avoid state corruption issues
+ * with tree-sitter in Jest test environment.
+ */
+function createFreshParser(): Parser {
   const parser = new Parser();
-  parser.setLanguage(TypeScript.typescript);
+  (parser as { setLanguage: (l: unknown) => void }).setLanguage(TypeScript.typescript);
+  return parser;
+}
+
+function parseFixtureWithTree(name: string) {
   const source = readFileSync(resolve(FIXTURES, name), "utf-8");
-  const symbols = indexFile(name, source, parser);
-  const tree = parser.parse(source);
+
+  // Use completely separate parsers for tree and symbols extraction
+  const treeParser = createFreshParser();
+  const tree = treeParser.parse(source);
+
+  const symbolParser = createFreshParser();
+  const symbols = indexFile(name, source, symbolParser);
+
   return { symbols, tree };
 }
 

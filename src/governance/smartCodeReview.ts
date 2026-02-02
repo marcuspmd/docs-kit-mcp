@@ -61,7 +61,16 @@ export async function performSmartCodeReview(
   deps: SmartCodeReviewDeps,
 ): Promise<string> {
   const { docsDir, includeExamples } = options;
-  const { symbolRepo, relRepo, registry, patternAnalyzer, archGuard, reaper, graph, codeExampleValidator } = deps;
+  const {
+    symbolRepo,
+    relRepo,
+    registry,
+    patternAnalyzer,
+    archGuard,
+    reaper,
+    graph,
+    codeExampleValidator,
+  } = deps;
 
   await registry.rebuild(docsDir);
 
@@ -74,9 +83,9 @@ export async function performSmartCodeReview(
   const mappings = await registry.findAllMappings();
 
   // Sequential analysis
-  const patterns = patternAnalyzer.analyze(allSymbols, allRels);
-  const violations = archGuard.analyze(allSymbols, allRels);
-  const findings = reaper.scan(allSymbols, graph, mappings);
+  patternAnalyzer.analyze(allSymbols, allRels);
+  archGuard.analyze(allSymbols, allRels);
+  reaper.scan(allSymbols, graph, mappings);
 
   let exampleResults: ValidationResult[] = [];
   if (includeExamples && codeExampleValidator) {
@@ -98,5 +107,5 @@ export async function performSmartCodeReview(
   // Add critical issues, architecture, patterns, code quality sections
   // Implement proper result structure and formatting
 
-  return report.join('\n');
+  return report.join("\n");
 }

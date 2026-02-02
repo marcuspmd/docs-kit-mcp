@@ -6,6 +6,6 @@ export function multiply(a: number, b: number): number {
   return a * b;
 }
 
-function privateHelper(): void {
-  console.log("helper");
+function privateHelper(x: number): number {
+  return x * 2;
 }

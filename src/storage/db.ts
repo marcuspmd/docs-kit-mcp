@@ -248,9 +248,7 @@ export function createSymbolRepository(db: Database.Database): SymbolRepository 
   `);
 
   const findByIdStmt = db.prepare("SELECT * FROM symbols WHERE id = ?");
-  const findByIdsStmt = db.prepare(
-    `SELECT * FROM symbols WHERE id IN (${Array.from({ length: 100 }, () => "?").join(",")})`,
-  );
+
   const findByNameStmt = db.prepare("SELECT * FROM symbols WHERE name = ? OR qualified_name = ?");
   const findAllStmt = db.prepare("SELECT * FROM symbols");
   const findByFileStmt = db.prepare("SELECT * FROM symbols WHERE file = ?");

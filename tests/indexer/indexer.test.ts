@@ -8,10 +8,19 @@ import { indexFile, indexProject } from "../../src/indexer/indexer.js";
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = resolve(__dirname, "fixtures");
 
-function parseFixture(name: string) {
+/**
+ * Create a fresh parser for each test to avoid state corruption issues
+ * with tree-sitter in Jest test environment.
+ */
+function createFreshParser(): Parser {
   const parser = new Parser();
-  parser.setLanguage(TypeScript.typescript);
+  (parser as { setLanguage: (l: unknown) => void }).setLanguage(TypeScript.typescript);
+  return parser;
+}
+
+function parseFixture(name: string) {
   const source = readFileSync(resolve(FIXTURES, name), "utf-8");
+  const parser = createFreshParser();
   return indexFile(name, source, parser);
 }
 
@@ -21,7 +30,7 @@ describe("indexFile", () => {
   describe("class with methods", () => {
     let symbols: ReturnType<typeof indexFile>;
 
-    beforeAll(() => {
+    beforeEach(() => {
       symbols = parseFixture("class-with-methods.ts");
     });
 
@@ -95,7 +104,7 @@ describe("indexFile", () => {
   describe("standalone functions", () => {
     let symbols: ReturnType<typeof indexFile>;
 
-    beforeAll(() => {
+    beforeEach(() => {
       symbols = parseFixture("standalone-functions.ts");
     });
 
@@ -126,7 +135,7 @@ describe("indexFile", () => {
   describe("interfaces", () => {
     let symbols: ReturnType<typeof indexFile>;
 
-    beforeAll(() => {
+    beforeEach(() => {
       symbols = parseFixture("interfaces.ts");
     });
 
@@ -154,7 +163,7 @@ describe("indexFile", () => {
   describe("relationships fixture", () => {
     let symbols: ReturnType<typeof indexFile>;
 
-    beforeAll(() => {
+    beforeEach(() => {
       symbols = parseFixture("relationships.ts");
     });
 

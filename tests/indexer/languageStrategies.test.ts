@@ -1,4 +1,5 @@
 import { jest } from "@jest/globals";
+import type Parser from "tree-sitter";
 
 // Mock tree-sitter
 const mockSyntaxNode = {
@@ -10,7 +11,7 @@ const mockSyntaxNode = {
   find: jest.fn(),
   filter: jest.fn(),
   map: jest.fn(),
-};
+} as unknown as Parser.SyntaxNode;
 
 jest.mock("tree-sitter", () => ({
   __esModule: true,
@@ -30,7 +31,7 @@ describe("Language Strategies", () => {
     });
 
     it("extractNamespace returns undefined", () => {
-      const result = strategy.extractNamespace(mockSyntaxNode as any);
+      const result = strategy.extractNamespace(mockSyntaxNode);
       expect(result).toBeUndefined();
     });
 
@@ -45,22 +46,22 @@ describe("Language Strategies", () => {
     });
 
     it("extractExtends returns undefined", () => {
-      const result = strategy.extractExtends(mockSyntaxNode as any);
+      const result = strategy.extractExtends(mockSyntaxNode);
       expect(result).toBeUndefined();
     });
 
     it("extractImplements returns undefined", () => {
-      const result = strategy.extractImplements(mockSyntaxNode as any);
+      const result = strategy.extractImplements(mockSyntaxNode);
       expect(result).toBeUndefined();
     });
 
     it("extractTraits returns undefined", () => {
-      const result = strategy.extractTraits(mockSyntaxNode as any);
+      const result = strategy.extractTraits(mockSyntaxNode);
       expect(result).toBeUndefined();
     });
 
     it("extractVisibility returns undefined for no modifier", () => {
-      const result = strategy.extractVisibility(mockSyntaxNode as any);
+      const result = strategy.extractVisibility(mockSyntaxNode);
       expect(result).toBeUndefined();
     });
 
@@ -68,8 +69,8 @@ describe("Language Strategies", () => {
       const nodeWithModifier = {
         ...mockSyntaxNode,
         children: [{ type: "accessibility_modifier", text: "public" }],
-      };
-      const result = strategy.extractVisibility(nodeWithModifier as any);
+      } as unknown as Parser.SyntaxNode;
+      const result = strategy.extractVisibility(nodeWithModifier);
       expect(result).toBe("public");
     });
 
@@ -79,7 +80,7 @@ describe("Language Strategies", () => {
     });
 
     it("detectDeprecated returns false for no comment", () => {
-      const result = strategy.detectDeprecated(mockSyntaxNode as any);
+      const result = strategy.detectDeprecated(mockSyntaxNode);
       expect(result).toBe(false);
     });
 
@@ -87,37 +88,32 @@ describe("Language Strategies", () => {
       const nodeWithComment = {
         ...mockSyntaxNode,
         previousNamedSibling: { type: "comment", text: "@deprecated This is deprecated" },
-      };
-      const result = strategy.detectDeprecated(nodeWithComment as any);
+      } as unknown as Parser.SyntaxNode;
+      const result = strategy.detectDeprecated(nodeWithComment);
       expect(result).toBe(true);
     });
 
     it("extractClassRelationships does nothing", () => {
       const addRel = jest.fn();
-      strategy.extractClassRelationships(
-        mockSyntaxNode as any,
-        {} as CodeSymbol,
-        addRel,
-        "test.ts",
-      );
+      strategy.extractClassRelationships(mockSyntaxNode, {} as CodeSymbol, addRel, "test.ts");
       expect(addRel).not.toHaveBeenCalled();
     });
 
     it("extractInstantiationRelationships does nothing", () => {
       const addRel = jest.fn();
-      strategy.extractInstantiationRelationships(mockSyntaxNode as any, [], addRel, "test.ts");
+      strategy.extractInstantiationRelationships(mockSyntaxNode, [], addRel, "test.ts");
       expect(addRel).not.toHaveBeenCalled();
     });
 
     it("extractImportRelationships does nothing", () => {
       const addRel = jest.fn();
-      strategy.extractImportRelationships(mockSyntaxNode as any, [], addRel, "test.ts");
+      strategy.extractImportRelationships(mockSyntaxNode, [], addRel, "test.ts");
       expect(addRel).not.toHaveBeenCalled();
     });
 
     it("extractCallRelationships does nothing", () => {
       const addRel = jest.fn();
-      strategy.extractCallRelationships(mockSyntaxNode as any, [], addRel, "test.ts");
+      strategy.extractCallRelationships(mockSyntaxNode, [], addRel, "test.ts");
       expect(addRel).not.toHaveBeenCalled();
     });
   });
@@ -138,13 +134,13 @@ describe("Language Strategies", () => {
             childForFieldName: jest.fn().mockReturnValue({ text: "App\\Models" }),
           },
         ],
-      };
-      const result = strategy.extractNamespace(rootWithNamespace as any);
+      } as unknown as Parser.SyntaxNode;
+      const result = strategy.extractNamespace(rootWithNamespace);
       expect(result).toBe("App\\Models");
     });
 
     it("extractNamespace returns undefined when no namespace", () => {
-      const result = strategy.extractNamespace(mockSyntaxNode as any);
+      const result = strategy.extractNamespace(mockSyntaxNode);
       expect(result).toBeUndefined();
     });
 
@@ -167,13 +163,13 @@ describe("Language Strategies", () => {
             children: [{ type: "qualified_name", text: "BaseClass" }],
           },
         ],
-      };
-      const result = strategy.extractExtends(nodeWithExtends as any);
+      } as unknown as Parser.SyntaxNode;
+      const result = strategy.extractExtends(nodeWithExtends);
       expect(result).toBe("BaseClass");
     });
 
     it("extractExtends returns undefined when no base clause", () => {
-      const result = strategy.extractExtends(mockSyntaxNode as any);
+      const result = strategy.extractExtends(mockSyntaxNode);
       expect(result).toBeUndefined();
     });
 
@@ -189,13 +185,13 @@ describe("Language Strategies", () => {
             ],
           },
         ],
-      };
-      const result = strategy.extractImplements(nodeWithImplements as any);
+      } as unknown as Parser.SyntaxNode;
+      const result = strategy.extractImplements(nodeWithImplements);
       expect(result).toEqual(["Interface1", "Namespace\\Interface2"]);
     });
 
     it("extractImplements returns undefined when no interfaces", () => {
-      const result = strategy.extractImplements(mockSyntaxNode as any);
+      const result = strategy.extractImplements(mockSyntaxNode);
       expect(result).toBeUndefined();
     });
 
@@ -216,13 +212,13 @@ describe("Language Strategies", () => {
             ],
           },
         ],
-      };
-      const result = strategy.extractTraits(nodeWithTraits as any);
+      } as unknown as Parser.SyntaxNode;
+      const result = strategy.extractTraits(nodeWithTraits);
       expect(result).toEqual(["Trait1", "Namespace\\Trait2"]);
     });
 
     it("extractTraits returns undefined when no traits", () => {
-      const result = strategy.extractTraits(mockSyntaxNode as any);
+      const result = strategy.extractTraits(mockSyntaxNode);
       expect(result).toBeUndefined();
     });
   });
