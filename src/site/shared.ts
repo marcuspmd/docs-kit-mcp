@@ -8,15 +8,15 @@ export function fileSlug(filePath: string): string {
 
 function safeNodeId(name: string, counter?: Map<string, number>): string {
   let base = name.replace(/[^a-zA-Z0-9_]/g, "_");
-  
+
   // Remove leading numbers (Mermaid doesn't like IDs starting with numbers)
   base = base.replace(/^[0-9]+/, "_");
-  
+
   // Ensure it's not empty
   if (!base || base.length === 0) {
     base = "node";
   }
-  
+
   // If a counter is provided, ensure uniqueness
   if (counter) {
     const existing = counter.get(base) || 0;
@@ -25,7 +25,7 @@ function safeNodeId(name: string, counter?: Map<string, number>): string {
       return `${base}_${existing}`;
     }
   }
-  
+
   return base;
 }
 
@@ -90,7 +90,7 @@ export function buildMermaidForSymbol(
         clickLines.push(`  click ${sName} "${source.id}.html"`);
       }
     }
-    
+
     let tName = added.get(target.name);
     if (!tName) {
       tName = safeNodeId(target.name, idCounter);
@@ -160,7 +160,7 @@ export function buildMermaidForFile(
         clickLines.push(`  click ${sName} "../symbols/${source.id}.html"`);
       }
     }
-    
+
     let tName = added.get(target.name);
     if (!tName) {
       tName = safeNodeId(target.name, idCounter);
@@ -218,12 +218,12 @@ export function buildMermaidOverview(
   const idCounter = new Map<string, number>();
   const nodeLines: string[] = [];
   const edgeLines: string[] = [];
-  
+
   for (const [dir, ids] of dirMap) {
     const safe = safeNodeId(dir, idCounter);
     nodeLines.push(`  ${safe}["${dir} (${ids.size})"]`);
   }
-  
+
   for (const [key, count] of edgeCount) {
     const [sd, td] = key.split(":::");
     const safeSd = safeNodeId(sd, idCounter);
@@ -280,7 +280,7 @@ export function buildMermaidTopConnected(
       nodeLines.push(`  ${sName}["${source.name}"]`);
       if (clickable) clickLines.push(`  click ${sName} "symbols/${source.id}.html"`);
     }
-    
+
     let tName = added.get(target.name);
     if (!tName) {
       tName = safeNodeId(target.name, idCounter);
