@@ -364,7 +364,10 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
     }
   }
   const docEntries = Array.from(docEntriesMap.values());
-  console.log(`DEBUG: Total docEntries = ${docEntries.length}`, docEntries.map(d => `${d.path} (cat: ${d.category || 'NONE'})`));
+  console.log(
+    `DEBUG: Total docEntries = ${docEntries.length}`,
+    docEntries.map((d) => `${d.path} (cat: ${d.category || "NONE"})`),
+  );
 
   // Generate index.html with docEntries for menu
   fs.writeFileSync(

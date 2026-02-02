@@ -28,11 +28,12 @@ export function renderMarkdownWrapper(
   if (docEntries?.length && docPath) {
     // Only show docs with explicit category AND that are markdown files
     // Filter out auto-generated module pages and docs without explicit category
-    const others = docEntries.filter((e) => 
-      e.path !== docPath && 
-      e.category && 
-      e.category.trim() !== "" &&
-      e.path.toLowerCase().endsWith('.md')  // Only include markdown docs
+    const others = docEntries.filter(
+      (e) =>
+        e.path !== docPath &&
+        e.category &&
+        e.category.trim() !== "" &&
+        e.path.toLowerCase().endsWith(".md"), // Only include markdown docs
     );
     const byCategory = new Map<string, DocEntry[]>();
     for (const e of others) {
@@ -100,14 +101,14 @@ export function renderMarkdownWrapper(
         const md = \`${escapedMarkdown}\`;
         const html = marked.parse(md);
         document.getElementById('doc').innerHTML = html;
-        
+
         // Convert internal .md links to .html so navigation stays within site
         document.querySelectorAll('#doc a').forEach(function(a){
           const href = a.getAttribute('href');
           if (!href) return;
           if (href.toLowerCase().endsWith('.md')) a.setAttribute('href', href.slice(0, -3) + '.html');
         });
-        
+
         // Process code blocks for Mermaid diagrams
         document.querySelectorAll('#doc pre code').forEach(function(block) {
           const className = block.className || '';
@@ -118,26 +119,26 @@ export function renderMarkdownWrapper(
             const wrapper = document.createElement('div');
             wrapper.className = 'mermaid-expand-wrapper relative group';
             wrapper.setAttribute('data-mermaid-src-base64', btoa(mermaidCode));
-            
+
             const mermaidDiv = document.createElement('div');
             mermaidDiv.className = 'mermaid';
             mermaidDiv.textContent = mermaidCode;
             wrapper.appendChild(mermaidDiv);
-            
+
             const expandBtn = document.createElement('button');
             expandBtn.type = 'button';
             expandBtn.className = 'mermaid-expand-btn absolute top-2 right-2 z-10 px-2 py-1 text-xs font-medium rounded bg-white/90 dark:bg-gray-800/90 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 shadow hover:bg-white dark:hover:bg-gray-700 hover:border-blue-400 dark:hover:border-blue-500 opacity-70 group-hover:opacity-100 transition-opacity';
             expandBtn.title = 'Expand to fullscreen (zoom and pan)';
             expandBtn.textContent = 'Expand';
             wrapper.appendChild(expandBtn);
-            
+
             pre.parentElement.replaceChild(wrapper, pre);
           } else if (typeof hljs !== 'undefined') {
             // Regular code block - apply syntax highlighting
             hljs.highlightElement(block);
           }
         });
-        
+
         // Initialize Mermaid to render diagrams
         if (typeof mermaid !== 'undefined') {
           mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose',maxTextSize:300000});
@@ -168,14 +169,14 @@ export function renderMarkdownWrapper(
           const md = await res.text();
           const html = marked.parse(md);
           document.getElementById('doc').innerHTML = html;
-          
+
           // Convert internal .md links to .html so navigation stays within site
           document.querySelectorAll('#doc a').forEach(function(a){
             const href = a.getAttribute('href');
             if (!href) return;
             if (href.toLowerCase().endsWith('.md')) a.setAttribute('href', href.slice(0, -3) + '.html');
           });
-          
+
           // Process code blocks for Mermaid diagrams
           document.querySelectorAll('#doc pre code').forEach(function(block) {
             const className = block.className || '';
@@ -186,26 +187,26 @@ export function renderMarkdownWrapper(
               const wrapper = document.createElement('div');
               wrapper.className = 'mermaid-expand-wrapper relative group';
               wrapper.setAttribute('data-mermaid-src-base64', btoa(mermaidCode));
-              
+
               const mermaidDiv = document.createElement('div');
               mermaidDiv.className = 'mermaid';
               mermaidDiv.textContent = mermaidCode;
               wrapper.appendChild(mermaidDiv);
-              
+
               const expandBtn = document.createElement('button');
               expandBtn.type = 'button';
               expandBtn.className = 'mermaid-expand-btn absolute top-2 right-2 z-10 px-2 py-1 text-xs font-medium rounded bg-white/90 dark:bg-gray-800/90 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 shadow hover:bg-white dark:hover:bg-gray-700 hover:border-blue-400 dark:hover:border-blue-500 opacity-70 group-hover:opacity-100 transition-opacity';
               expandBtn.title = 'Expand to fullscreen (zoom and pan)';
               expandBtn.textContent = 'Expand';
               wrapper.appendChild(expandBtn);
-              
+
               pre.parentElement.replaceChild(wrapper, pre);
             } else if (typeof hljs !== 'undefined') {
               // Regular code block - apply syntax highlighting
               hljs.highlightElement(block);
             }
           });
-          
+
           // Initialize Mermaid to render diagrams
           if (typeof mermaid !== 'undefined') {
             mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose',maxTextSize:300000});
@@ -225,12 +226,10 @@ export function renderMarkdownWrapper(
 
 export function renderDocsPage(docEntries: DocEntry[]): string {
   // Only show markdown docs with explicit category
-  const filtered = docEntries.filter((e) => 
-    e.category && 
-    e.category.trim() !== "" &&
-    e.path.toLowerCase().endsWith('.md')
+  const filtered = docEntries.filter(
+    (e) => e.category && e.category.trim() !== "" && e.path.toLowerCase().endsWith(".md"),
   );
-  
+
   const sorted = [...filtered].sort((a, b) => {
     const catA = a.category ?? "";
     const catB = b.category ?? "";

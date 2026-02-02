@@ -37,7 +37,9 @@ export function layout(
 
   // Build documentation menu from docEntries with showOnMenu: true, grouped by module
   // Only include docs with explicit category (skip docs without category like auto-discovered modules)
-  const menuDocs = docEntries.filter((d) => d.showOnMenu && d.module && d.category && d.category.trim() !== "");
+  const menuDocs = docEntries.filter(
+    (d) => d.showOnMenu && d.module && d.category && d.category.trim() !== "",
+  );
   const docsByModule = new Map<string, DocEntry[]>();
   for (const doc of menuDocs) {
     const mod = doc.module!;
