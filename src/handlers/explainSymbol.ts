@@ -85,7 +85,6 @@ export async function buildExplainSymbolContext(
     // Check if we have a cached explanation and if it's still valid
     const currentHash = generateExplanationHash(sym.id, sym.startLine, sym.endLine, sourceCode);
     if (sym.explanation && sym.explanationHash === currentHash) {
-      // Cache is valid, return it
       return {
         prompt: "",
         found: true,
