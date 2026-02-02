@@ -342,7 +342,7 @@ server.registerTool(
       docsDir: z.string().default("docs").describe("Directory containing documentation files"),
       dbPath: z
         .string()
-        .default(".doc-kit/registry.db")
+        .default(".docs-kit/registry.db")
         .describe("Path to the documentation registry database"),
     },
   },

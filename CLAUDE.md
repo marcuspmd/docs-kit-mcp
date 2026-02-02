@@ -21,7 +21,7 @@ The system is organized in layers:
 - **Analysis Layer**: AST-based indexer + Git semantic change analyzer
 - **Knowledge Layer**: Symbol relationship graph + RAG/vector DB for semantic search
 - **Documentation Layer**: Symbol-to-doc registry (frontmatter mapping), section-level doc updater (non-destructive), executable doc validation
-- **Governance Layer**: Pattern detection, architecture rule enforcement (Arch Guard), Doc-Guard CI gate, dead code/orphan doc reaper
+- **Governance Layer**: Pattern detection, architecture rule enforcement (Arch Guard), Docs-Guard CI gate, dead code/orphan doc reaper
 - **Business Layer**: Ticket-to-code-to-docs traceability, requirements matrix, natural language generation
 - **Interface Layer**: MCP server, CLI tools (audit, impactAnalysis, createOnboarding), OpenAPI/GraphQL sync
 
@@ -37,5 +37,5 @@ node dist/server.js &
 
 - Documentation updates only modify relevant sections; never create new files or destroy existing content
 - AST-first approach: semantic diffs over text diffs
-- Doc-Guard: CI builds fail if semantic changes lack corresponding doc updates
+- Docs-Guard: CI builds fail if semantic changes lack corresponding doc updates
 - Use `z.uuid()` (not the deprecated `z.string().uuid()`)

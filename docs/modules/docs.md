@@ -706,6 +706,6 @@ async function discoverDocs(params: {
 
 ## Referências
 
-- [Doc Registry Schema](../domain/doc-registry.md)
+- [Doc Registry Schema](../domain/docs-registry.md)
 - [Frontmatter Spec](../examples/frontmatter.md)
 - [Mermaid Syntax](https://mermaid.js.org/)

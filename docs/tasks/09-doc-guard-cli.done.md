@@ -1,4 +1,4 @@
-# Task 09 — Doc-Guard CLI
+# Task 09 — docs-guard CLI
 
 > **Status:** done
 > **Layer:** Governance
@@ -65,13 +65,13 @@ const result = await runDocGuard({
 });
 
 if (!result.passed) {
-  console.error(`Doc-Guard: ${result.uncoveredChanges.length} symbol(s) changed without doc updates:`);
+  console.error(`docs-guard: ${result.uncoveredChanges.length} symbol(s) changed without doc updates:`);
   for (const v of result.uncoveredChanges) {
     console.error(`  - ${v.symbolName} (${v.file}): ${v.reason}`);
   }
   process.exit(1);
 }
-console.log(`Doc-Guard: ${result.coveredChanges}/${result.totalChanges} changes covered.`);
+console.log(`docs-guard: ${result.coveredChanges}/${result.totalChanges} changes covered.`);
 ```
 
 The check logic:
@@ -113,29 +113,29 @@ async function runDocGuard(options: DocGuardOptions): Promise<DocGuardResult> {
 
 ## Files Involved
 - `src/governance/docGuardCli.ts` — CLI + guard logic
-- `package.json` — add `bin` entry for `doc-guard`
+- `package.json` — add `bin` entry for `docs-guard`
 - `tests/governance.test.ts` — unit tests
 
 ## Acceptance Criteria
-- [ ] `doc-guard --base main` exits 0 when all impacted symbols have updated docs
+- [ ] `docs-guard --base main` exits 0 when all impacted symbols have updated docs
 - [ ] Exits 1 with clear error messages when docs are missing
 - [ ] Lists each violation with symbol name, file, and reason
 - [ ] Supports `--strict=false` to warn without failing
-- [ ] Works as an npm bin (`npx doc-guard --base main`)
+- [ ] Works as an npm bin (`npx docs-guard --base main`)
 - [ ] Unit tests with mocked analyzer + registry
 
 ## Scenarios / Examples
 
 ```bash
 # In CI pipeline
-npx doc-guard --base origin/main
-# Doc-Guard: 2 symbol(s) changed without doc updates:
+npx docs-guard --base origin/main
+# docs-guard: 2 symbol(s) changed without doc updates:
 #   - OrderService.createOrder (src/services/order.ts): Linked doc was not updated in this PR
 #   - PaymentGateway (src/services/payment.ts): No doc linked to this symbol
 # exit code 1
 
 # After updating docs
-npx doc-guard --base origin/main
-# Doc-Guard: 3/3 changes covered.
+npx docs-guard --base origin/main
+# docs-guard: 3/3 changes covered.
 # exit code 0
 ```

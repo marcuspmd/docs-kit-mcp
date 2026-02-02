@@ -160,7 +160,7 @@ Escaneia arquivo TypeScript e gera documentação para símbolos não documentad
 {
   filePath: string,                        // File to scan
   docsDir: string = "docs",                // Docs dir
-  dbPath: string = ".doc-kit/registry.db"  // DB path
+  dbPath: string = ".docs-kit/registry.db"  // DB path
 }
 ```
 

@@ -145,7 +145,7 @@ describe("formatResult", () => {
       coveredChanges: 3,
       uncoveredChanges: [],
     });
-    expect(msg).toBe("Doc-Guard: 3/3 changes covered.");
+    expect(msg).toBe("docs-guard: 3/3 changes covered.");
   });
 
   test("formats failing result with violations", () => {

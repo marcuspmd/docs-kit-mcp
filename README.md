@@ -2,7 +2,7 @@
 
 living connection between code & knowledge
 
-**docs-kit** é um agente inteligente de documentação (via MCP) para repositórios de código. Ele analisa mudanças no código, mapeia símbolos para documentos Markdown, gera diagramas (Mermaid), mantém um registro de documentação e fornece uma CLI (`doc-guard`) para validar que PRs atualizam a documentação quando necessário.
+**docs-kit** é um agente inteligente de documentação (via MCP) para repositórios de código. Ele analisa mudanças no código, mapeia símbolos para documentos Markdown, gera diagramas (Mermaid), mantém um registro de documentação e fornece uma CLI (`docs-guard`) para validar que PRs atualizam a documentação quando necessário.
 
 ---
 
@@ -19,9 +19,9 @@ living connection between code & knowledge
 
 - Indexação de símbolos (TypeScript/JS/Python via Tree-sitter)
 - Análise de impacto de mudanças (quem precisa ser documentado)
-- `doc-guard` CLI para auditar PRs
+- `docs-guard` CLI para auditar PRs
 - Gerador de diagramas Mermaid e ferramentas de atualização de seção
-- Base persistente em SQLite (`.doc-kit/registry.db`)
+- Base persistente em SQLite (`.docs-kit/registry.db`)
 
 ---
 
@@ -83,11 +83,11 @@ Todos os comandos da CLI principal (após `npm run build`, use `docs-kit` ou `no
 | `docs-kit dead-code` | Detecta código morto e docs órfãs no banco | `--db`, `--docs` |
 | `docs-kit --help` | Exibe ajuda | — |
 
-Banco padrão: `--db` usa `.doc-kit/index.db` (index/build-*) ou `.doc-kit/registry.db` (registry/guard). Diretório de docs padrão: `--docs docs`.
+Banco padrão: `--db` usa `.docs-kit/index.db` (index/build-*) ou `.docs-kit/registry.db` (registry/guard). Diretório de docs padrão: `--docs docs`.
 
 ---
 
-## 📦 CLI: `doc-guard`
+## 📦 CLI: `docs-guard`
 
 A ferramenta principal para auditoria de documentação. Ela reconstrói o `DocRegistry` com base na pasta `docs` e analisa as mudanças entre `base` e `head`.
 
@@ -104,7 +104,7 @@ Opções úteis:
 - `--base` (string, default: `main`) — branch/base para comparar
 - `--head` (string) — branch/commit head (padrão: `HEAD`)
 - `--strict` (boolean, default: true) — falhar (exit code != 0) se houver violações
-- `--db-path` (string, default: `.doc-kit/registry.db`) — localização do banco SQLite
+- `--db-path` (string, default: `.docs-kit/registry.db`) — localização do banco SQLite
 - `--docs-dir` (string, default: `docs`) — diretório de documentação
 
 Observação: se a execução terminar com exit code `1`, significa que houve mudanças que exigiam docs e não foram cobertas.
@@ -115,7 +115,7 @@ Se preferir usar o bin exposado, você pode instalar/ligar o pacote localmente:
 # instala globalmente (opcional) ou usar `npm link`
 npm link
 # então
-doc-guard --base main --head feature-branch
+docs-guard --base main --head feature-branch
 ```
 
 ---
@@ -128,7 +128,7 @@ import { runDocGuard } from "./dist/governance/docGuardCli.js";
 import { createDocRegistry } from "./dist/docs/docRegistry.js";
 import { analyzeChanges } from "./dist/analyzer/changeAnalyzer.js";
 
-const db = new Database('.doc-kit/registry.db');
+const db = new Database('.docs-kit/registry.db');
 const registry = createDocRegistry(db);
 await registry.rebuild('docs');
 
@@ -151,7 +151,7 @@ console.log(result);
 import Database from "better-sqlite3";
 import { createDocRegistry } from "./dist/docs/docRegistry.js";
 
-const db = new Database('.doc-kit/registry.db');
+const db = new Database('.docs-kit/registry.db');
 const registry = createDocRegistry(db);
 await registry.rebuild('docs');
 // O registro agora está sincronizado com os arquivos Markdown.
@@ -167,7 +167,7 @@ const symbols = await registry.findSymbolsByDoc("domain/orders.md");
 // → ["OrderService", "OrderService.createOrder", "OrderService.cancelOrder"]
 ```
 
-### 3. Uso via CLI (doc-guard)
+### 3. Uso via CLI (docs-guard)
 
 Auditoria de documentação em CI/CD ou local:
 
@@ -177,9 +177,9 @@ npm run build
 node dist/governance/docGuardBin.js --base main --head feature-branch
 
 # Ou via npx (se instalado globalmente ou linkado)
-npx doc-guard --base origin/main
+npx docs-guard --base origin/main
 # Saída típica:
-# Doc-Guard: 2 symbol(s) changed without doc updates:
+# docs-guard: 2 symbol(s) changed without doc updates:
 #   - OrderService.createOrder (src/services/order.ts): Linked doc was not updated in this PR
 #   - PaymentGateway (src/services/payment.ts): No doc linked to this symbol
 # exit code 1
@@ -189,7 +189,7 @@ Opções principais:
 - `--base` (branch base, default: main)
 - `--head` (branch/commit head, default: HEAD)
 - `--strict` (fail on violation, default: true)
-- `--db-path` (caminho do banco, default: .doc-kit/registry.db)
+- `--db-path` (caminho do banco, default: .docs-kit/registry.db)
 - `--docs-dir` (diretório de docs, default: docs)
 
 ### 4. Integração com MCP (VS Code, Copilot, automação)
@@ -229,7 +229,7 @@ No VS Code (via extensão MCP ou Copilot):
 No CI/CD:
 
 ```bash
-npx doc-guard --base origin/main
+npx docs-guard --base origin/main
 # Falha se houver símbolos alterados sem doc correspondente
 ```
 
@@ -237,8 +237,8 @@ npx doc-guard --base origin/main
 
 ## 🔗 Referências rápidas
 
-- [docs/tasks/07-doc-registry.done.md](docs/tasks/07-doc-registry.done.md) — exemplos de uso do DocRegistry
-- [docs/tasks/09-doc-guard-cli.done.md](docs/tasks/09-doc-guard-cli.done.md) — exemplos de uso CLI
+- [docs/tasks/07-docs-registry.done.md](docs/tasks/07-docs-registry.done.md) — exemplos de uso do DocRegistry
+- [docs/tasks/09-docs-guard-cli.done.md](docs/tasks/09-docs-guard-cli.done.md) — exemplos de uso CLI
 - [docs/tasks/10-mcp-server.done.md](docs/tasks/10-mcp-server.done.md) — exemplos de integração MCP
 
 ---
@@ -273,7 +273,7 @@ Para lista completa de comandos CLI, veja a seção [Comandos CLI](#-comandos-cl
 
 O `docs-config.json` é procurado **sempre na raiz de onde você roda o comando** (`process.cwd()`). O argumento do comando (ex.: `docs-kit index src`) não altera onde o config é procurado: coloque o arquivo na raiz do projeto (não dentro de `src/`). Ele lista documentos Markdown que aparecem na página **Docs** do site, com **nome**, **título** e **categoria**, e navegação na lateral direita.
 
-- **path**: caminho do doc no site (ex.: `docs/cip/cip-polling-confirmation.md`). Pode ter `../` no início; será normalizado (ex.: `../docs/cip/foo.md` vira `docs/cip/foo.md`). O gerador procura o arquivo em: raiz do projeto (cwd), depois `cwd/docs/<path>`, depois `--root/<path>` e `--root/docs/<path>`.
+- **path**: caminho do doc no site (ex.: `docs/examples/example.md`). Pode ter `../` no início; será normalizado (ex.: `../docs/examples/foo.md` vira `docs/examples/foo.md`). O gerador procura o arquivo em: raiz do projeto (cwd), depois `cwd/docs/<path>`, depois `--root/<path>` e `--root/docs/<path>`.
 - **title**: título exibido no índice e na navegação.
 - **name**: nome curto (opcional).
 - **category**: agrupa docs na lista e na sidebar (ex.: `domain`, `api`).

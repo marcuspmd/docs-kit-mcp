@@ -2,7 +2,7 @@
 
 ## Project Overview
 
-**docs-kit** is an MCP (Model Context Protocol) documentation agent that uses Tree-sitter AST analysis to detect semantic code changes and automatically update documentation. It tracks symbol-to-doc mappings in SQLite and provides CI/CD gates via `doc-guard`.
+**docs-kit** is an MCP (Model Context Protocol) documentation agent that uses Tree-sitter AST analysis to detect semantic code changes and automatically update documentation. It tracks symbol-to-doc mappings in SQLite and provides CI/CD gates via `docs-guard`.
 
 ## Architecture (Layered)
 
@@ -11,7 +11,7 @@ src/
 ├── analyzer/      # Git diff parsing, semantic change detection
 ├── indexer/       # Tree-sitter AST indexer, symbol extraction
 ├── docs/          # DocRegistry, frontmatter parser, section updater, code validators
-├── governance/    # doc-guard CLI, arch-guard, reaper, project-status
+├── governance/    # docs-guard CLI, arch-guard, reaper, project-status
 ├── knowledge/     # Knowledge graph, symbol relationships
 ├── llm/           # Provider abstraction (OpenAI, Claude, Ollama, Gemini)
 ├── storage/       # SQLite persistence
@@ -69,7 +69,7 @@ Core entity is `CodeSymbol` (see `src/indexer/symbol.types.ts`):
 npm run build          # Compile to dist/
 docs-kit index         # Index repository symbols to SQLite
 docs-kit build-site    # Generate static HTML docs site
-doc-guard --base main  # Check if PRs update docs for changed symbols
+docs-guard --base main  # Check if PRs update docs for changed symbols
 ```
 
 ## File Patterns
@@ -78,7 +78,7 @@ doc-guard --base main  # Check if PRs update docs for changed symbols
 |---------|---------|
 | `src/**/*.ts` | Source code (Tree-sitter parsed) |
 | `docs/**/*.md` | Documentation with frontmatter |
-| `.doc-kit/*.db` | SQLite index/registry databases |
+| `.docs-kit/*.db` | SQLite index/registry databases |
 | `tests/*.test.ts` | Jest test files |
 
 ## Common Tasks

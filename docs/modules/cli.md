@@ -39,7 +39,7 @@ main() → parseArgs() → runCommand()
 Indexa o repositório extraindo símbolos, relacionamentos e métricas.
 
 **Opções:**
-- `--db <path>`: Caminho do banco de dados SQLite (padrão: `.doc-kit/index.db`)
+- `--db <path>`: Caminho do banco de dados SQLite (padrão: `.docs-kit/index.db`)
 - `--docs <dir>`: Diretório de documentação (padrão: `docs`)
 - `--full`: Força rebuild completo, ignorando cache de arquivos
 

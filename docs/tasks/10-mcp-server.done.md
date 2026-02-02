@@ -7,7 +7,7 @@
 > **Unblocks:** —
 
 ## Pain Point
-All the analysis and doc-update logic is useless if developers can't invoke it from their editor. The MCP protocol enables VS Code / Copilot integration so developers can trigger doc updates, explain symbols, and generate diagrams without leaving their IDE (`start.md §4.2, §6.1`).
+All the analysis and docs-update logic is useless if developers can't invoke it from their editor. The MCP protocol enables VS Code / Copilot integration so developers can trigger doc updates, explain symbols, and generate diagrams without leaving their IDE (`start.md §4.2, §6.1`).
 
 ## Objective
 Implement an MCP server that exposes the core tools: `generateDocs`, `explainSymbol`, `generateMermaid`, plus future stubs for `analyzePatterns` and `generateEventFlow`.

@@ -7,7 +7,7 @@
 > **Unblocks:** 07
 
 ## Pain Point
-Documentation files need metadata to link them to code symbols. Without a parser for YAML frontmatter, the system can't discover which `.md` file documents which symbol, breaking the entire doc-update pipeline.
+Documentation files need metadata to link them to code symbols. Without a parser for YAML frontmatter, the system can't discover which `.md` file documents which symbol, breaking the entire docs-update pipeline.
 
 ## Objective
 Parse and write YAML frontmatter in Markdown files, specifically the `symbols` field that maps docs to code symbols.

@@ -14,7 +14,7 @@ import { createReaper } from "../governance/reaper.js";
 
 const { values } = parseArgs({
   options: {
-    "db-path": { type: "string", default: ".doc-kit/registry.db" },
+    "db-path": { type: "string", default: ".docs-kit/registry.db" },
     "docs-dir": { type: "string", default: "docs" },
   },
 });

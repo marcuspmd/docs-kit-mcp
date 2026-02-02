@@ -205,7 +205,7 @@ function generateSymbolPage(
     ${symbol.doc_ref ? `
     <div class="section">
       <h2>Documentation</h2>
-      <a href="../docs/${symbol.doc_ref}" class="doc-link">View Documentation →</a>
+      <a href="../docs/${symbol.doc_ref}" class="docs-link">View Documentation →</a>
     </div>
     ` : ''}
 

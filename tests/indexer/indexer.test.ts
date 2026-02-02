@@ -194,7 +194,7 @@ describe("indexProject", () => {
 
   it("reports errors for missing directories gracefully", async () => {
     const result = await indexProject({
-      rootDir: "/tmp/nonexistent-dir-doc-kit-test",
+      rootDir: "/tmp/nonexistent-dir-docs-kit-test",
       include: ["**/*.ts"],
       exclude: [],
     });

@@ -5,7 +5,7 @@
   "type": "module",
   "main": "dist/server.js",
   "bin": {
-    "doc-guard": "dist/governance/docGuardBin.js",
+    "docs-guard": "dist/governance/docGuardBin.js",
     "docs-kit": "dist/cli.js"
   },
   "scripts": {

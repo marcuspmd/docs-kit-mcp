@@ -17,7 +17,7 @@ const { values } = parseArgs({
     base: { type: "string", default: "main" },
     head: { type: "string" },
     strict: { type: "boolean", default: true },
-    "db-path": { type: "string", default: ".doc-kit/registry.db" },
+    "db-path": { type: "string", default: ".docs-kit/registry.db" },
     "docs-dir": { type: "string", default: "docs" },
   },
 });

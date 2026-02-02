@@ -146,7 +146,7 @@ const ConfigSchema = z.object({
   maxFileSize: z.number().default(512_000), // 500 KB
 
   /** SQLite database path (relative to projectRoot) */
-  dbPath: z.string().default(".doc-kit/index.db"),
+  dbPath: z.string().default(".docs-kit/index.db"),
 
   /**
    * Custom prompt rules — matched top-down, first match wins.
@@ -197,7 +197,7 @@ const ConfigSchema = z.object({
 A PHP + TypeScript monorepo where each language needs different documentation style:
 
 ```jsonc
-// .doc-kit.json (user config)
+// .docs-kit.json (user config)
 {
   "promptRules": [
     {

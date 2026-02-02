@@ -90,7 +90,7 @@ export const ConfigSchema = z.object({
 
   maxFileSize: z.number().default(512_000),
 
-  dbPath: z.string().default(".doc-kit/index.db"),
+  dbPath: z.string().default(".docs-kit/index.db"),
 
   promptRules: z.array(PromptRuleSchema).default([]),
 

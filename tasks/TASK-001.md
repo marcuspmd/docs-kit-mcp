@@ -45,4 +45,4 @@ Integrate LLM for intelligent doc generation: Update prompts in `src/prompts/` (
   >> [!TIP]
   >> Usar docs existentes para validar.
   ---</content>
-<parameter name="filePath">/Users/marcusp/Documents/doc-kit/tasks/TASK-001.md
+<parameter name="filePath">/Users/marcusp/Documents/docs-kit/tasks/TASK-001.md

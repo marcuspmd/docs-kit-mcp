@@ -48,7 +48,7 @@ function isSymbolImpacted(symbol: CodeSymbol, hunks: DiffHunk[]): boolean {
 }
 ```
 
-Doc-update heuristic:
+docs-update heuristic:
 
 ```ts
 function requiresDocUpdate(change: AstChange): boolean {

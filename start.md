@@ -31,7 +31,7 @@ O **Documentation Agent MCP** é um sistema que transforma documentação em uma
     - Ganho: Arch Guard, Pattern Analyzer, DDD Enforcer, C4 diagrams, alertas automáticos em PR.
 - Engenheiro de Qualidade / DevOps
     - Dor: não existe “gate” de documentação no CI, a doc sempre fica para depois.
-    - Ganho: Doc-Guard em CI (build falha se mudança semântica não tiver doc atualizada), métricas de cobertura e drift.
+    - Ganho: docs-guard em CI (build falha se mudança semântica não tiver doc atualizada), métricas de cobertura e drift.
 - Produto / Compliance / Gestão
     - Dor: falta ligação clara entre tickets (Jira etc.), código e documentação, dificultando auditorias e decisões.
     - Ganho: RTM (Requirements Traceability Matrix), Business Translator, histórico de regras de negócio e APIs.
@@ -60,7 +60,7 @@ O **Documentation Agent MCP** é um sistema que transforma documentação em uma
 - Camada de Governança
     - **Pattern Analyzer + Violations**: detecção de padrões (Observer, Factory etc.) e violações (incluindo SOLID).
     - **Arch Guard**: aplica regras de arquitetura (camadas, imports proibidos, convenções de nomes).
-    - **Doc-Guard (CI CLI)**: gate no CI que falha build se houver mudança com impacto em doc não tratada.
+    - **docs-guard (CI CLI)**: gate no CI que falha build se houver mudança com impacto em doc não tratada.
     - **Reaper**: identifica código morto, docs órfãs e links quebrados para limpeza proativa.
 - Camada de Negócio
     - **Business Context Mapper**: liga commits, comentários e tags (`ref: PROJ-123`) a docs e símbolos.
@@ -79,7 +79,7 @@ O **Documentation Agent MCP** é um sistema que transforma documentação em uma
 1. Dev altera código e abre PR.
 2. Change Analyzer detecta símbolos impactados (assinatura, lógica, remoção/adição).
 3. Para cada símbolo com `doc_update_required`:
-    - Doc-Guard verifica se há doc vinculada (`findDocBySymbol`) e se foi tocada no PR.
+    - docs-guard verifica se há doc vinculada (`findDocBySymbol`) e se foi tocada no PR.
     - MCP `generateDocs` dispara LLM com `updateSectionPrompt` para atualizar somente aquela seção.
 4. Se símbolo foi removido, `removeSection` limpa a seção correspondente.
 5. CI aprova somente se impactos em docs forem tratados (ou marcados como aceitos manualmente).
@@ -241,7 +241,7 @@ CREATE TABLE relationships (
 | Fluxos de Eventos | Gráficos simples | Análise de listeners/handlers | Simulação de fluxos |
 | Integração MCP | Ferramentas básicas via VS Code | Comandos avançados (impactAnalysis, onboarding) | Extensão auto-instalável |
 | Segurança e Métricas | – | Autenticação básica | Métricas de cobertura e precisão |
-| Governança \& Negócio | Doc-Guard CLI | RTM, Context Mapper | Business Translator, Narrator |
+| Governança \& Negócio | docs-guard CLI | RTM, Context Mapper | Business Translator, Narrator |
 
 
 
@@ -249,7 +249,7 @@ CREATE TABLE relationships (
 
 - Criticamente alta:
     - Atualização de docs existentes por impacto semântico.
-    - Doc-Guard (CI CLI) para impedir drift de doc.
+    - docs-guard (CI CLI) para impedir drift de doc.
 - Alta:
     - Indexação AST multi-linguagem, Integração MCP, Padrões básicos e violações principais.
 - Média/Avançada:

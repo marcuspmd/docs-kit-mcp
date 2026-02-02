@@ -170,7 +170,7 @@ describe("resolvePrompts", () => {
     exclude: [],
     respectGitignore: true,
     maxFileSize: 512000,
-    dbPath: ".doc-kit/index.db",
+    dbPath: ".docs-kit/index.db",
     promptRules: [
       {
         name: "typescript",

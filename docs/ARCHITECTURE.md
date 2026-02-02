@@ -322,7 +322,7 @@ Evita reprocessamento desnecessário:
   run: docs-kit index
 
 - name: Check docs updated
-  run: docs-kit doc-guard --base main --head ${{ github.sha }}
+  run: docs-kit docs-guard --base main --head ${{ github.sha }}
 ```
 
 **Resultado:**

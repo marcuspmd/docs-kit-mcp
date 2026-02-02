@@ -618,7 +618,7 @@ async function runDocGuard(options: {
 ```yaml
 # .github/workflows/pr.yml
 - name: Check docs updated
-  run: npx docs-kit doc-guard --base main --head ${{ github.sha }}
+  run: npx docs-kit docs-guard --base main --head ${{ github.sha }}
 ```
 
 **Logic:**

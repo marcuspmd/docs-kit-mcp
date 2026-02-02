@@ -2,7 +2,7 @@
 ## Branch: feat/TASK-004
 
 **Description:**
-Implementar Executable Docs (validação de exemplos de código em docs) e Doc-Guard CLI (gate no CI para impedir drift de documentação).
+Implementar Executable Docs (validação de exemplos de código em docs) e docs-guard CLI (gate no CI para impedir drift de documentação).
 
 **Metadata:**
 - **Priority:** High
@@ -23,7 +23,7 @@ Implementar Executable Docs (validação de exemplos de código em docs) e Doc-G
 
   ---
 
-  - [x] 2. Implement Doc-Guard CLI 🟡
+  - [x] 2. Implement docs-guard CLI 🟡
   > CI gate that fails build if semantic changes lack doc updates.
   >
   > - [x] 2.1 Create CLI command for audit

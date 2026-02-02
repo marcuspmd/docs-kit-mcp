@@ -111,8 +111,8 @@ async function main() {
       await generateRepoDocumentation(
         args[1] || ".",
         args[2] || "docs",
-        args[3] || ".doc-kit/registry.db",
-        (args[4] || "node_modules,dist,.git,docs,tests,.doc-kit").split(",").map((d) => d.trim()),
+        args[3] || ".docs-kit/registry.db",
+        (args[4] || "node_modules,dist,.git,docs,tests,.docs-kit").split(",").map((d) => d.trim()),
       );
       break;
     case "project-status":
@@ -206,7 +206,7 @@ Usage:
   docs-kit traceability-matrix [--docs dir] [--db path]  Requirements traceability matrix
   docs-kit describe-business <symbol> [--docs dir] [--db path]
                                                         Describe symbol in business terms
-  docs-kit validate-examples [--docs dir] [doc-path] [--db path]
+  docs-kit validate-examples [--docs dir] [docs-path] [--db path]
                                                         Validate code examples in docs
   docs-kit relevant-context [--symbol name] [--file path] [--docs dir] [--db path]
                                                         Get context for symbol or file
@@ -725,8 +725,8 @@ async function runIndex(args: string[]) {
 
 function runBuildSite(args: string[]) {
   const { flags } = parseArgs(args, {
-    out: "doc-site",
-    db: ".doc-kit/index.db",
+    out: "docs-site",
+    db: ".docs-kit/index.db",
     root: ".",
   });
 
@@ -765,7 +765,7 @@ function runBuildSite(args: string[]) {
 function runBuildDocs(args: string[]) {
   const { flags } = parseArgs(args, {
     out: "docs-output",
-    db: ".doc-kit/index.db",
+    db: ".docs-kit/index.db",
     root: ".",
   });
 
@@ -804,7 +804,7 @@ function runBuildDocs(args: string[]) {
 async function generateRepoDocumentation(
   repoDir: string = ".",
   docsDir: string = "docs",
-  dbPath: string = ".doc-kit/registry.db",
+  dbPath: string = ".docs-kit/registry.db",
   _excludeDirs: string[] = [],
 ) {
   header("Generating Repository Documentation");
@@ -970,7 +970,7 @@ const value = ${symbol.name}.SomeValue;
 
 async function runProjectStatus(args: string[]) {
   const { flags } = parseArgs(args, {
-    db: ".doc-kit/index.db",
+    db: ".docs-kit/index.db",
     docs: "docs",
   });
 
@@ -1018,7 +1018,7 @@ async function runProjectStatus(args: string[]) {
 
 async function runSmartCodeReview(args: string[]) {
   const { flags } = parseArgs(args, {
-    db: ".doc-kit/index.db",
+    db: ".docs-kit/index.db",
     docs: "docs",
   });
 
@@ -1069,7 +1069,7 @@ async function runSmartCodeReview(args: string[]) {
 
 async function runDeadCodeScan(args: string[]) {
   const { flags } = parseArgs(args, {
-    db: ".doc-kit/index.db",
+    db: ".docs-kit/index.db",
     docs: "docs",
   });
 

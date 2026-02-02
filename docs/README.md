@@ -158,7 +158,7 @@ export default {
   projectRoot: ".",
   include: ["src/**/*.ts"],
   exclude: ["**/node_modules/**", "**/dist/**"],
-  dbPath: ".doc-kit/index.db",
+  dbPath: ".docs-kit/index.db",
   llm: {
     provider: "openai",
     model: "gpt-4-turbo",
@@ -302,7 +302,7 @@ Detecta patterns (Factory, Singleton, etc.) e violations (SOLID).
 
 ```yaml
 - name: Check docs updated
-  run: docs-kit doc-guard --base main --head ${{ github.sha }}
+  run: docs-kit docs-guard --base main --head ${{ github.sha }}
 ```
 
 ### Claude Desktop (MCP)

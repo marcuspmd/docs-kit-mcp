@@ -157,7 +157,7 @@ A documentação é organizada em:
 - Verifique dependências: `npm install`
 
 ### Ferramentas não funcionam
-- Verifique se o banco de dados existe: `.doc-kit/registry.db`
+- Verifique se o banco de dados existe: `.docs-kit/registry.db`
 - Verifique permissões de arquivo
 
 ### IA não conecta

@@ -651,7 +651,7 @@ describe("CodeExampleValidator", () => {
   describe("extractExamples", () => {
     it("extracts code blocks from markdown", async () => {
       const validator = createCodeExampleValidator();
-      const tmpDir = await mkdtemp(join(tmpdir(), "doc-test-"));
+      const tmpDir = await mkdtemp(join(tmpdir(), "docs-test-"));
       const docPath = join(tmpDir, "test.md");
 
       const content = `# Test Document

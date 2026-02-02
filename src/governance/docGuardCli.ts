@@ -82,12 +82,12 @@ export async function runDocGuard(
 export function formatResult(result: DocGuardResult): string {
   if (result.uncoveredChanges.length > 0) {
     const lines = [
-      `Doc-Guard: ${result.uncoveredChanges.length} symbol(s) changed without doc updates:`,
+      `docs-guard: ${result.uncoveredChanges.length} symbol(s) changed without doc updates:`,
     ];
     for (const v of result.uncoveredChanges) {
       lines.push(`  - ${v.symbolName} (${v.file}): ${v.reason}`);
     }
     return lines.join("\n");
   }
-  return `Doc-Guard: ${result.coveredChanges}/${result.totalChanges} changes covered.`;
+  return `docs-guard: ${result.coveredChanges}/${result.totalChanges} changes covered.`;
 }

@@ -167,7 +167,7 @@ export function initializeSchema(db: Database): void {
 
 **Usage:**
 ```typescript
-const db = new Database(".doc-kit/index.db");
+const db = new Database(".docs-kit/index.db");
 initializeSchema(db);
 ```
 
