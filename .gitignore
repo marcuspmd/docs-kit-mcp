@@ -4,7 +4,6 @@
 /.env.local
 /.env.development.local
 /.env.test.local
-package-lock.json
 dist
 /dist/
 docs-site/
