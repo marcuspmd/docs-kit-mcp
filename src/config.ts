@@ -103,6 +103,14 @@ export const ConfigSchema = z.object({
     })
     .optional(),
 
+  rag: z
+    .object({
+      enabled: z.boolean().default(false),
+      chunkSize: z.number().default(500),
+      overlapSize: z.number().default(50),
+    })
+    .optional(),
+
   defaultPrompts: z
     .object({
       symbolPrompt: z

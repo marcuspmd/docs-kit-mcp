@@ -37,7 +37,14 @@ export default {
     lcovPath: "./coverage/lcov.info",
     enabled: true,
   },
-
+  // RAG (Retrieval-Augmented Generation) Configuration
+  // Control when embeddings are created during indexing
+  // Useful to disable if you only want LLM for doc generation, not for search
+  rag: {
+    enabled: false, // Set to false to skip expensive embeddings during index
+    chunkSize: 500, // Words per chunk (optional)
+    overlapSize: 50, // Overlapping words between chunks (optional)
+  },
   // Architecture governance rules (optional - replaces arch-guard.json)
   // archGuard: {
   //   rules: [

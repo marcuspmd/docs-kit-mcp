@@ -55,6 +55,14 @@ export default {
     enabled: true,
   },
 
+  // RAG (Retrieval-Augmented Generation) Configuration
+  // Control when embeddings are created during indexing
+  rag: {
+    enabled: false, // Set to false to skip RAG during 'docs-kit index'
+    chunkSize: 500, // Words per chunk
+    overlapSize: 50, // Overlapping words between chunks
+  },
+
   // Architecture governance rules (replaces arch-guard.json)
   archGuard: {
     rules: [

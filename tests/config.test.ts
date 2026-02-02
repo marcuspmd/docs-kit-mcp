@@ -161,6 +161,59 @@ describe("ConfigSchema", () => {
 
     expect(config.archGuard).toBeUndefined();
   });
+
+  it("should parse RAG configuration with defaults", () => {
+    const config = ConfigSchema.parse({
+      projectRoot: "/tmp/test",
+      rag: {
+        enabled: false,
+      },
+    });
+
+    expect(config.rag).toBeDefined();
+    expect(config.rag?.enabled).toBe(false);
+    expect(config.rag?.chunkSize).toBe(500);
+    expect(config.rag?.overlapSize).toBe(50);
+  });
+
+  it("should make RAG optional", () => {
+    const config = ConfigSchema.parse({ projectRoot: "/tmp/test" });
+
+    expect(config.rag).toBeUndefined();
+  });
+
+  it("should parse custom RAG configuration", () => {
+    const config = ConfigSchema.parse({
+      projectRoot: "/tmp/test",
+      rag: {
+        enabled: false,
+        chunkSize: 1000,
+        overlapSize: 100,
+      },
+    });
+
+    expect(config.rag).toBeDefined();
+    expect(config.rag?.enabled).toBe(false);
+    expect(config.rag?.chunkSize).toBe(1000);
+    expect(config.rag?.overlapSize).toBe(100);
+  });
+
+  it("should parse RAG with enabled=false to skip embeddings", () => {
+    const config = ConfigSchema.parse({
+      projectRoot: "/tmp/test",
+      llm: {
+        provider: "openai",
+        apiKey: "test-key",
+        model: "gpt-4",
+      },
+      rag: {
+        enabled: false,
+      },
+    });
+
+    expect(config.llm.provider).toBe("openai");
+    expect(config.rag?.enabled).toBe(false);
+  });
 });
 
 describe("resolvePrompts", () => {

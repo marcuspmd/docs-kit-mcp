@@ -669,10 +669,10 @@ async function runIndex(args: string[]) {
 
   // Phase 7: Auto-populate RAG index
   {
-    // Only try RAG if LLM is properly configured with credentials
     const canEmbed = isLlmConfigured(config);
+    const ragEnabled = config.rag?.enabled ?? false;
 
-    if (canEmbed) {
+    if (canEmbed && ragEnabled) {
       step("Populating RAG index");
       try {
         const { createLlmProvider } = await import("./llm/provider.js");
@@ -682,6 +682,8 @@ async function runIndex(args: string[]) {
           embeddingModel: config.llm.embeddingModel ?? "text-embedding-ada-002",
           db,
           embedFn: (texts: string[]) => llm.embed(texts),
+          chunkSize: config.rag?.chunkSize,
+          overlapSize: config.rag?.overlapSize,
         });
         await ragIndex.indexSymbols(allSymbols, sources);
         if (fs.existsSync(docsPath)) {
@@ -691,6 +693,8 @@ async function runIndex(args: string[]) {
       } catch (err) {
         done(`skipped (${(err as Error).message})`);
       }
+    } else if (canEmbed && !ragEnabled) {
+      // RAG explicitly disabled in config
     } else {
       // Skip RAG indexing if no LLM is configured
       // (RAG requires embeddings which need an LLM provider)
