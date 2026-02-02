@@ -21,7 +21,7 @@ export class PythonValidator implements ValidatorStrategy {
     const tempFile = `/tmp/example-${Date.now()}.py`;
     try {
       await writeFile(tempFile, code);
-      await PythonValidator.execAsync(`python3 -m py_compile ${tempFile}`);
+      await PythonValidator.execAsync(`python3 -m py_compile ${tempFile}`, { timeout: 5000 });
       return { valid: true };
     } catch (error: unknown) {
       const execError = error as { stderr?: string; message?: string };
@@ -30,7 +30,11 @@ export class PythonValidator implements ValidatorStrategy {
         error: `Python syntax error: ${execError.stderr || execError.message || "Unknown error"}`,
       };
     } finally {
-      await PythonValidator.execAsync(`rm -f ${tempFile}`);
+      try {
+        await PythonValidator.execAsync(`rm -f ${tempFile}`, { timeout: 1000 });
+      } catch {
+        // Ignore cleanup errors
+      }
     }
   }
 }

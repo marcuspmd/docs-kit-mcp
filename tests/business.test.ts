@@ -3,6 +3,7 @@ import { createBusinessTranslator } from "../src/business/businessTranslator.js"
 import { createRTM } from "../src/business/rtm.js";
 import { buildDescribeInBusinessTermsPrompt } from "../src/prompts/describeInBusinessTerms.prompt.js";
 import type { DocRegistry, DocMapping } from "../src/docs/docRegistry.js";
+import type { Config } from "../src/config.js";
 
 function mockRegistry(mappings: Record<string, DocMapping[]>): DocRegistry {
   return {
@@ -18,7 +19,28 @@ function mockRegistry(mappings: Record<string, DocMapping[]>): DocRegistry {
 }
 
 describe("ContextMapper", () => {
-  const mapper = createContextMapper();
+  const mockConfig: Config = {
+    projectRoot: "/test",
+    include: ["**/*.ts", "**/*.js", "**/*.py"],
+    exclude: ["**/node_modules/**", "**/dist/**"],
+    respectGitignore: true,
+    maxFileSize: 512_000,
+    dbPath: ".docs-kit/index.db",
+    promptRules: [],
+    docs: [],
+    defaultPrompts: {
+      symbolPrompt: "Document this symbol",
+      docPrompt: "Update docs",
+      changePrompt: "Summarize changes",
+    },
+    llm: {
+      provider: "none",
+      model: "gpt-4",
+      maxTokens: 2000,
+      temperature: 0.7,
+    },
+  };
+  const mapper = createContextMapper(mockConfig);
 
   describe("extractRefsFromCommits", () => {
     it("extracts ticket IDs from commit messages", () => {

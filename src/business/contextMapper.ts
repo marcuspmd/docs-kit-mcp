@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 import fastGlob from "fast-glob";
 import { join } from "node:path";
 import type { DocRegistry } from "../docs/docRegistry.js";
+import type { Config } from "../config.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -32,7 +33,7 @@ export interface ContextMapper {
   buildRTM(refs: BusinessRef[], registry: DocRegistry): Promise<TraceabilityEntry[]>;
 }
 
-export function createContextMapper(): ContextMapper {
+export function createContextMapper(config: Config): ContextMapper {
   return {
     async extractRefs(repoPath) {
       const refs: BusinessRef[] = [];
@@ -51,9 +52,9 @@ export function createContextMapper(): ContextMapper {
       }
 
       // Extract from code comments
-      const sourceFiles = await fastGlob("**/*.{ts,js,py,go,php}", {
+      const sourceFiles = await fastGlob(config.include, {
         cwd: repoPath,
-        ignore: ["node_modules/**", "dist/**"],
+        ignore: config.exclude,
       });
 
       for (const file of sourceFiles) {

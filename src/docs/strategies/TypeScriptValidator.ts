@@ -42,7 +42,7 @@ export class TypeScriptValidator implements ValidatorStrategy {
       };
     } finally {
       try {
-        await TypeScriptValidator.execAsync(`rm -f ${tempFile}`);
+        await TypeScriptValidator.execAsync(`rm -f ${tempFile}`, { timeout: 1000 });
       } catch {
         // Ignore cleanup errors
       }

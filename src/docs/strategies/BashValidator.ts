@@ -24,13 +24,13 @@ export class BashValidator implements ValidatorStrategy {
 
     try {
       await writeFile(tmpFile, code);
-      await BashValidator.execAsync(`bash -n ${tmpFile}`);
-      await BashValidator.execAsync(`rm -f ${tmpFile}`);
+      await BashValidator.execAsync(`bash -n ${tmpFile}`, { timeout: 5000 });
+      await BashValidator.execAsync(`rm -f ${tmpFile}`, { timeout: 1000 });
       return { valid: true };
     } catch (error: unknown) {
       // Clean up temp file
       try {
-        await BashValidator.execAsync(`rm -f ${tmpFile}`);
+        await BashValidator.execAsync(`rm -f ${tmpFile}`, { timeout: 1000 });
       } catch {
         // Ignore cleanup errors
       }

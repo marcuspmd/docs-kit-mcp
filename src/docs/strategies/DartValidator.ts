@@ -22,7 +22,7 @@ export class DartValidator implements ValidatorStrategy {
     const tempFile = `/tmp/example-${Date.now()}.dart`;
     try {
       await writeFile(tempFile, code);
-      await DartValidator.execAsync(`dart analyze ${tempFile}`);
+      await DartValidator.execAsync(`dart analyze ${tempFile}`, { timeout: 5000 });
       return { valid: true };
     } catch (error: unknown) {
       const execError = error as { stderr?: string; message?: string };
@@ -40,7 +40,7 @@ export class DartValidator implements ValidatorStrategy {
       };
     } finally {
       try {
-        await DartValidator.execAsync(`rm -f ${tempFile}`);
+        await DartValidator.execAsync(`rm -f ${tempFile}`, { timeout: 1000 });
       } catch {
         // Ignore cleanup errors
       }

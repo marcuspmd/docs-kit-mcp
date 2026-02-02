@@ -22,7 +22,7 @@ export class FlutterValidator implements ValidatorStrategy {
     try {
       await writeFile(tempFile, code);
       // Para Flutter, usamos dart analyze que funciona tanto para Dart quanto Flutter
-      await FlutterValidator.execAsync(`dart analyze ${tempFile}`);
+      await FlutterValidator.execAsync(`dart analyze ${tempFile}`, { timeout: 5000 });
       return { valid: true };
     } catch (error: unknown) {
       const execError = error as { stderr?: string; message?: string };
@@ -40,7 +40,7 @@ export class FlutterValidator implements ValidatorStrategy {
       };
     } finally {
       try {
-        await FlutterValidator.execAsync(`rm -f ${tempFile}`);
+        await FlutterValidator.execAsync(`rm -f ${tempFile}`, { timeout: 1000 });
       } catch {
         // Ignore cleanup errors
       }

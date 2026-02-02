@@ -2,10 +2,7 @@ import Database from "better-sqlite3";
 import { loadConfig } from "../configLoader.js";
 import { createDocRegistry } from "../docs/docRegistry.js";
 import { createKnowledgeGraph } from "../knowledge/graph.js";
-import {
-  createSymbolRepository,
-  createRelationshipRepository,
-} from "../storage/db.js";
+import { createSymbolRepository, createRelationshipRepository } from "../storage/db.js";
 import { createPatternAnalyzer } from "../patterns/patternAnalyzer.js";
 import { createEventFlowAnalyzer } from "../events/eventFlowAnalyzer.js";
 import { createRagIndex } from "../knowledge/rag.js";
@@ -68,7 +65,7 @@ export async function createServerDependencies(
   const archGuard = createArchGuard();
   archGuard.setRules(DEFAULT_ARCH_RULES);
   const reaper = createReaper();
-  const contextMapper = createContextMapper();
+  const contextMapper = createContextMapper(config);
   const businessTranslator = createBusinessTranslator(llm);
   const codeExampleValidator = createCodeExampleValidator();
 

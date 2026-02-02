@@ -119,6 +119,7 @@ describe("Validator Strategies", () => {
       await validator.validate(code);
       expect(mockExecAsync).toHaveBeenCalledWith(
         expect.stringMatching(/^rm -f \/tmp\/bash-validation-\d+\.sh$/),
+        { timeout: 1000 },
       );
     });
 
@@ -131,6 +132,7 @@ describe("Validator Strategies", () => {
       await validator.validate(code);
       expect(mockExecAsync).toHaveBeenCalledWith(
         expect.stringMatching(/^rm -f \/tmp\/bash-validation-\d+\.sh$/),
+        { timeout: 1000 },
       );
     });
   });
@@ -509,7 +511,12 @@ describe("Validator Strategies", () => {
       const code = "const x: number = 42;";
       await validator.validate(code);
       expect(mockExecAsync).toHaveBeenCalledWith(
+        expect.stringMatching(/^npx tsc --noEmit \/tmp\/example-\d+\.ts$/),
+        { timeout: 10000 },
+      );
+      expect(mockExecAsync).toHaveBeenCalledWith(
         expect.stringMatching(/^rm -f \/tmp\/example-\d+\.ts$/),
+        { timeout: 1000 },
       );
     });
 
@@ -521,7 +528,12 @@ describe("Validator Strategies", () => {
       const code = "invalid code";
       await validator.validate(code);
       expect(mockExecAsync).toHaveBeenCalledWith(
+        expect.stringMatching(/^npx tsc --noEmit \/tmp\/example-\d+\.ts$/),
+        { timeout: 10000 },
+      );
+      expect(mockExecAsync).toHaveBeenCalledWith(
         expect.stringMatching(/^rm -f \/tmp\/example-\d+\.ts$/),
+        { timeout: 1000 },
       );
     });
   });

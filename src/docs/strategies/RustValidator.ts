@@ -21,7 +21,9 @@ export class RustValidator implements ValidatorStrategy {
     const tempFile = `/tmp/example-${Date.now()}.rs`;
     try {
       await writeFile(tempFile, code);
-      await RustValidator.execAsync(`rustc --emit=dep-info --out-dir=/tmp ${tempFile}`);
+      await RustValidator.execAsync(`rustc --emit=dep-info --out-dir=/tmp ${tempFile}`, {
+        timeout: 10000,
+      });
       return { valid: true };
     } catch (error: unknown) {
       const execError = error as { stderr?: string; message?: string };
@@ -38,7 +40,7 @@ export class RustValidator implements ValidatorStrategy {
       };
     } finally {
       try {
-        await RustValidator.execAsync(`rm -f ${tempFile}`);
+        await RustValidator.execAsync(`rm -f ${tempFile}`, { timeout: 1000 });
       } catch {
         // Ignore cleanup errors
       }

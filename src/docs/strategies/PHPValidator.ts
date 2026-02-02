@@ -21,7 +21,7 @@ export class PHPValidator implements ValidatorStrategy {
     const tempFile = `/tmp/example-${Date.now()}.php`;
     try {
       await writeFile(tempFile, code);
-      await PHPValidator.execAsync(`php -l ${tempFile}`);
+      await PHPValidator.execAsync(`php -l ${tempFile}`, { timeout: 5000 });
       return { valid: true };
     } catch (error: unknown) {
       const execError = error as { stderr?: string; message?: string };
@@ -30,7 +30,11 @@ export class PHPValidator implements ValidatorStrategy {
         error: `PHP syntax error: ${execError.stderr || execError.message || "Unknown error"}`,
       };
     } finally {
-      await PHPValidator.execAsync(`rm -f ${tempFile}`);
+      try {
+        await PHPValidator.execAsync(`rm -f ${tempFile}`, { timeout: 1000 });
+      } catch {
+        // Ignore cleanup errors
+      }
     }
   }
 }
