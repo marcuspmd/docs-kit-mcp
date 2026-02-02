@@ -6,8 +6,27 @@ export function fileSlug(filePath: string): string {
   return filePath.replace(/\//g, "--");
 }
 
-function safeNodeId(name: string): string {
-  return name.replace(/[^a-zA-Z0-9_]/g, "_");
+function safeNodeId(name: string, counter?: Map<string, number>): string {
+  let base = name.replace(/[^a-zA-Z0-9_]/g, "_");
+  
+  // Remove leading numbers (Mermaid doesn't like IDs starting with numbers)
+  base = base.replace(/^[0-9]+/, "_");
+  
+  // Ensure it's not empty
+  if (!base || base.length === 0) {
+    base = "node";
+  }
+  
+  // If a counter is provided, ensure uniqueness
+  if (counter) {
+    const existing = counter.get(base) || 0;
+    counter.set(base, existing + 1);
+    if (existing > 0) {
+      return `${base}_${existing}`;
+    }
+  }
+  
+  return base;
 }
 
 export function buildMermaidForSymbol(
@@ -35,16 +54,15 @@ export function buildMermaidForSymbol(
   const edgeLines: string[] = [];
   const styleLines: string[] = [];
   const clickLines: string[] = [];
-  const added = new Set<string>();
+  const added = new Map<string, string>(); // Map original name to safe ID
+  const idCounter = new Map<string, number>(); // Track ID usage for uniqueness
 
-  const selfName = safeNodeId(symbol.name);
-  if (!added.has(selfName)) {
-    added.add(selfName);
-    nodeLines.push(`  ${selfName}["${symbol.name}"]`);
-    styleLines.push(`  style ${selfName} fill:#dbeafe,stroke:#2563eb,stroke-width:2px`);
-    if (clickable) {
-      clickLines.push(`  click ${selfName} "${symbol.id}.html"`);
-    }
+  const selfName = safeNodeId(symbol.name, idCounter);
+  added.set(symbol.name, selfName);
+  nodeLines.push(`  ${selfName}["${symbol.name}"]`);
+  styleLines.push(`  style ${selfName} fill:#dbeafe,stroke:#2563eb,stroke-width:2px`);
+  if (clickable) {
+    clickLines.push(`  click ${selfName} "${symbol.id}.html"`);
   }
 
   const arrowMap: Record<string, string> = {
@@ -63,18 +81,20 @@ export function buildMermaidForSymbol(
     const target = symbolMap.get(rel.target_id);
     if (!source || !target) continue;
 
-    const sName = safeNodeId(source.name);
-    const tName = safeNodeId(target.name);
-
-    if (!added.has(sName)) {
-      added.add(sName);
+    let sName = added.get(source.name);
+    if (!sName) {
+      sName = safeNodeId(source.name, idCounter);
+      added.set(source.name, sName);
       nodeLines.push(`  ${sName}["${source.name}"]`);
       if (clickable) {
         clickLines.push(`  click ${sName} "${source.id}.html"`);
       }
     }
-    if (!added.has(tName)) {
-      added.add(tName);
+    
+    let tName = added.get(target.name);
+    if (!tName) {
+      tName = safeNodeId(target.name, idCounter);
+      added.set(target.name, tName);
       nodeLines.push(`  ${tName}["${target.name}"]`);
       if (clickable) {
         clickLines.push(`  click ${tName} "${target.id}.html"`);
@@ -112,7 +132,8 @@ export function buildMermaidForFile(
   const nodeLines: string[] = [];
   const edgeLines: string[] = [];
   const clickLines: string[] = [];
-  const added = new Set<string>();
+  const added = new Map<string, string>();
+  const idCounter = new Map<string, number>();
 
   const arrowMap: Record<string, string> = {
     inherits: "-->|inherits|",
@@ -130,18 +151,20 @@ export function buildMermaidForFile(
     const target = symbolMap.get(rel.target_id);
     if (!source || !target) continue;
 
-    const sName = safeNodeId(source.name);
-    const tName = safeNodeId(target.name);
-
-    if (!added.has(sName)) {
-      added.add(sName);
+    let sName = added.get(source.name);
+    if (!sName) {
+      sName = safeNodeId(source.name, idCounter);
+      added.set(source.name, sName);
       nodeLines.push(`  ${sName}["${source.name}"]`);
       if (clickable) {
         clickLines.push(`  click ${sName} "../symbols/${source.id}.html"`);
       }
     }
-    if (!added.has(tName)) {
-      added.add(tName);
+    
+    let tName = added.get(target.name);
+    if (!tName) {
+      tName = safeNodeId(target.name, idCounter);
+      added.set(target.name, tName);
       nodeLines.push(`  ${tName}["${target.name}"]`);
       if (clickable) {
         clickLines.push(`  click ${tName} "../symbols/${target.id}.html"`);
@@ -192,16 +215,23 @@ export function buildMermaidOverview(
   if (edgeCount.size === 0 && dirMap.size <= 1) return "";
 
   const lines: string[] = ["graph LR"];
+  const idCounter = new Map<string, number>();
+  const nodeLines: string[] = [];
+  const edgeLines: string[] = [];
+  
   for (const [dir, ids] of dirMap) {
-    const safe = safeNodeId(dir);
-    lines.push(`  ${safe}["${dir} (${ids.size})"]`);
+    const safe = safeNodeId(dir, idCounter);
+    nodeLines.push(`  ${safe}["${dir} (${ids.size})"]`);
   }
+  
   for (const [key, count] of edgeCount) {
     const [sd, td] = key.split(":::");
-    lines.push(`  ${safeNodeId(sd)} -->|${count}| ${safeNodeId(td)}`);
+    const safeSd = safeNodeId(sd, idCounter);
+    const safeTd = safeNodeId(td, idCounter);
+    edgeLines.push(`  ${safeSd} -->|${count}| ${safeTd}`);
   }
 
-  return lines.join("\n");
+  return [...lines, ...nodeLines, ...edgeLines].join("\n");
 }
 
 export function buildMermaidTopConnected(
@@ -235,23 +265,26 @@ export function buildMermaidTopConnected(
   const nodeLines: string[] = [];
   const edgeLines: string[] = [];
   const clickLines: string[] = [];
-  const added = new Set<string>();
+  const added = new Map<string, string>();
+  const idCounter = new Map<string, number>();
 
   for (const rel of relevantRels) {
     const source = symbolMap.get(rel.source_id);
     const target = symbolMap.get(rel.target_id);
     if (!source || !target) continue;
 
-    const sName = safeNodeId(source.name);
-    const tName = safeNodeId(target.name);
-
-    if (!added.has(sName)) {
-      added.add(sName);
+    let sName = added.get(source.name);
+    if (!sName) {
+      sName = safeNodeId(source.name, idCounter);
+      added.set(source.name, sName);
       nodeLines.push(`  ${sName}["${source.name}"]`);
       if (clickable) clickLines.push(`  click ${sName} "symbols/${source.id}.html"`);
     }
-    if (!added.has(tName)) {
-      added.add(tName);
+    
+    let tName = added.get(target.name);
+    if (!tName) {
+      tName = safeNodeId(target.name, idCounter);
+      added.set(target.name, tName);
       nodeLines.push(`  ${tName}["${target.name}"]`);
       if (clickable) clickLines.push(`  click ${tName} "symbols/${target.id}.html"`);
     }
