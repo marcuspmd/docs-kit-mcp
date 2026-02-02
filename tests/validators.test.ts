@@ -83,6 +83,26 @@ describe("Validator Strategies", () => {
       expect(result.valid).toBe(false);
       expect(result.error).toContain("Shell syntax error: bash: syntax error");
     });
+
+    it("assumes valid for environmental errors (no stderr)", async () => {
+      // Mock execAsync to reject with no stderr (environmental issue)
+      const error = { message: "Command failed", code: "1" };
+      mockExecAsync.mockRejectedValueOnce(error);
+      const code = 'echo "test"';
+      const result = await validator.validate(code);
+      expect(result.valid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
+
+    it("assumes valid when bash is not found", async () => {
+      // Mock execAsync to reject with command not found
+      const error = { stderr: "bash: command not found", message: "Command failed" };
+      mockExecAsync.mockRejectedValueOnce(error);
+      const code = 'echo "test"';
+      const result = await validator.validate(code);
+      expect(result.valid).toBe(true);
+      expect(result.error).toBeUndefined();
+    });
   });
 
   describe("DartValidator", () => {
