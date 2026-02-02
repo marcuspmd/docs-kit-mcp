@@ -54,7 +54,9 @@ describe("Validator Strategies", () => {
     });
 
     it("validates valid bash code", async () => {
-      mockExecAsync.mockResolvedValueOnce({ stdout: "", stderr: "" });
+      mockWriteFile.mockResolvedValueOnce(undefined);
+      mockExecAsync.mockResolvedValueOnce({ stdout: "", stderr: "" }); // bash -n
+      mockExecAsync.mockResolvedValueOnce({ stdout: "", stderr: "" }); // rm -f
       const code = 'echo "Hello World"';
       const result = await validator.validate(code);
       expect(result.valid).toBe(true);
@@ -74,20 +76,23 @@ describe("Validator Strategies", () => {
     });
 
     it("handles bash syntax errors", async () => {
+      mockWriteFile.mockResolvedValueOnce(undefined);
       // Mock the execAsync to reject for invalid bash syntax
       const error = { stderr: "bash: syntax error", message: "Command failed" };
-      mockExecAsync.mockRejectedValueOnce(error);
+      mockExecAsync.mockRejectedValueOnce(error); // bash -n fails
+      mockExecAsync.mockResolvedValueOnce({ stdout: "", stderr: "" }); // rm -f
       const code = "invalid bash syntax {{{";
       const result = await validator.validate(code);
-      expect(mockExecAsync).toHaveBeenCalledWith("bash -n <<< 'invalid bash syntax {{{'");
       expect(result.valid).toBe(false);
       expect(result.error).toContain("Shell syntax error: bash: syntax error");
     });
 
     it("assumes valid for environmental errors (no stderr)", async () => {
+      mockWriteFile.mockResolvedValueOnce(undefined);
       // Mock execAsync to reject with no stderr (environmental issue)
       const error = { message: "Command failed", code: "1" };
-      mockExecAsync.mockRejectedValueOnce(error);
+      mockExecAsync.mockRejectedValueOnce(error); // bash -n
+      mockExecAsync.mockResolvedValueOnce({ stdout: "", stderr: "" }); // rm -f
       const code = 'echo "test"';
       const result = await validator.validate(code);
       expect(result.valid).toBe(true);
@@ -95,13 +100,38 @@ describe("Validator Strategies", () => {
     });
 
     it("assumes valid when bash is not found", async () => {
+      mockWriteFile.mockResolvedValueOnce(undefined);
       // Mock execAsync to reject with command not found
       const error = { stderr: "bash: command not found", message: "Command failed" };
-      mockExecAsync.mockRejectedValueOnce(error);
+      mockExecAsync.mockRejectedValueOnce(error); // bash -n
+      mockExecAsync.mockResolvedValueOnce({ stdout: "", stderr: "" }); // rm -f
       const code = 'echo "test"';
       const result = await validator.validate(code);
       expect(result.valid).toBe(true);
       expect(result.error).toBeUndefined();
+    });
+
+    it("cleans up temp file on success", async () => {
+      mockWriteFile.mockResolvedValueOnce(undefined);
+      mockExecAsync.mockResolvedValueOnce({ stdout: "", stderr: "" }); // bash -n
+      mockExecAsync.mockResolvedValueOnce({ stdout: "", stderr: "" }); // rm -f
+      const code = 'echo "test"';
+      await validator.validate(code);
+      expect(mockExecAsync).toHaveBeenCalledWith(
+        expect.stringMatching(/^rm -f \/tmp\/bash-validation-\d+\.sh$/),
+      );
+    });
+
+    it("cleans up temp file on error", async () => {
+      mockWriteFile.mockResolvedValueOnce(undefined);
+      const error = { stderr: "bash: syntax error", message: "Command failed" };
+      mockExecAsync.mockRejectedValueOnce(error); // bash -n
+      mockExecAsync.mockResolvedValueOnce({ stdout: "", stderr: "" }); // rm -f
+      const code = "invalid code";
+      await validator.validate(code);
+      expect(mockExecAsync).toHaveBeenCalledWith(
+        expect.stringMatching(/^rm -f \/tmp\/bash-validation-\d+\.sh$/),
+      );
     });
   });
 
