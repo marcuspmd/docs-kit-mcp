@@ -12,6 +12,7 @@
     "build": "tsc",
     "test": "node --experimental-vm-modules node_modules/jest/bin/jest.js",
     "test:coverage": "node --experimental-vm-modules node_modules/jest/bin/jest.js --coverage",
+    "check:deps": "bash scripts/check-dependencies.sh",
     "lint": "eslint src/ tests/",
     "format": "prettier --write \"src/**/*.ts\" \"tests/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\" \"tests/**/*.ts\"",

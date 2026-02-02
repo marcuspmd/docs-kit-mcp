@@ -56,7 +56,11 @@ Executar testes:
 
 ```bash
 npm run test
+npm run test:coverage        # Com relatório de cobertura
+npm run check:deps           # Verificar dependências instaladas
 ```
+
+> **Nota sobre Testes**: O projeto suporta validação de código em múltiplas linguagens (TypeScript, JavaScript, Python, Go, PHP, Dart, Flutter, Bash). Para testes completos, consulte [CI Testing Setup](docs/examples/ci-testing-setup.md).
 
 Formatar / checar formatação:
 
@@ -64,6 +68,55 @@ Formatar / checar formatação:
 npm run format
 npm run format:check
 ```
+
+---
+
+## 🚀 CI/CD e Testes
+
+O projeto está configurado com GitHub Actions para testes e deploy automático:
+
+### Workflows Disponíveis
+
+1. **Test Workflow** (`.github/workflows/test.yml`)
+   - Executado em PRs e pushs
+   - Instala todas as dependências de linguagem
+   - Executa testes com cobertura
+   - Envia relatórios para Codecov
+
+2. **Deploy Workflow** (`.github/workflows/deploy.yml`)
+   - Executado em pushs para `master`
+   - Executa testes completos
+   - Gera documentação e site estático
+   - Deploy automático para GitHub Pages
+
+### Validadores de Código
+
+O projeto inclui validadores para múltiplas linguagens:
+
+- ✅ **Bash/Shell** - Validação de sintaxe shell
+- ✅ **TypeScript/JavaScript** - Compilação e validação TS/JS
+- ✅ **Python** - Validação de sintaxe Python
+- ✅ **Go** - Compilação e validação Go
+- ✅ **PHP** - Validação PHP + PHP-CS-Fixer
+- ✅ **Dart/Flutter** - Análise Dart/Flutter
+
+**Graceful Degradation**: Os validadores funcionam mesmo sem as ferramentas instaladas (assumem código válido), mas no CI todas as ferramentas são instaladas para validação completa.
+
+### Setup Local
+
+Para desenvolvimento local com validação completa:
+
+```bash
+# Verificar dependências instaladas
+npm run check:deps
+
+# Instalar dependências faltantes
+# Consulte docs/examples/ci-testing-setup.md para instruções por plataforma
+```
+
+Mais informações:
+- [CI Testing Setup](docs/examples/ci-testing-setup.md) - Guia completo de instalação
+- [CI Improvements](docs/examples/ci-improvements.md) - Detalhes sobre melhorias implementadas
 
 ---
 

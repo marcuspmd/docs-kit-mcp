@@ -1,28 +1,20 @@
-name: Build, Test & Deploy Docs
+name: Test with Full Validation Stack
 
 on:
+  pull_request:
+    branches:
+      - master
   push:
     branches:
       - master
 
-permissions:
-  contents: read
-  pages: write
-  id-token: write
-
-concurrency:
-  group: "pages"
-  cancel-in-progress: false
-
 jobs:
-  build-and-deploy:
+  test:
     runs-on: ubuntu-latest
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -36,7 +28,7 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y build-essential python3
 
-      # Install language validators for comprehensive testing
+      # Install language validators
       - name: Install Bash (verify)
         run: |
           bash --version
@@ -47,21 +39,41 @@ jobs:
         with:
           sdk: stable
 
+      - name: Verify Dart installation
+        run: |
+          dart --version
+          which dart
+
       - name: Install Flutter
         uses: subosito/flutter-action@v2
         with:
           flutter-version: '3.x'
           channel: 'stable'
 
+      - name: Verify Flutter installation
+        run: |
+          flutter --version
+          which flutter
+
       - name: Install Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
+      - name: Verify Python installation
+        run: |
+          python --version
+          which python
+
       - name: Install Go
         uses: actions/setup-go@v5
         with:
           go-version: '1.21'
+
+      - name: Verify Go installation
+        run: |
+          go version
+          which go
 
       - name: Install PHP
         uses: shivammathur/setup-php@v2
@@ -69,7 +81,12 @@ jobs:
           php-version: '8.2'
           tools: php-cs-fixer, phpstan
 
-      - name: Install dependencies
+      - name: Verify PHP installation
+        run: |
+          php --version
+          which php
+
+      - name: Install npm dependencies
         run: npm ci --legacy-peer-deps
 
       - name: Build project
@@ -77,29 +94,13 @@ jobs:
 
       - name: Run tests with coverage
         run: npm run test:coverage
+        env:
+          CI: true
 
-      - name: Upload coverage reports
+      - name: Upload coverage to Codecov
         uses: codecov/codecov-action@v4
         continue-on-error: true
         with:
           file: ./coverage/lcov.info
           flags: unittests
           name: codecov-docs-kit
-
-      - name: Generate index
-        run: node dist/cli.js index . --db .docs-kit/index.db --docs docs --full
-
-      - name: Generate docs site
-        run: npm run gen:site
-
-      - name: Setup Pages
-        uses: actions/configure-pages@v4
-
-      - name: Upload artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: './docs-site'
-
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
