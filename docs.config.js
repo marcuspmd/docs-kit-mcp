@@ -44,12 +44,12 @@ export default {
   //   baseUrl: "http://localhost:11434",
   // },
   // To use OpenAI instead, uncomment below and set your .env file:
-  llm: {
-    provider: "openai",
-    apiKey: { env: "OPENAI_API_KEY" }, // References .env
-    model: "gpt-5",
-    embeddingModel: "text-embedding-ada-002",
-  },
+  // llm: {
+  //   provider: "openai",
+  //   apiKey: { env: "OPENAI_API_KEY" }, // References .env
+  //   model: "gpt-5",
+  //   embeddingModel: "text-embedding-ada-002",
+  // },
   docs: [
     {
       path: "./docs/README.md",

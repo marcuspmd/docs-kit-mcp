@@ -69,6 +69,25 @@ function summary(lines: [string, string | number][]) {
   }
 }
 
+/**
+ * Check if LLM is properly configured with credentials.
+ * Returns true only if the provider has the necessary credentials available.
+ */
+function isLlmConfigured(config: {
+  llm: { provider: string; apiKey?: string; baseUrl?: string };
+}): boolean {
+  if (config.llm.provider === "none") return false;
+
+  const hasOllamaConfigured = config.llm.provider === "ollama" && !!config.llm.baseUrl;
+  const hasOpenAiConfigured =
+    config.llm.provider === "openai" && !!(config.llm.apiKey || process.env.OPENAI_API_KEY);
+  const hasGeminiConfigured =
+    config.llm.provider === "gemini" && !!(config.llm.apiKey || process.env.GEMINI_API_KEY);
+  const hasClaudeConfigured = config.llm.provider === "claude" && !!process.env.VOYAGE_API_KEY;
+
+  return hasOllamaConfigured || hasOpenAiConfigured || hasGeminiConfigured || hasClaudeConfigured;
+}
+
 /* ================== Main ================== */
 
 async function main() {
@@ -653,11 +672,8 @@ async function runIndex(args: string[]) {
 
   // Phase 7: Auto-populate RAG index
   {
-    const canEmbed =
-      config.llm.provider === "ollama" ||
-      (config.llm.provider === "openai" && process.env.OPENAI_API_KEY) ||
-      (config.llm.provider === "gemini" && (config.llm.apiKey || process.env.GEMINI_API_KEY)) ||
-      (config.llm.provider === "claude" && process.env.VOYAGE_API_KEY);
+    // Only try RAG if LLM is properly configured with credentials
+    const canEmbed = isLlmConfigured(config);
 
     if (canEmbed) {
       step("Populating RAG index");
@@ -678,6 +694,9 @@ async function runIndex(args: string[]) {
       } catch (err) {
         done(`skipped (${(err as Error).message})`);
       }
+    } else {
+      // Skip RAG indexing if no LLM is configured
+      // (RAG requires embeddings which need an LLM provider)
     }
   }
 
@@ -1181,6 +1200,16 @@ async function runExplainSymbol(args: string[]) {
   const registry = createDocRegistry(db);
   const symbolRepo = createSymbolRepository(db);
   const graph = createKnowledgeGraph(db);
+
+  // Check if LLM is configured
+  if (!isLlmConfigured(config)) {
+    console.error(
+      "Error: LLM is not configured. Please uncomment and configure the 'llm' section in docs.config.js",
+    );
+    db.close();
+    process.exit(1);
+  }
+
   const llm = createLlmProvider(config);
 
   await registry.rebuild(docsPath);
@@ -1571,6 +1600,16 @@ async function runDescribeInBusinessTerms(args: string[]) {
   const db = new Database(dbPath);
   const registry = createDocRegistry(db);
   const symbolRepo = createSymbolRepository(db);
+
+  // Check if LLM is configured
+  if (!isLlmConfigured(config)) {
+    console.error(
+      "Error: LLM is not configured. Please uncomment and configure the 'llm' section in docs.config.js",
+    );
+    db.close();
+    process.exit(1);
+  }
+
   const llm = createLlmProvider(config);
   const businessTranslator = createBusinessTranslator(llm);
   await registry.rebuild(docsPath);

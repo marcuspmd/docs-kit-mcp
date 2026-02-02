@@ -103,7 +103,7 @@ export const ConfigSchema = z.object({
 
   llm: z
     .object({
-      provider: z.enum(["openai", "ollama", "gemini", "claude"]).default("openai"),
+      provider: z.enum(["none", "openai", "ollama", "gemini", "claude"]).default("none"),
       apiKey: z
         .union([
           z.string(), // Direct API key (not recommended for production)
