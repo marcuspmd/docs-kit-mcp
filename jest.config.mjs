@@ -37,21 +37,26 @@ export default {
       ...baseConfig,
       displayName: "indexer",
       roots: ["<rootDir>/tests/indexer"],
-      // Critical: Run indexer tests serially in same process
-      // tree-sitter has global state that requires sequential execution
+      // Critical: tree-sitter has global state - each test file needs isolation
+      // Run with only 1 worker but allow Jest to restart workers between files
       maxWorkers: 1,
-      // Force fresh module cache for each test file
-      workerIdleMemoryLimit: "100MB",
+      // Force worker restart between files to clear tree-sitter state
+      workerIdleMemoryLimit: "50MB",
       // Reset modules between tests for clean tree-sitter state
       resetModules: true,
+      // Setup file to force cleanup between tests
+      setupFilesAfterEnv: ["<rootDir>/tests/indexer/setup.ts"],
     },
     {
       ...baseConfig,
       displayName: "unit",
       roots: ["<rootDir>/tests"],
-      testPathIgnorePatterns: ["/node_modules/", "/tests/indexer/"],
+     testPathIgnorePatterns: ["/node_modules/", "/tests/indexer/"],
       // Other tests can run in parallel
       maxWorkers: "50%",
+      // Reset modules to prevent state contamination from indexer tests
+      resetModules: true,
+      workerIdleMemoryLimit: "512MB",
     },
   ],
 

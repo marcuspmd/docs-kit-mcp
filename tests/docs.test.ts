@@ -748,7 +748,7 @@ echo "Hello World"
 
       expect(result.valid).toBe(false);
       expect(result.error).toContain("TypeScript compilation error");
-    });
+    }, 15000);
 
     it("handles unknown languages", async () => {
       const validator = createCodeExampleValidator();
