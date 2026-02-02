@@ -1,5 +1,6 @@
 import * as fs from "fs";
 import * as path from "path";
+import { fileURLToPath } from "url";
 import Database from "better-sqlite3";
 import type { CodeSymbol } from "../indexer/symbol.types.js";
 import type { RelationshipRow } from "../storage/db.js";
@@ -18,6 +19,10 @@ import {
   buildSearchIndex,
   fileSlug,
 } from "./templates.js";
+
+// ES module compatibility for __dirname
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 export interface GeneratorOptions {
   dbPath: string;
@@ -287,23 +292,33 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   fs.mkdirSync(path.join(outDir, "symbols"), { recursive: true });
   fs.mkdirSync(path.join(outDir, "files"), { recursive: true });
 
-  // Copy assets directory if it exists
+  // Helper function to copy directories recursively
+  const copyRecursive = (src: string, dest: string) => {
+    if (!fs.existsSync(src)) return;
+
+    if (fs.statSync(src).isDirectory()) {
+      fs.mkdirSync(dest, { recursive: true });
+      for (const entry of fs.readdirSync(src)) {
+        copyRecursive(path.join(src, entry), path.join(dest, entry));
+      }
+    } else {
+      fs.mkdirSync(path.dirname(dest), { recursive: true });
+      fs.copyFileSync(src, dest);
+    }
+  };
+
+  // Copy assets directory if it exists from target project
   const assetsSource = path.join(rootDir || ".", "assets");
   const assetsTarget = path.join(outDir, "assets");
   if (fs.existsSync(assetsSource)) {
-    // Copy assets recursively
-    fs.mkdirSync(assetsTarget, { recursive: true });
-    const copyRecursive = (src: string, dest: string) => {
-      if (fs.statSync(src).isDirectory()) {
-        fs.mkdirSync(dest, { recursive: true });
-        for (const entry of fs.readdirSync(src)) {
-          copyRecursive(path.join(src, entry), path.join(dest, entry));
-        }
-      } else {
-        fs.copyFileSync(src, dest);
-      }
-    };
     copyRecursive(assetsSource, assetsTarget);
+  }
+
+  // Always copy docs-kit assets (logo, etc.) for branding
+  // This ensures the logo appears even when generating sites for other projects
+  const docsKitAssetsSource = path.join(__dirname, "..", "..", "assets");
+  if (fs.existsSync(docsKitAssetsSource)) {
+    copyRecursive(docsKitAssetsSource, assetsTarget);
   }
 
   // Cache source files

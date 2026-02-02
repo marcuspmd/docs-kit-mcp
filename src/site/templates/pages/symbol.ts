@@ -17,6 +17,7 @@ import {
 import { layout } from "../layout.js";
 import { mermaidDiagramWrap, getMermaidExpandModalAndScript } from "../mermaid.js";
 import { fileSlug, buildMermaidForSymbol } from "../../shared.js";
+import { renderMarkdown } from "../markdown.js";
 
 export function renderSymbolPage(
   symbol: CodeSymbol,
@@ -153,7 +154,7 @@ export function renderSymbolPage(
             ? `
         <div class="prose prose-sm dark:prose-invert max-w-none text-gray-700 dark:text-gray-300">
            <h3 class="text-sm font-medium text-gray-500 dark:text-gray-400 mb-1">Summary</h3>
-           <p>${escapeHtml(symbol.summary)}</p>
+           <div class="rendered-markdown">${renderMarkdown(symbol.summary)}</div>
         </div>`
             : ""
         }
@@ -169,7 +170,7 @@ export function renderSymbolPage(
               </svg>
               AI Generated Explanation
             </h3>
-            <div class="text-gray-700 dark:text-gray-300 whitespace-pre-wrap">${escapeHtml(symbol.explanation)}</div>
+            <div class="text-gray-700 dark:text-gray-300 rendered-markdown">${renderMarkdown(symbol.explanation)}</div>
           </div>
         </div>`
             : ""
