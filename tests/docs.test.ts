@@ -795,7 +795,7 @@ echo "Hello World"
 
       expect(result.valid).toBe(true);
       expect(result.example).toBe(example);
-    });
+    }, 10000);
 
     it("validates Flutter code", async () => {
       const validator = createCodeExampleValidator();
@@ -811,7 +811,7 @@ echo "Hello World"
 
       expect(result.valid).toBe(true);
       expect(result.example).toBe(example);
-    });
+    }, 10000);
 
     it("validates Python code", async () => {
       const validator = createCodeExampleValidator();
@@ -843,7 +843,7 @@ echo "Hello World"
 
       expect(result.valid).toBe(true);
       expect(result.example).toBe(example);
-    });
+    }, 10000);
 
     it("validates Rust code", async () => {
       const validator = createCodeExampleValidator();

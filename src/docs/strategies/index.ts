@@ -1,4 +1,4 @@
-export { ValidatorStrategy } from "./TypeScriptValidator.js";
+export type { ValidatorStrategy } from "./TypeScriptValidator.js";
 export { TypeScriptValidator } from "./TypeScriptValidator.js";
 export { JavaScriptValidator } from "./JavaScriptValidator.js";
 export { BashValidator } from "./BashValidator.js";
