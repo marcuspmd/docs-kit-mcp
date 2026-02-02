@@ -38,7 +38,7 @@ export function renderDashboardMd(data: MdSiteData): string {
     )
     .join("\n");
 
-  return `# docs-kit Documentation
+  return `# Documentation
 
 | Metric | Count |
 |--------|-------|
@@ -82,11 +82,15 @@ export function renderSymbolMd(
 
   // Metadata
   const meta: string[] = [];
-  meta.push(`- **File:** [${symbol.file}](../files/${fileSlug(symbol.file)}.md):${symbol.startLine}-${symbol.endLine}`);
+  meta.push(
+    `- **File:** [${symbol.file}](../files/${fileSlug(symbol.file)}.md):${symbol.startLine}-${symbol.endLine}`,
+  );
   if (symbol.signature) meta.push(`- **Signature:** \`${symbol.signature}\``);
   if (symbol.pattern) meta.push(`- **Pattern:** ${symbol.pattern}`);
   if (symbol.metrics) {
-    meta.push(`- **Metrics:** LOC: ${symbol.metrics.linesOfCode ?? "-"}, Complexity: ${symbol.metrics.cyclomaticComplexity ?? "-"}, Params: ${symbol.metrics.parameterCount ?? "-"}`);
+    meta.push(
+      `- **Metrics:** LOC: ${symbol.metrics.linesOfCode ?? "-"}, Complexity: ${symbol.metrics.cyclomaticComplexity ?? "-"}, Params: ${symbol.metrics.parameterCount ?? "-"}`,
+    );
   }
   sections.push(meta.join("\n") + "\n");
 
@@ -148,17 +152,15 @@ export function renderSymbolMd(
           `| [${c.name}](${c.id}.md) | \`${c.kind}\` | ${c.signature ? `\`${c.signature}\`` : "-"} |`,
       )
       .join("\n");
-    sections.push(`## Members\n\n| Name | Kind | Signature |\n|------|------|-----------|\n${rows}\n`);
+    sections.push(
+      `## Members\n\n| Name | Kind | Signature |\n|------|------|-----------|\n${rows}\n`,
+    );
   }
 
   return sections.join("\n");
 }
 
-export function renderFileMd(
-  filePath: string,
-  symbols: CodeSymbol[],
-  sourceCode?: string,
-): string {
+export function renderFileMd(filePath: string, symbols: CodeSymbol[], sourceCode?: string): string {
   const topLevel = symbols.filter((s) => !s.parent);
   const sections: string[] = [];
 
@@ -178,7 +180,9 @@ export function renderFileMd(
     }
   }
 
-  sections.push(`| Name | Kind | Lines | Signature |\n|------|------|-------|-----------|\n${rows.join("\n")}\n`);
+  sections.push(
+    `| Name | Kind | Lines | Signature |\n|------|------|-------|-----------|\n${rows.join("\n")}\n`,
+  );
 
   if (sourceCode) {
     sections.push(`## Source\n\n\`\`\`typescript\n${sourceCode}\n\`\`\`\n`);
@@ -229,10 +233,7 @@ ${tableRows}
 `;
 }
 
-export function renderPatternsMd(
-  patterns: DetectedPattern[],
-  symbols: CodeSymbol[],
-): string {
+export function renderPatternsMd(patterns: DetectedPattern[], symbols: CodeSymbol[]): string {
   const symbolMap = new Map(symbols.map((s) => [s.id, s]));
 
   if (patterns.length === 0) {

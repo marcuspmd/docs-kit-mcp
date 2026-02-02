@@ -5,6 +5,7 @@
 import type { DocEntry } from "../types.js";
 import { escapeHtml, docEntryLabel } from "../utils.js";
 import { layout } from "../layout.js";
+import { getMermaidExpandModalAndScript } from "../mermaid.js";
 
 export function renderMarkdownWrapper(
   title: string,
@@ -25,10 +26,17 @@ export function renderMarkdownWrapper(
 
   let facetsHtml = "";
   if (docEntries?.length && docPath) {
-    const others = docEntries.filter((e) => e.path !== docPath);
+    // Only show docs with explicit category AND that are markdown files
+    // Filter out auto-generated module pages and docs without explicit category
+    const others = docEntries.filter((e) => 
+      e.path !== docPath && 
+      e.category && 
+      e.category.trim() !== "" &&
+      e.path.toLowerCase().endsWith('.md')  // Only include markdown docs
+    );
     const byCategory = new Map<string, DocEntry[]>();
     for (const e of others) {
-      const cat = e.category ?? "";
+      const cat = e.category!; // Safe because we filtered above
       if (!byCategory.has(cat)) byCategory.set(cat, []);
       byCategory.get(cat)!.push(e);
     }
@@ -50,10 +58,9 @@ export function renderMarkdownWrapper(
           ? Array.from(byCategory.entries())
               .sort(([a], [b]) => a.localeCompare(b))
               .map(([category, entries]) => {
-                const label = category || "General";
                 return `
       <div class="mt-3">
-        <span class="px-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">${escapeHtml(label)}</span>
+        <span class="px-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">${escapeHtml(category)}</span>
         ${entries
           .map((e) => {
             const href = prefix + e.path.replace(/\.md$/i, ".html");
@@ -87,25 +94,59 @@ export function renderMarkdownWrapper(
     ? `
     <article id="doc" class="prose dark:prose-invert max-w-none prose-blue dark:prose-blue"></article>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <script>
       (function(){
         const md = \`${escapedMarkdown}\`;
         const html = marked.parse(md);
         document.getElementById('doc').innerHTML = html;
+        
         // Convert internal .md links to .html so navigation stays within site
         document.querySelectorAll('#doc a').forEach(function(a){
           const href = a.getAttribute('href');
           if (!href) return;
           if (href.toLowerCase().endsWith('.md')) a.setAttribute('href', href.slice(0, -3) + '.html');
         });
-        if (typeof hljs !== 'undefined') {
-          document.querySelectorAll('#doc pre code').forEach(function(block) {
+        
+        // Process code blocks for Mermaid diagrams
+        document.querySelectorAll('#doc pre code').forEach(function(block) {
+          const className = block.className || '';
+          if (className.includes('language-mermaid')) {
+            // This is a Mermaid diagram - extract the code and replace with a div
+            const mermaidCode = block.textContent;
+            const pre = block.parentElement;
+            const wrapper = document.createElement('div');
+            wrapper.className = 'mermaid-expand-wrapper relative group';
+            wrapper.setAttribute('data-mermaid-src-base64', btoa(mermaidCode));
+            
+            const mermaidDiv = document.createElement('div');
+            mermaidDiv.className = 'mermaid';
+            mermaidDiv.textContent = mermaidCode;
+            wrapper.appendChild(mermaidDiv);
+            
+            const expandBtn = document.createElement('button');
+            expandBtn.type = 'button';
+            expandBtn.className = 'mermaid-expand-btn absolute top-2 right-2 z-10 px-2 py-1 text-xs font-medium rounded bg-white/90 dark:bg-gray-800/90 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 shadow hover:bg-white dark:hover:bg-gray-700 hover:border-blue-400 dark:hover:border-blue-500 opacity-70 group-hover:opacity-100 transition-opacity';
+            expandBtn.title = 'Expand to fullscreen (zoom and pan)';
+            expandBtn.textContent = 'Expand';
+            wrapper.appendChild(expandBtn);
+            
+            pre.parentElement.replaceChild(wrapper, pre);
+          } else if (typeof hljs !== 'undefined') {
+            // Regular code block - apply syntax highlighting
             hljs.highlightElement(block);
-          });
+          }
+        });
+        
+        // Initialize Mermaid to render diagrams
+        if (typeof mermaid !== 'undefined') {
+          mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose',maxTextSize:300000});
+          mermaid.run({querySelector:'.mermaid'});
         }
       })();
     </script>
     ${prevNextFooter}
+    ${getMermaidExpandModalAndScript()}
   `
     : `
     <article id="doc" class="prose dark:prose-invert max-w-none prose-blue dark:prose-blue">
@@ -118,6 +159,7 @@ export function renderMarkdownWrapper(
        </div>
     </article>
     <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/mermaid/dist/mermaid.min.js"></script>
     <script>
       (async function(){
         try {
@@ -126,16 +168,48 @@ export function renderMarkdownWrapper(
           const md = await res.text();
           const html = marked.parse(md);
           document.getElementById('doc').innerHTML = html;
+          
           // Convert internal .md links to .html so navigation stays within site
           document.querySelectorAll('#doc a').forEach(function(a){
             const href = a.getAttribute('href');
             if (!href) return;
             if (href.toLowerCase().endsWith('.md')) a.setAttribute('href', href.slice(0, -3) + '.html');
           });
-          if (typeof hljs !== 'undefined') {
-            document.querySelectorAll('#doc pre code').forEach(function(block) {
+          
+          // Process code blocks for Mermaid diagrams
+          document.querySelectorAll('#doc pre code').forEach(function(block) {
+            const className = block.className || '';
+            if (className.includes('language-mermaid')) {
+              // This is a Mermaid diagram - extract the code and replace with a div
+              const mermaidCode = block.textContent;
+              const pre = block.parentElement;
+              const wrapper = document.createElement('div');
+              wrapper.className = 'mermaid-expand-wrapper relative group';
+              wrapper.setAttribute('data-mermaid-src-base64', btoa(mermaidCode));
+              
+              const mermaidDiv = document.createElement('div');
+              mermaidDiv.className = 'mermaid';
+              mermaidDiv.textContent = mermaidCode;
+              wrapper.appendChild(mermaidDiv);
+              
+              const expandBtn = document.createElement('button');
+              expandBtn.type = 'button';
+              expandBtn.className = 'mermaid-expand-btn absolute top-2 right-2 z-10 px-2 py-1 text-xs font-medium rounded bg-white/90 dark:bg-gray-800/90 text-gray-700 dark:text-gray-300 border border-gray-300 dark:border-gray-600 shadow hover:bg-white dark:hover:bg-gray-700 hover:border-blue-400 dark:hover:border-blue-500 opacity-70 group-hover:opacity-100 transition-opacity';
+              expandBtn.title = 'Expand to fullscreen (zoom and pan)';
+              expandBtn.textContent = 'Expand';
+              wrapper.appendChild(expandBtn);
+              
+              pre.parentElement.replaceChild(wrapper, pre);
+            } else if (typeof hljs !== 'undefined') {
+              // Regular code block - apply syntax highlighting
               hljs.highlightElement(block);
-            });
+            }
+          });
+          
+          // Initialize Mermaid to render diagrams
+          if (typeof mermaid !== 'undefined') {
+            mermaid.initialize({startOnLoad:true,theme:'default',securityLevel:'loose',maxTextSize:300000});
+            mermaid.run({querySelector:'.mermaid'});
           }
         } catch(e) {
           document.getElementById('doc').innerHTML = '<div class="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-800 rounded-md p-4 text-red-700 dark:text-red-300">Error loading document: ' + e.message + '</div>';
@@ -143,13 +217,21 @@ export function renderMarkdownWrapper(
       })();
     </script>
     ${prevNextFooter}
+    ${getMermaidExpandModalAndScript()}
   `;
 
   return layout(title, "", body, depth, facetsHtml, docEntries ?? []);
 }
 
 export function renderDocsPage(docEntries: DocEntry[]): string {
-  const sorted = [...docEntries].sort((a, b) => {
+  // Only show markdown docs with explicit category
+  const filtered = docEntries.filter((e) => 
+    e.category && 
+    e.category.trim() !== "" &&
+    e.path.toLowerCase().endsWith('.md')
+  );
+  
+  const sorted = [...filtered].sort((a, b) => {
     const catA = a.category ?? "";
     const catB = b.category ?? "";
     if (catA !== catB) return catA.localeCompare(catB);
@@ -159,7 +241,7 @@ export function renderDocsPage(docEntries: DocEntry[]): string {
   const byCategory = new Map<string, DocEntry[]>();
   const byModule = new Map<string, DocEntry[]>();
   for (const e of sorted) {
-    const cat = e.category ?? "";
+    const cat = e.category!; // Safe because we filtered above
     if (!byCategory.has(cat)) byCategory.set(cat, []);
     byCategory.get(cat)!.push(e);
     if (e.module) {
@@ -177,10 +259,9 @@ export function renderDocsPage(docEntries: DocEntry[]): string {
       ${Array.from(byCategory.entries())
         .sort(([a], [b]) => a.localeCompare(b))
         .map(([category, entries]) => {
-          const label = category || "General";
           return `
       <div class="mt-3">
-        <span class="px-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">${escapeHtml(label)}</span>
+        <span class="px-3 text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">${escapeHtml(category)}</span>
         ${entries
           .map((e) => {
             const href = e.path.replace(/\.md$/i, ".html");
@@ -220,17 +301,16 @@ export function renderDocsPage(docEntries: DocEntry[]): string {
 
   const body = `
     <h1 class="text-3xl font-bold text-gray-900 dark:text-white mb-8 pb-4 border-b border-gray-200 dark:border-gray-700">Documentation</h1>
-    <p class="text-gray-600 dark:text-gray-400 mb-6">Markdown docs referenced by symbols or listed in <code class="text-sm bg-gray-100 dark:bg-gray-700 px-1 rounded">docs-config.json</code>. Open the HTML version to read in the site.</p>
+    <p class="text-gray-600 dark:text-gray-400 mb-6">Markdown docs explicitly listed in <code class="text-sm bg-gray-100 dark:bg-gray-700 px-1 rounded">docs.config.js</code>. Open the HTML version to read in the site.</p>
     ${
       sorted.length === 0
-        ? "<div class='text-center py-12 text-gray-500 dark:text-gray-400'>No doc references yet. Add <code class='text-sm bg-gray-100 dark:bg-gray-700 px-1 rounded'>doc_ref</code> to symbols, link docs in frontmatter, or add entries to <code class='text-sm bg-gray-100 dark:bg-gray-700 px-1 rounded'>docs-config.json</code>.</div>"
+        ? "<div class='text-center py-12 text-gray-500 dark:text-gray-400'>No documentation entries found. Add docs with explicit categories to <code class='text-sm bg-gray-100 dark:bg-gray-700 px-1 rounded'>docs.config.js</code>.</div>"
         : Array.from(byCategory.entries())
             .sort(([a], [b]) => a.localeCompare(b))
             .map(([category, entries]) => {
-              const label = category ? escapeHtml(category) : "General";
               return `
     <div class="mb-10">
-      <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-4">${label}</h2>
+      <h2 class="text-xl font-bold text-gray-900 dark:text-white mb-4">${escapeHtml(category)}</h2>
       <div class="bg-white dark:bg-gray-800 shadow overflow-x-auto sm:rounded-lg border border-gray-200 dark:border-gray-700">
         <ul class="divide-y divide-gray-200 dark:divide-gray-700">
           ${entries

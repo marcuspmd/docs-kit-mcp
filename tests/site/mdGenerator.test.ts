@@ -2,7 +2,11 @@ import Database from "better-sqlite3";
 import * as fs from "fs";
 import * as path from "path";
 import * as os from "os";
-import { initializeSchema, createSymbolRepository, createRelationshipRepository } from "../../src/storage/db.js";
+import {
+  initializeSchema,
+  createSymbolRepository,
+  createRelationshipRepository,
+} from "../../src/storage/db.js";
 import { generateDocs } from "../../src/site/mdGenerator.js";
 import { generateSymbolId } from "../../src/indexer/symbol.types.js";
 import { fileSlug } from "../../src/site/shared.js";
@@ -76,7 +80,7 @@ describe("generateDocs (Markdown)", () => {
   it("generates README.md with stats and links", () => {
     generateDocs({ dbPath, outDir });
     const readme = fs.readFileSync(path.join(outDir, "README.md"), "utf-8");
-    expect(readme).toContain("# docs-kit Documentation");
+    expect(readme).toContain("# Documentation");
     expect(readme).toContain("UserService");
     expect(readme).toContain("User");
     expect(readme).toContain("symbols/");

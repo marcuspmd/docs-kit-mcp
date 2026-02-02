@@ -39,6 +39,25 @@ export default {
   },
   docs: [
     {
+      path: "./docs/README.md",
+      title: "Introduction",
+      name: "introduction",
+      category: "main",
+      module: "Main",
+      symbols: [],
+      next: "docs/domain/arch-guard-rules.md",
+      showOnMenu: true,
+    },
+    {
+      path: "./docs/ARCHITECTURE.md",
+      title: "Architecture Overview",
+      name: "architecture-overview",
+      category: "main",
+      module: "Main",
+      symbols: [],
+      showOnMenu: true,
+    },
+    {
       path: "./docs/domain/arch-guard-rules.md",
       title: "Arch Guard Rules",
       name: "arch-guard-rules",
@@ -56,6 +75,11 @@ export default {
       module: "Main",
       symbols: ["projectStatus", "ProjectStatusReport"],
       previous: "docs/domain/arch-guard-rules.md",
+      showOnMenu: true
+    },
+    {
+      path: "./docs/modules/",
+      autoDiscovery: true,
       showOnMenu: true
     },
     {

@@ -364,6 +364,7 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
     }
   }
   const docEntries = Array.from(docEntriesMap.values());
+  console.log(`DEBUG: Total docEntries = ${docEntries.length}`, docEntries.map(d => `${d.path} (cat: ${d.category || 'NONE'})`));
 
   // Generate index.html with docEntries for menu
   fs.writeFileSync(
@@ -427,7 +428,8 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
 
         fs.writeFileSync(outHtmlPath, wrapper, "utf-8");
       } catch (e) {
-        // ignore wrapper errors
+        console.error(`Error generating HTML for ${docRef}:`, e);
+        throw e;
       }
     } else {
       const linked = symbols.filter((s) => s.docRef === docRef);
@@ -467,7 +469,8 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
 
           fs.writeFileSync(outHtmlPath, wrapper, "utf-8");
         } catch (e) {
-          // ignore wrapper errors
+          console.error(`Error generating placeholder HTML for ${docRef}:`, e);
+          throw e;
         }
       }
     }

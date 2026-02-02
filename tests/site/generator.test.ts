@@ -80,7 +80,7 @@ describe("generateSite", () => {
   it("generates index.html", () => {
     generateSite({ dbPath, outDir });
     const indexHtml = fs.readFileSync(path.join(outDir, "index.html"), "utf-8");
-    expect(indexHtml).toContain("docs-kit Documentation");
+    expect(indexHtml).toContain("Dashboard");
     expect(indexHtml).toContain("UserService");
     expect(indexHtml).toContain("User");
   });
