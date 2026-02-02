@@ -47,6 +47,7 @@ import { mkdtemp, writeFile, mkdir, rm, readFile } from "node:fs/promises";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import { Config, ConfigSchema } from "../src/config.js";
+import type { ResolvedConfig } from "../src/configLoader.js";
 import { createCodeExampleValidator } from "../src/docs/codeExampleValidator.js";
 
 describe("frontmatter parser", () => {
@@ -426,7 +427,7 @@ describe("updateSection", () => {
       provider: "openai",
       apiKey: "test-key",
     },
-  });
+  }) as unknown as ResolvedConfig;
 
   test("updates existing section content", async () => {
     const sections = parseSections(md);

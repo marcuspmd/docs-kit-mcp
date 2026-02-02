@@ -27,7 +27,7 @@ describe("ProjectStatus", () => {
     const reaper = createReaper();
 
     const result = await generateProjectStatus(
-      { docsDir: "docs" },
+      { docsDir: "/tmp/nonexistent-docs-dir-for-test" },
       {
         symbolRepo,
         relRepo,
