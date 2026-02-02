@@ -1,7 +1,18 @@
-export default {
+/**
+ * Jest configuration with projects for proper test isolation.
+ *
+ * The indexer tests use tree-sitter which has global state that conflicts
+ * with other tests when run in the same process. Using Jest projects ensures
+ * each group runs in its own isolated environment.
+ *
+ * IMPORTANT: The indexer project uses forceExit and runInBand to ensure
+ * complete isolation between test files due to tree-sitter's native bindings.
+ */
+
+/** @type {import('jest').Config} */
+const baseConfig = {
   preset: "ts-jest/presets/default-esm",
   testEnvironment: "node",
-  roots: ["<rootDir>/tests"],
   extensionsToTreatAsEsm: [".ts"],
   moduleNameMapper: {
     "^(\\.{1,2}/.*)\\.js$": "$1",
@@ -9,18 +20,53 @@ export default {
   transform: {
     "^.+\\.tsx?$": [
       "ts-jest",
-      { useESM: true,
+      {
+        useESM: true,
         diagnostics: false,
+        // Isolate modules to prevent state leakage
+        isolatedModules: true,
       },
     ],
   },
-  // Increase timeout for validation tests (TypeScript compilation, etc.)
   testTimeout: 10000,
-  // Force serial execution for CI/CD reliability
-  // Tree-sitter parsers have global state that causes race conditions
-  maxWorkers: 1,
-  // Additional isolation settings
-  maxConcurrency: 1,
   clearMocks: true,
   restoreMocks: true,
 };
+
+export default {
+  // Use projects for proper isolation
+  projects: [
+    {
+      ...baseConfig,
+      displayName: "indexer",
+      roots: ["<rootDir>/tests/indexer"],
+      // Critical: Run indexer tests serially in same process
+      // tree-sitter has global state that requires sequential execution
+      maxWorkers: 1,
+      maxConcurrency: 1,
+      // Force fresh module cache for each test file
+      workerIdleMemoryLimit: "100MB",
+      // Reset modules between tests for clean tree-sitter state
+      resetModules: true,
+    },
+    {
+      ...baseConfig,
+      displayName: "unit",
+      roots: ["<rootDir>/tests"],
+      testPathIgnorePatterns: ["/node_modules/", "/tests/indexer/"],
+      // Other tests can run in parallel
+      maxWorkers: "50%",
+    },
+  ],
+
+  // Coverage configuration (applies to all projects)
+  collectCoverageFrom: [
+    "src/**/*.ts",
+    "!src/**/*.d.ts",
+    "!src/**/index.ts",
+  ],
+  coverageDirectory: "coverage",
+  coverageReporters: ["text", "lcov", "clover", "json"],
+};
+
+

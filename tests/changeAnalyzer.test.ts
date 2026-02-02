@@ -84,7 +84,7 @@ describe("analyzeChanges", () => {
     } catch {
       // Expected to fail due to git commands in default deps, but coverage is achieved
     }
-  });
+  }, 15000); // Increased timeout for git operations with coverage instrumentation
 
   it("marks added symbols with docUpdateRequired=true", async () => {
     const newSym = sym({
