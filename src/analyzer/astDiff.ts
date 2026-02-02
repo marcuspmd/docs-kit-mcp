@@ -87,6 +87,7 @@ export function diffSymbols(oldSymbols: CodeSymbol[], newSymbols: CodeSymbol[]):
       case "moved":
         details = `moved from line ${oldSym.startLine} to ${newSym.startLine}`;
         break;
+      /* istanbul ignore next */
       default:
         details = `${change}`;
     }

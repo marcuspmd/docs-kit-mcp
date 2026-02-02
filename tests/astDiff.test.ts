@@ -55,6 +55,7 @@ describe("diffSymbols", () => {
     const changes = diffSymbols(oldSyms, newSyms);
     expect(changes).toHaveLength(1);
     expect(changes[0].changeType).toBe("moved");
+    expect(changes[0].details).toBe("moved from line 1 to 5");
   });
 
   it("detects signature_changed when signature field differs", () => {
