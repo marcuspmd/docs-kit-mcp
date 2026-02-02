@@ -55,7 +55,7 @@ export function renderDashboard(data: SiteData): string {
   }
 
   // Overview graph
-  const overviewGraph = buildMermaidOverview(symbols, relationships, true);
+  const overviewGraph = buildMermaidOverview(symbols, relationships);
 
   const topLevel = symbols.filter((s) => !s.parent);
 

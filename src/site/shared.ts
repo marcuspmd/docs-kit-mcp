@@ -31,14 +31,17 @@ export function buildMermaidForSymbol(
 
   const symbolMap = new Map(allSymbols.map((s) => [s.id, s]));
   const lines: string[] = ["graph LR"];
-  const added = new Set<string>();
+  const nodeLines: string[] = [];
+  const edgeLines: string[] = [];
+  const styleLines: string[] = [];
   const clickLines: string[] = [];
+  const added = new Set<string>();
 
   const selfName = safeNodeId(symbol.name);
   if (!added.has(selfName)) {
     added.add(selfName);
-    lines.push(`  ${selfName}["${symbol.name}"]`);
-    lines.push(`  style ${selfName} fill:#dbeafe,stroke:#2563eb,stroke-width:2px`);
+    nodeLines.push(`  ${selfName}["${symbol.name}"]`);
+    styleLines.push(`  style ${selfName} fill:#dbeafe,stroke:#2563eb,stroke-width:2px`);
     if (clickable) {
       clickLines.push(`  click ${selfName} "${symbol.id}.html"`);
     }
@@ -65,24 +68,24 @@ export function buildMermaidForSymbol(
 
     if (!added.has(sName)) {
       added.add(sName);
-      lines.push(`  ${sName}["${source.name}"]`);
+      nodeLines.push(`  ${sName}["${source.name}"]`);
       if (clickable) {
         clickLines.push(`  click ${sName} "${source.id}.html"`);
       }
     }
     if (!added.has(tName)) {
       added.add(tName);
-      lines.push(`  ${tName}["${target.name}"]`);
+      nodeLines.push(`  ${tName}["${target.name}"]`);
       if (clickable) {
         clickLines.push(`  click ${tName} "${target.id}.html"`);
       }
     }
 
     const arrow = arrowMap[rel.type] ?? "-->|" + rel.type + "|";
-    lines.push(`  ${sName} ${arrow} ${tName}`);
+    edgeLines.push(`  ${sName} ${arrow} ${tName}`);
   }
 
-  return [...lines, ...clickLines].join("\n");
+  return [...lines, ...nodeLines, ...edgeLines, ...styleLines, ...clickLines].join("\n");
 }
 
 /** Max edges in file/symbol Mermaid diagrams to avoid "Maximum text size in diagram exceeded". */
@@ -106,8 +109,21 @@ export function buildMermaidForFile(
 
   const symbolMap = new Map(fileSymbols.map((s) => [s.id, s]));
   const lines: string[] = ["graph LR"];
-  const added = new Set<string>();
+  const nodeLines: string[] = [];
+  const edgeLines: string[] = [];
   const clickLines: string[] = [];
+  const added = new Set<string>();
+
+  const arrowMap: Record<string, string> = {
+    inherits: "-->|inherits|",
+    implements: "-.->|implements|",
+    uses: "-->|uses|",
+    instantiates: "-.->|instantiates|",
+    calls: "-->|calls|",
+    contains: "-->|contains|",
+    listens_to: "-.->|listens to|",
+    dispatches: "-->|dispatches|",
+  };
 
   for (const rel of relsToRender) {
     const source = symbolMap.get(rel.source_id);
@@ -119,31 +135,21 @@ export function buildMermaidForFile(
 
     if (!added.has(sName)) {
       added.add(sName);
-      lines.push(`  ${sName}["${source.name}"]`);
+      nodeLines.push(`  ${sName}["${source.name}"]`);
       if (clickable) {
         clickLines.push(`  click ${sName} "../symbols/${source.id}.html"`);
       }
     }
     if (!added.has(tName)) {
       added.add(tName);
-      lines.push(`  ${tName}["${target.name}"]`);
+      nodeLines.push(`  ${tName}["${target.name}"]`);
       if (clickable) {
         clickLines.push(`  click ${tName} "../symbols/${target.id}.html"`);
       }
     }
 
-    const arrowMap: Record<string, string> = {
-      inherits: "-->|inherits|",
-      implements: "-.->|implements|",
-      uses: "-->|uses|",
-      instantiates: "-.->|instantiates|",
-      calls: "-->|calls|",
-      contains: "-->|contains|",
-      listens_to: "-.->|listens to|",
-      dispatches: "-->|dispatches|",
-    };
     const arrow = arrowMap[rel.type] ?? "-->|" + rel.type + "|";
-    lines.push(`  ${sName} ${arrow} ${tName}`);
+    edgeLines.push(`  ${sName} ${arrow} ${tName}`);
   }
 
   if (added.size === 0) return "";
@@ -153,13 +159,12 @@ export function buildMermaidForFile(
     lines.push(`  subgraph _truncated[${label}]`);
     lines.push("  end");
   }
-  return [...lines, ...clickLines].join("\n");
+  return [...lines, ...nodeLines, ...edgeLines, ...clickLines].join("\n");
 }
 
 export function buildMermaidOverview(
   symbols: CodeSymbol[],
   relationships: RelationshipRow[],
-  clickable = false,
 ): string {
   // Group symbols by first directory segment
   const dirMap = new Map<string, Set<string>>();
@@ -227,8 +232,10 @@ export function buildMermaidTopConnected(
   if (relevantRels.length === 0) return "";
 
   const lines: string[] = ["graph LR"];
-  const added = new Set<string>();
+  const nodeLines: string[] = [];
+  const edgeLines: string[] = [];
   const clickLines: string[] = [];
+  const added = new Set<string>();
 
   for (const rel of relevantRels) {
     const source = symbolMap.get(rel.source_id);
@@ -240,20 +247,20 @@ export function buildMermaidTopConnected(
 
     if (!added.has(sName)) {
       added.add(sName);
-      lines.push(`  ${sName}["${source.name}"]`);
+      nodeLines.push(`  ${sName}["${source.name}"]`);
       if (clickable) clickLines.push(`  click ${sName} "symbols/${source.id}.html"`);
     }
     if (!added.has(tName)) {
       added.add(tName);
-      lines.push(`  ${tName}["${target.name}"]`);
+      nodeLines.push(`  ${tName}["${target.name}"]`);
       if (clickable) clickLines.push(`  click ${tName} "symbols/${target.id}.html"`);
     }
 
-    lines.push(`  ${sName} -->|${rel.type}| ${tName}`);
+    edgeLines.push(`  ${sName} -->|${rel.type}| ${tName}`);
   }
 
   if (added.size === 0) return "";
-  return [...lines, ...clickLines].join("\n");
+  return [...lines, ...nodeLines, ...edgeLines, ...clickLines].join("\n");
 }
 
 /**
