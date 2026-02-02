@@ -36,7 +36,7 @@ export default {
     {
       ...baseConfig,
       displayName: "indexer",
-      roots: ["<rootDir>/tests/indexer"],
+      roots: ["<rootDir>/src/indexer/__tests__"],
       // Critical: tree-sitter has global state - each test file needs isolation
       // Run with only 1 worker but allow Jest to restart workers between files
       maxWorkers: 1,
@@ -45,13 +45,14 @@ export default {
       // Reset modules between tests for clean tree-sitter state
       resetModules: true,
       // Setup file to force cleanup between tests
-      setupFilesAfterEnv: ["<rootDir>/tests/indexer/setup.ts"],
+      setupFilesAfterEnv: ["<rootDir>/src/indexer/__tests__/setup.ts"],
     },
     {
       ...baseConfig,
       displayName: "unit",
-      roots: ["<rootDir>/tests"],
-     testPathIgnorePatterns: ["/node_modules/", "/tests/indexer/"],
+      roots: ["<rootDir>/src"],
+      testMatch: ["**/__tests__/**/*.test.ts"],
+      testPathIgnorePatterns: ["/node_modules/", "/src/indexer/__tests__/"],
       // Other tests can run in parallel
       maxWorkers: "50%",
       // Reset modules to prevent state contamination from indexer tests

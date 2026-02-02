@@ -13,12 +13,12 @@ rm -rf coverage
 
 # Run each indexer test file individually with coverage
 echo "Running indexer tests..."
-$JEST_CMD --coverage --collectCoverageFrom='src/indexer/**/*.ts' tests/indexer/languageStrategies.test.ts
-$JEST_CMD --coverage --collectCoverageFrom='src/indexer/**/*.ts' tests/indexer/TypeScriptStrategy.test.ts
-$JEST_CMD --coverage --collectCoverageFrom='src/indexer/**/*.ts' tests/indexer/indexer.test.ts
-$JEST_CMD --coverage --collectCoverageFrom='src/indexer/**/*.ts' tests/indexer/symbol.types.test.ts
-$JEST_CMD --coverage --collectCoverageFrom='src/indexer/**/*.ts' tests/indexer/relationshipExtractor.test.ts
-$JEST_CMD --coverage --collectCoverageFrom='src/indexer/**/*.ts' tests/indexer/metricsCollector.test.ts
+$JEST_CMD --coverage --collectCoverageFrom='src/indexer/**/*.ts' src/indexer/languages/__tests__/languageStrategies.test.ts
+$JEST_CMD --coverage --collectCoverageFrom='src/indexer/**/*.ts' src/indexer/languages/__tests__/TypeScriptStrategy.test.ts
+$JEST_CMD --coverage --collectCoverageFrom='src/indexer/**/*.ts' src/indexer/__tests__/indexer.test.ts
+$JEST_CMD --coverage --collectCoverageFrom='src/indexer/**/*.ts' src/indexer/__tests__/symbol.types.test.ts
+$JEST_CMD --coverage --collectCoverageFrom='src/indexer/**/*.ts' src/indexer/__tests__/relationshipExtractor.test.ts
+$JEST_CMD --coverage --collectCoverageFrom='src/indexer/**/*.ts' src/indexer/__tests__/metricsCollector.test.ts
 
 # Run unit tests with coverage
 echo ""

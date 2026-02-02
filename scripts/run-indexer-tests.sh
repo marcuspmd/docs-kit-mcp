@@ -9,12 +9,12 @@ echo "Running indexer tests in complete isolation..."
 echo ""
 
 # Run each test file individually without project selector to ensure isolation
-$JEST_CMD tests/indexer/languageStrategies.test.ts
-$JEST_CMD tests/indexer/TypeScriptStrategy.test.ts
-$JEST_CMD tests/indexer/indexer.test.ts
-$JEST_CMD tests/indexer/symbol.types.test.ts
-$JEST_CMD tests/indexer/relationshipExtractor.test.ts
-$JEST_CMD tests/indexer/metricsCollector.test.ts
+$JEST_CMD src/indexer/languages/__tests__/languageStrategies.test.ts
+$JEST_CMD src/indexer/languages/__tests__/TypeScriptStrategy.test.ts
+$JEST_CMD src/indexer/__tests__/indexer.test.ts
+$JEST_CMD src/indexer/__tests__/symbol.types.test.ts
+$JEST_CMD src/indexer/__tests__/relationshipExtractor.test.ts
+$JEST_CMD src/indexer/__tests__/metricsCollector.test.ts
 
 echo ""
 echo "✅ All indexer tests passed!"
