@@ -18,8 +18,9 @@ export async function buildUpdateSectionPrompt(
   llm?: LlmProvider,
 ): Promise<string> {
   if (!llm) {
-    const { createLlmProvider } = await import("../llm/provider.js");
-    llm = createLlmProvider(config);
+    const { container } = await import("../di/container.js");
+    const { LLM_PROVIDER_TOKEN } = await import("../di/tokens.js");
+    llm = container.resolve<LlmProvider>(LLM_PROVIDER_TOKEN);
   }
 
   const prompt = `You are an expert technical writer updating documentation for a software project.

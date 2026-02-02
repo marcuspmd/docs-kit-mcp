@@ -1,16 +1,26 @@
 #!/usr/bin/env node
 
+import "reflect-metadata";
 import { parseArgs } from "node:util";
-import Database from "better-sqlite3";
-import { dirname } from "node:path";
-import { existsSync, mkdirSync } from "node:fs";
+import { setupContainer, resolve } from "../di/container.js";
+import {
+  DATABASE_TOKEN,
+  DOC_REGISTRY_TOKEN,
+  SYMBOL_REPO_TOKEN,
+  RELATIONSHIP_REPO_TOKEN,
+  KNOWLEDGE_GRAPH_TOKEN,
+  PATTERN_ANALYZER_TOKEN,
+  ARCH_GUARD_TOKEN,
+  REAPER_TOKEN,
+} from "../di/tokens.js";
+import type Database from "better-sqlite3";
+import type { DocRegistry } from "../docs/docRegistry.js";
+import type { SymbolRepository, RelationshipRepository } from "../storage/db.js";
+import type { KnowledgeGraph } from "../knowledge/graph.js";
+import type { PatternAnalyzer } from "../patterns/patternAnalyzer.js";
+import type { ArchGuard } from "../governance/archGuard.js";
+import type { Reaper } from "../governance/reaper.js";
 import { generateProjectStatus, formatProjectStatus } from "./projectStatus.js";
-import { createDocRegistry } from "../docs/docRegistry.js";
-import { createSymbolRepository, createRelationshipRepository } from "../storage/db.js";
-import { createKnowledgeGraph } from "../knowledge/graph.js";
-import { createPatternAnalyzer } from "../patterns/patternAnalyzer.js";
-import { createArchGuard } from "../governance/archGuard.js";
-import { createReaper } from "../governance/reaper.js";
 
 const { values } = parseArgs({
   options: {
@@ -19,34 +29,22 @@ const { values } = parseArgs({
   },
 });
 
-// Garante que o diretório do banco existe
-const dbPath = values["db-path"]!;
-const dbDir = dirname(dbPath);
-if (!existsSync(dbDir)) {
-  mkdirSync(dbDir, { recursive: true });
-}
-const db = new Database(dbPath);
+await setupContainer({ dbPath: values["db-path"]! });
 
-const registry = createDocRegistry(db);
-const symbolRepo = createSymbolRepository(db);
-const relRepo = createRelationshipRepository(db);
-const graph = createKnowledgeGraph(db);
-const patternAnalyzer = createPatternAnalyzer();
-const archGuard = createArchGuard();
-const reaper = createReaper();
+const db = resolve<Database.Database>(DATABASE_TOKEN);
 
 const result = await generateProjectStatus(
   {
     docsDir: values["docs-dir"],
   },
   {
-    symbolRepo,
-    relRepo,
-    registry,
-    patternAnalyzer,
-    archGuard,
-    reaper,
-    graph,
+    symbolRepo: resolve<SymbolRepository>(SYMBOL_REPO_TOKEN),
+    relRepo: resolve<RelationshipRepository>(RELATIONSHIP_REPO_TOKEN),
+    registry: resolve<DocRegistry>(DOC_REGISTRY_TOKEN),
+    patternAnalyzer: resolve<PatternAnalyzer>(PATTERN_ANALYZER_TOKEN),
+    archGuard: resolve<ArchGuard>(ARCH_GUARD_TOKEN),
+    reaper: resolve<Reaper>(REAPER_TOKEN),
+    graph: resolve<KnowledgeGraph>(KNOWLEDGE_GRAPH_TOKEN),
   },
 );
 

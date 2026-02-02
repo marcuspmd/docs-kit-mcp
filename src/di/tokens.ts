@@ -1,0 +1,16 @@
+export const DATABASE_TOKEN = Symbol.for("DATABASE");
+export const CONFIG_TOKEN = Symbol.for("CONFIG");
+export const SYMBOL_REPO_TOKEN = Symbol.for("SYMBOL_REPO");
+export const RELATIONSHIP_REPO_TOKEN = Symbol.for("RELATIONSHIP_REPO");
+export const FILE_HASH_REPO_TOKEN = Symbol.for("FILE_HASH_REPO");
+export const DOC_REGISTRY_TOKEN = Symbol.for("DOC_REGISTRY");
+export const KNOWLEDGE_GRAPH_TOKEN = Symbol.for("KNOWLEDGE_GRAPH");
+export const PATTERN_ANALYZER_TOKEN = Symbol.for("PATTERN_ANALYZER");
+export const EVENT_FLOW_ANALYZER_TOKEN = Symbol.for("EVENT_FLOW_ANALYZER");
+export const LLM_PROVIDER_TOKEN = Symbol.for("LLM_PROVIDER");
+export const RAG_INDEX_TOKEN = Symbol.for("RAG_INDEX");
+export const ARCH_GUARD_TOKEN = Symbol.for("ARCH_GUARD");
+export const REAPER_TOKEN = Symbol.for("REAPER");
+export const CONTEXT_MAPPER_TOKEN = Symbol.for("CONTEXT_MAPPER");
+export const BUSINESS_TRANSLATOR_TOKEN = Symbol.for("BUSINESS_TRANSLATOR");
+export const CODE_EXAMPLE_VALIDATOR_TOKEN = Symbol.for("CODE_EXAMPLE_VALIDATOR");

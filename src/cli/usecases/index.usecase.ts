@@ -1,6 +1,6 @@
+import "reflect-metadata";
 import fs from "node:fs";
 import path from "node:path";
-import Database from "better-sqlite3";
 import fg from "fast-glob";
 import Parser from "tree-sitter";
 import {
@@ -9,11 +9,23 @@ import {
   loadConfig,
   type ResolvedConfig,
 } from "../../configLoader.js";
+import { setupContainer, resolve } from "../../di/container.js";
+import {
+  DATABASE_TOKEN,
+  CONFIG_TOKEN,
+  SYMBOL_REPO_TOKEN,
+  RELATIONSHIP_REPO_TOKEN,
+  FILE_HASH_REPO_TOKEN,
+  DOC_REGISTRY_TOKEN,
+  KNOWLEDGE_GRAPH_TOKEN,
+  PATTERN_ANALYZER_TOKEN,
+  ARCH_GUARD_TOKEN,
+  REAPER_TOKEN,
+  LLM_PROVIDER_TOKEN,
+  RAG_INDEX_TOKEN,
+} from "../../di/tokens.js";
 import {
   initializeSchema,
-  createSymbolRepository,
-  createRelationshipRepository,
-  createFileHashRepository,
   replaceAllPatterns,
   replaceAllArchViolations,
   replaceAllReaperFindings,
@@ -22,15 +34,19 @@ import {
   type FileHashRepository,
   type PatternRowForInsert,
 } from "../../storage/db.js";
+import type Database from "better-sqlite3";
+import type { DocRegistry } from "../../docs/docRegistry.js";
+import type { KnowledgeGraph } from "../../knowledge/graph.js";
+import type { PatternAnalyzer } from "../../patterns/patternAnalyzer.js";
+import type { ArchGuard } from "../../governance/archGuard.js";
+import type { Reaper } from "../../governance/reaper.js";
+import type { LlmProvider } from "../../llm/provider.js";
+import type { RagIndex } from "../../knowledge/rag.js";
 import { indexFile } from "../../indexer/indexer.js";
 import { extractRelationships } from "../../indexer/relationshipExtractor.js";
 import { parseLcov, type LcovFileData } from "../../indexer/lcovCollector.js";
 import { collectMetrics } from "../../indexer/metricsCollector.js";
-import { createPatternAnalyzer } from "../../patterns/patternAnalyzer.js";
-import { createDocRegistry } from "../../docs/docRegistry.js";
-import { createKnowledgeGraph } from "../../knowledge/graph.js";
-import { createArchGuard } from "../../governance/archGuard.js";
-import { createReaper } from "../../governance/reaper.js";
+import { createRagIndex } from "../../knowledge/rag.js";
 import { generateExplanationHash } from "../../handlers/explainSymbol.js";
 import type { CodeSymbol, SymbolRelationship } from "../../indexer/symbol.types.js";
 import { header, step, done, summary } from "../utils/index.js";
@@ -49,7 +65,6 @@ export interface IndexUseCaseParams {
 export async function indexUseCase(params: IndexUseCaseParams): Promise<void> {
   const { rootDir = ".", fullRebuild = false } = params;
 
-  // Config is always read from project root (cwd), not from the directory being indexed
   const configDir = process.cwd();
 
   if (!configExists(configDir)) {
@@ -58,12 +73,8 @@ export async function indexUseCase(params: IndexUseCaseParams): Promise<void> {
   }
 
   const config = await loadConfig(configDir);
-
-  // Resolve paths relative to config dir (project root), not the indexed directory
   const dbPath = resolveConfigPath(params.dbPath, configDir, config.dbPath);
   const docsDir = params.docsDir || "docs";
-
-  header(`Indexing ${path.resolve(rootDir)}`);
 
   // Ensure db directory exists
   const dbDir = path.dirname(dbPath);
@@ -71,12 +82,14 @@ export async function indexUseCase(params: IndexUseCaseParams): Promise<void> {
     fs.mkdirSync(dbDir, { recursive: true });
   }
 
-  const db = new Database(dbPath);
-  initializeSchema(db);
+  await setupContainer({ cwd: configDir, dbPath });
 
-  const symbolRepo = createSymbolRepository(db);
-  const relRepo = createRelationshipRepository(db);
-  const fileHashRepo = createFileHashRepository(db);
+  const db = resolve<Database.Database>(DATABASE_TOKEN);
+  const symbolRepo = resolve<SymbolRepository>(SYMBOL_REPO_TOKEN);
+  const relRepo = resolve<RelationshipRepository>(RELATIONSHIP_REPO_TOKEN);
+  const fileHashRepo = resolve<FileHashRepository>(FILE_HASH_REPO_TOKEN);
+
+  header(`Indexing ${path.resolve(rootDir)}`);
 
   const parser = new Parser();
 
@@ -362,7 +375,7 @@ async function detectPatterns(
   relationships: SymbolRelationship[],
 ): Promise<PatternRowForInsert[]> {
   step("Detecting patterns");
-  const patternAnalyzer = createPatternAnalyzer();
+  const patternAnalyzer = resolve<PatternAnalyzer>(PATTERN_ANALYZER_TOKEN);
   const symRelationships: SymbolRelationship[] = relationships.map((r) => ({
     sourceId: r.sourceId,
     targetId: r.targetId,
@@ -467,7 +480,7 @@ async function scanDocs(
 
   if (fs.existsSync(docsPath)) {
     step("Scanning docs for symbol mappings");
-    const registry = createDocRegistry(db);
+    const registry = resolve<DocRegistry>(DOC_REGISTRY_TOKEN);
     await registry.rebuild(docsPath, { configDocs: config.docs });
 
     const updateDocRef = db.prepare("UPDATE symbols SET doc_ref = ? WHERE name = ?");
@@ -494,14 +507,14 @@ async function runGovernance(
   config: ResolvedConfig,
 ) {
   step("Governance (arch + reaper)");
-  const graph = createKnowledgeGraph(db);
+  const graph = resolve<KnowledgeGraph>(KNOWLEDGE_GRAPH_TOKEN);
   const symRelationships: SymbolRelationship[] = relationships.map((r) => ({
     sourceId: r.sourceId,
     targetId: r.targetId,
     type: r.type,
     location: r.location,
   }));
-  const archGuard = createArchGuard();
+  const archGuard = resolve<ArchGuard>(ARCH_GUARD_TOKEN);
 
   if (config.archGuard?.rules && config.archGuard.rules.length > 0) {
     archGuard.setRules(config.archGuard.rules);
@@ -529,7 +542,7 @@ async function runGovernance(
     }>
   ).map((m) => ({ symbolName: m.symbol_name, docPath: m.doc_path }));
 
-  const reaper = createReaper();
+  const reaper = resolve<Reaper>(REAPER_TOKEN);
   const reaperFindings = reaper.scan(allSymbols, graph, docMappingsForReaper);
   replaceAllReaperFindings(
     db,
@@ -569,9 +582,7 @@ async function populateRagIndex(
   if (canEmbed && ragEnabled) {
     step("Populating RAG index");
     try {
-      const { createLlmProvider } = await import("../../llm/provider.js");
-      const { createRagIndex } = await import("../../knowledge/rag.js");
-      const llm = createLlmProvider(config);
+      const llm = resolve<LlmProvider>(LLM_PROVIDER_TOKEN);
       const ragIndex = createRagIndex({
         embeddingModel: config.llm.embeddingModel ?? "text-embedding-ada-002",
         db,

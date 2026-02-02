@@ -3,6 +3,7 @@
 /**
  * CLI entry point - Refactored to use use cases
  */
+import "reflect-metadata";
 
 import { parseArgs, printHelp } from "./cli/utils/index.js";
 import {

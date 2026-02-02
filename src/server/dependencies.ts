@@ -1,89 +1,63 @@
-import Database from "better-sqlite3";
-import { loadConfig } from "../configLoader.js";
-import { createDocRegistry } from "../docs/docRegistry.js";
-import { createKnowledgeGraph } from "../knowledge/graph.js";
-import { createSymbolRepository, createRelationshipRepository } from "../storage/db.js";
-import { createPatternAnalyzer } from "../patterns/patternAnalyzer.js";
-import { createEventFlowAnalyzer } from "../events/eventFlowAnalyzer.js";
-import { createRagIndex } from "../knowledge/rag.js";
-import { createArchGuard } from "../governance/archGuard.js";
-import { createReaper } from "../governance/reaper.js";
-import { createContextMapper } from "../business/contextMapper.js";
-import { createBusinessTranslator } from "../business/businessTranslator.js";
-import { createCodeExampleValidator } from "../docs/codeExampleValidator.js";
-import { createLlmProvider } from "../llm/provider.js";
+import "reflect-metadata";
+import { container } from "tsyringe";
+import { setupContainer } from "../di/container.js";
 import type { ServerDependencies } from "./types.js";
+import type { ResolvedConfig } from "../configLoader.js";
+import type Database from "better-sqlite3";
+import type { DocRegistry } from "../docs/docRegistry.js";
+import type { SymbolRepository, RelationshipRepository } from "../storage/db.js";
+import type { KnowledgeGraph } from "../knowledge/graph.js";
+import type { PatternAnalyzer } from "../patterns/patternAnalyzer.js";
+import type { EventFlowAnalyzer } from "../events/eventFlowAnalyzer.js";
+import type { LlmProvider } from "../llm/provider.js";
+import type { RagIndex } from "../knowledge/rag.js";
+import type { ArchGuard } from "../governance/archGuard.js";
+import type { Reaper } from "../governance/reaper.js";
+import type { ContextMapper } from "../business/contextMapper.js";
+import type { BusinessTranslator } from "../business/businessTranslator.js";
+import type { CodeExampleValidator } from "../docs/codeExampleValidator.js";
+
+import {
+  DATABASE_TOKEN,
+  CONFIG_TOKEN,
+  SYMBOL_REPO_TOKEN,
+  RELATIONSHIP_REPO_TOKEN,
+  DOC_REGISTRY_TOKEN,
+  KNOWLEDGE_GRAPH_TOKEN,
+  PATTERN_ANALYZER_TOKEN,
+  EVENT_FLOW_ANALYZER_TOKEN,
+  LLM_PROVIDER_TOKEN,
+  RAG_INDEX_TOKEN,
+  ARCH_GUARD_TOKEN,
+  REAPER_TOKEN,
+  CONTEXT_MAPPER_TOKEN,
+  BUSINESS_TRANSLATOR_TOKEN,
+  CODE_EXAMPLE_VALIDATOR_TOKEN,
+} from "../di/tokens.js";
 
 /**
- * Default arch-guard rules
- */
-const DEFAULT_ARCH_RULES = [
-  {
-    name: "ClassNaming",
-    description: "Classes should be PascalCase",
-    type: "naming_convention" as const,
-    severity: "warning" as const,
-    config: { pattern: "^[A-Z][a-zA-Z0-9]*$", kind: "class" },
-  },
-  {
-    name: "MethodNaming",
-    description: "Methods should be camelCase",
-    type: "naming_convention" as const,
-    severity: "warning" as const,
-    config: { pattern: "^[a-z][a-zA-Z0-9]*$", kind: "method" },
-  },
-  {
-    name: "FunctionNaming",
-    description: "Functions should be camelCase",
-    type: "naming_convention" as const,
-    severity: "warning" as const,
-    config: { pattern: "^[a-z][a-zA-Z0-9]*$", kind: "function" },
-  },
-];
-
-/**
- * Initialize all server dependencies
+ * Initialize all server dependencies via DI container
  */
 export async function createServerDependencies(
   cwd: string = process.cwd(),
 ): Promise<ServerDependencies> {
-  const config = await loadConfig(cwd);
-
-  const db = new Database(config.dbPath);
-  const registry = createDocRegistry(db);
-  const symbolRepo = createSymbolRepository(db);
-  const relRepo = createRelationshipRepository(db);
-  const graph = createKnowledgeGraph(db);
-  const patternAnalyzer = createPatternAnalyzer();
-  const eventFlowAnalyzer = createEventFlowAnalyzer();
-  const llm = createLlmProvider(config);
-  const ragIndex = createRagIndex({
-    embeddingModel: config.llm.embeddingModel ?? "text-embedding-ada-002",
-    db,
-    embedFn: (texts: string[]) => llm.embed(texts),
-  });
-  const archGuard = createArchGuard();
-  archGuard.setRules(DEFAULT_ARCH_RULES);
-  const reaper = createReaper();
-  const contextMapper = createContextMapper(config);
-  const businessTranslator = createBusinessTranslator(llm);
-  const codeExampleValidator = createCodeExampleValidator();
+  await setupContainer(cwd);
 
   return {
-    config,
-    db,
-    registry,
-    symbolRepo,
-    relRepo,
-    graph,
-    patternAnalyzer,
-    eventFlowAnalyzer,
-    llm,
-    ragIndex,
-    archGuard,
-    reaper,
-    contextMapper,
-    businessTranslator,
-    codeExampleValidator,
+    config: container.resolve<ResolvedConfig>(CONFIG_TOKEN),
+    db: container.resolve<Database.Database>(DATABASE_TOKEN),
+    registry: container.resolve<DocRegistry>(DOC_REGISTRY_TOKEN),
+    symbolRepo: container.resolve<SymbolRepository>(SYMBOL_REPO_TOKEN),
+    relRepo: container.resolve<RelationshipRepository>(RELATIONSHIP_REPO_TOKEN),
+    graph: container.resolve<KnowledgeGraph>(KNOWLEDGE_GRAPH_TOKEN),
+    patternAnalyzer: container.resolve<PatternAnalyzer>(PATTERN_ANALYZER_TOKEN),
+    eventFlowAnalyzer: container.resolve<EventFlowAnalyzer>(EVENT_FLOW_ANALYZER_TOKEN),
+    llm: container.resolve<LlmProvider>(LLM_PROVIDER_TOKEN),
+    ragIndex: container.resolve<RagIndex>(RAG_INDEX_TOKEN),
+    archGuard: container.resolve<ArchGuard>(ARCH_GUARD_TOKEN),
+    reaper: container.resolve<Reaper>(REAPER_TOKEN),
+    contextMapper: container.resolve<ContextMapper>(CONTEXT_MAPPER_TOKEN),
+    businessTranslator: container.resolve<BusinessTranslator>(BUSINESS_TRANSLATOR_TOKEN),
+    codeExampleValidator: container.resolve<CodeExampleValidator>(CODE_EXAMPLE_VALIDATOR_TOKEN),
   };
 }

@@ -1,13 +1,17 @@
-import fs from "node:fs";
-import Database from "better-sqlite3";
-import { loadConfig } from "../../configLoader.js";
+import "reflect-metadata";
+import { setupContainer, resolve } from "../../di/container.js";
 import {
-  createSymbolRepository,
-  createRelationshipRepository,
-  relationshipRowsToSymbolRelationships,
-} from "../../storage/db.js";
-import { createPatternAnalyzer } from "../../patterns/patternAnalyzer.js";
+  SYMBOL_REPO_TOKEN,
+  RELATIONSHIP_REPO_TOKEN,
+  PATTERN_ANALYZER_TOKEN,
+  DATABASE_TOKEN,
+} from "../../di/tokens.js";
+import { relationshipRowsToSymbolRelationships } from "../../storage/db.js";
+import type { SymbolRepository, RelationshipRepository } from "../../storage/db.js";
+import type { PatternAnalyzer } from "../../patterns/patternAnalyzer.js";
+import type Database from "better-sqlite3";
 import { resolveConfigPath } from "../utils/index.js";
+import { loadConfig } from "../../configLoader.js";
 
 /**
  * Analyze patterns command - Detect design patterns and violations
@@ -29,21 +33,17 @@ export interface AnalyzePatternsResult {
 export async function analyzePatternsUseCase(
   params: AnalyzePatternsUseCaseParams = {},
 ): Promise<AnalyzePatternsResult> {
-  const { dbPath: customDbPath } = params;
-
   const configDir = process.cwd();
   const config = await loadConfig(configDir);
-  const dbPath = resolveConfigPath(customDbPath, configDir, config.dbPath);
+  const dbPath = resolveConfigPath(params.dbPath, configDir, config.dbPath);
 
-  if (!fs.existsSync(dbPath)) {
-    throw new Error(`Database not found at ${dbPath}. Run docs-kit index first.`);
-  }
+  await setupContainer({ cwd: configDir, dbPath });
 
-  const db = new Database(dbPath);
+  const db = resolve<Database.Database>(DATABASE_TOKEN);
   try {
-    const symbolRepo = createSymbolRepository(db);
-    const relRepo = createRelationshipRepository(db);
-    const patternAnalyzerInst = createPatternAnalyzer();
+    const symbolRepo = resolve<SymbolRepository>(SYMBOL_REPO_TOKEN);
+    const relRepo = resolve<RelationshipRepository>(RELATIONSHIP_REPO_TOKEN);
+    const patternAnalyzerInst = resolve<PatternAnalyzer>(PATTERN_ANALYZER_TOKEN);
 
     const allSymbols = symbolRepo.findAll();
     const allRels = relationshipRowsToSymbolRelationships(relRepo.findAll());

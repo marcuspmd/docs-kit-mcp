@@ -1,14 +1,15 @@
 #!/usr/bin/env node
 
+import "reflect-metadata";
 import { parseArgs } from "node:util";
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
-import Database from "better-sqlite3";
-import { dirname } from "node:path";
-import { existsSync, mkdirSync } from "node:fs";
+import { setupContainer, resolve } from "../di/container.js";
+import { DATABASE_TOKEN, DOC_REGISTRY_TOKEN } from "../di/tokens.js";
+import type Database from "better-sqlite3";
+import type { DocRegistry } from "../docs/docRegistry.js";
 import { runDocGuard, formatResult } from "./docGuardCli.js";
 import { analyzeChanges } from "../analyzer/changeAnalyzer.js";
-import { createDocRegistry } from "../docs/docRegistry.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -36,14 +37,10 @@ async function getChangedFiles(options: {
   return stdout.trim().split("\n").filter(Boolean);
 }
 
-// Garante que o diretório do banco existe
-const dbPath = values["db-path"]!;
-const dbDir = dirname(dbPath);
-if (!existsSync(dbDir)) {
-  mkdirSync(dbDir, { recursive: true });
-}
-const db = new Database(dbPath);
-const registry = createDocRegistry(db);
+await setupContainer({ dbPath: values["db-path"]! });
+
+const db = resolve<Database.Database>(DATABASE_TOKEN);
+const registry = resolve<DocRegistry>(DOC_REGISTRY_TOKEN);
 await registry.rebuild(values["docs-dir"]!);
 
 const result = await runDocGuard(
