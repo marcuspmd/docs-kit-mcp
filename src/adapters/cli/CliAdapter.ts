@@ -44,7 +44,7 @@ export class CliAdapter {
       },
       execute: async (args) => {
         const result = await this.deps.indexProject.execute({
-          rootPath: (args.path as string) ?? ".",
+          rootPath: args.path as string,
           fullRebuild: args.rebuild as boolean,
         });
         if (result.isSuccess) {
@@ -66,8 +66,8 @@ export class CliAdapter {
       },
       execute: async (args) => {
         const result = await this.deps.buildSite.execute({
-          rootPath: (args.path as string) ?? ".",
-          outputDir: (args.output as string) ?? "docs-site",
+          rootPath: args.path as string,
+          outputDir: args.output as string,
         });
         if (result.isSuccess) {
           console.log(`Generated ${result.value.pagesGenerated} pages`);
@@ -112,13 +112,14 @@ export class CliAdapter {
       process.exit(1);
     }
 
-    const parsedArgs = this.parseArgs(args.slice(1), cmd.options ?? {});
+    const parsedArgs = this.parseArgs(args.slice(1), cmd.options);
     await cmd.execute(parsedArgs);
   }
 
   private parseArgs(args: string[], options: CliCommand["options"]): Record<string, unknown> {
     const result: Record<string, unknown> = {};
-    for (const [key, opt] of Object.entries(options ?? {})) {
+    if (!options) return result;
+    for (const [key, opt] of Object.entries(options)) {
       result[key] = opt.default;
     }
     for (let i = 0; i < args.length; i++) {
@@ -128,7 +129,7 @@ export class CliAdapter {
         result[key] = args[++i] ?? true;
       } else if (arg.startsWith("-")) {
         const alias = arg.slice(1);
-        const entry = Object.entries(options ?? {}).find(([, o]) => o.alias === alias);
+        const entry = Object.entries(options).find(([, o]) => o.alias === alias);
         if (entry) result[entry[0]] = args[++i] ?? true;
       }
     }
