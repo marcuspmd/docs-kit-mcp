@@ -1,6 +1,11 @@
 import { Entity } from "../../../../@core/domain/Entity.js";
+import { Result } from "../../../../@core/domain/Result.js";
 import { SymbolId } from "../value-objects/SymbolId.js";
-import { SymbolKind, type SymbolKindType } from "../value-objects/SymbolKind.js";
+import {
+  SymbolKind,
+  type SymbolKindType,
+  VALID_SYMBOL_KINDS,
+} from "../value-objects/SymbolKind.js";
 import { FileLocation } from "../value-objects/FileLocation.js";
 import { Signature } from "../value-objects/Signature.js";
 import { z } from "zod";
@@ -70,6 +75,49 @@ export interface CodeSymbolProps {
   signature?: Signature;
   explanation?: string;
   explanationHash?: string;
+}
+
+/**
+ * Input type for creating a new CodeSymbol
+ */
+export interface CreateCodeSymbolInput {
+  name: string;
+  qualifiedName?: string;
+  kind: SymbolKindType;
+  location: {
+    filePath: string;
+    startLine: number;
+    endLine: number;
+    startColumn?: number;
+    endColumn?: number;
+  };
+  parent?: string;
+  visibility?: Visibility;
+  exported?: boolean;
+  language?: Language;
+  docRef?: string;
+  summary?: string;
+}
+
+/**
+ * Input type for restoring a CodeSymbol from persistence
+ */
+export interface FromPersistenceInput {
+  id: string;
+  name: string;
+  qualifiedName?: string;
+  kind: SymbolKindType;
+  location: {
+    filePath: string;
+    startLine: number;
+    endLine: number;
+    startColumn?: number;
+    endColumn?: number;
+  };
+  parent?: string;
+  visibility?: Visibility;
+  exported?: boolean;
+  language?: Language;
 }
 
 /**
@@ -229,16 +277,39 @@ export class CodeSymbol extends Entity<CodeSymbolProps, string> {
   /**
    * Create a new CodeSymbol with auto-generated ID
    */
-  public static create(props: CodeSymbolProps): CodeSymbol {
-    const symbolId = SymbolId.create(props.location.filePath, props.name, props.kind);
-    return new CodeSymbol(props, symbolId.value);
+  public static create(props: CreateCodeSymbolInput): Result<CodeSymbol> {
+    // Validate name
+    if (!props.name || props.name.trim().length === 0) {
+      return Result.fail(new Error("Symbol name cannot be empty"));
+    }
+
+    // Validate kind
+    if (!VALID_SYMBOL_KINDS.includes(props.kind)) {
+      return Result.fail(new Error(`Invalid symbol kind: ${props.kind}`));
+    }
+
+    // Build the location value object
+    const location = FileLocation.create(props.location);
+
+    const fullProps: CodeSymbolProps = {
+      ...props,
+      location,
+    };
+
+    const symbolId = SymbolId.create(location.filePath, props.name, props.kind);
+    return Result.ok(new CodeSymbol(fullProps, symbolId.value));
   }
 
   /**
    * Reconstitute a CodeSymbol from persistence
    */
-  public static fromPersistence(id: string, props: CodeSymbolProps): CodeSymbol {
-    return new CodeSymbol(props, id);
+  public static fromPersistence(data: FromPersistenceInput): CodeSymbol {
+    const location = FileLocation.create(data.location);
+    const props: CodeSymbolProps = {
+      ...data,
+      location,
+    };
+    return new CodeSymbol(props, data.id);
   }
 
   /**

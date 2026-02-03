@@ -38,6 +38,11 @@ export const SymbolKindSchema = z.enum([
 
 export type SymbolKindType = z.infer<typeof SymbolKindSchema>;
 
+/**
+ * List of valid symbol kinds for validation
+ */
+export const VALID_SYMBOL_KINDS: readonly SymbolKindType[] = SymbolKindSchema.options;
+
 interface SymbolKindProps {
   value: SymbolKindType;
 }

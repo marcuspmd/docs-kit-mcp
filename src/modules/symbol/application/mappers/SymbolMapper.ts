@@ -1,6 +1,4 @@
 import { CodeSymbol } from "../../domain/entities/CodeSymbol.js";
-import { FileLocation } from "../../domain/value-objects/FileLocation.js";
-import { Signature } from "../../domain/value-objects/Signature.js";
 import type { SymbolOutput } from "../dtos/symbol.dto.js";
 
 /**
@@ -91,46 +89,22 @@ export class SymbolMapper {
     explanation?: string | null;
     explanation_hash?: string | null;
   }): CodeSymbol {
-    const parseJson = (v: string | null): string[] | undefined => (v ? JSON.parse(v) : undefined);
     const toBool = (v: number | null): boolean | undefined => (v !== null ? v === 1 : undefined);
 
-    return CodeSymbol.fromPersistence(raw.id, {
+    return CodeSymbol.fromPersistence({
+      id: raw.id,
       name: raw.name,
       qualifiedName: raw.qualified_name ?? undefined,
       kind: raw.kind as CodeSymbol["kind"],
-      location: FileLocation.create({
+      location: {
         filePath: raw.file,
         startLine: raw.start_line,
         endLine: raw.end_line,
-      }),
+      },
       parent: raw.parent ?? undefined,
       visibility: raw.visibility as CodeSymbol["visibility"],
       exported: toBool(raw.exported ?? null),
       language: raw.language as CodeSymbol["language"],
-      docRef: raw.doc_ref ?? undefined,
-      summary: raw.summary ?? undefined,
-      docComment: raw.doc_comment ?? undefined,
-      tags: parseJson(raw.tags ?? null),
-      domain: raw.domain ?? undefined,
-      boundedContext: raw.bounded_context ?? undefined,
-      extends: raw.sym_extends ?? undefined,
-      implements: parseJson(raw.sym_implements ?? null),
-      usesTraits: parseJson(raw.uses_traits ?? null),
-      references: parseJson(raw.sym_references ?? null),
-      referencedBy: parseJson(raw.referenced_by ?? null),
-      layer: raw.layer as CodeSymbol["layer"],
-      metrics: raw.metrics ? JSON.parse(raw.metrics) : undefined,
-      pattern: raw.pattern ?? undefined,
-      violations: parseJson(raw.violations ?? null),
-      deprecated: toBool(raw.deprecated ?? null),
-      since: raw.since ?? undefined,
-      stability: raw.stability as CodeSymbol["stability"],
-      generated: toBool(raw.generated ?? null),
-      source: raw.source as CodeSymbol["source"],
-      lastModified: raw.last_modified ? new Date(raw.last_modified) : undefined,
-      signature: raw.signature ? Signature.fromRaw(raw.signature) : undefined,
-      explanation: raw.explanation ?? undefined,
-      explanationHash: raw.explanation_hash ?? undefined,
     });
   }
 

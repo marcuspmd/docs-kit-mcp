@@ -1,12 +1,18 @@
 {
   "name": "docs-kit",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Intelligent documentation agent via MCP",
   "type": "module",
-  "main": "dist/server.js",
+  "main": "dist/main/mcp.js",
   "bin": {
-    "docs-guard": "dist/governance/docGuardBin.js",
-    "docs-kit": "dist/cli.js"
+    "docs-kit": "dist/main/cli.js"
+  },
+  "exports": {
+    ".": "./dist/main/mcp.js",
+    "./cli": "./dist/main/cli.js",
+    "./modules/*": "./dist/modules/*",
+    "./core/*": "./dist/@core/*",
+    "./shared/*": "./dist/@shared/*"
   },
   "scripts": {
     "build": "tsc",
@@ -18,11 +24,11 @@
     "lint": "eslint src/",
     "format": "prettier --write \"src/**/*.ts\"",
     "format:check": "prettier --check \"src/**/*.ts\"",
-    "dev": "tsx src/server.ts",
-    "mcp": "node dist/server.js",
-    "cli": "node dist/cli.js",
-    "gen:site": "node dist/cli.js build-site --out docs-site --root . --db .docs-kit/index.db",
-    "gen:docs": "node dist/cli.js generate-repo-docs . docs-output",
+    "dev": "tsx src/main/mcp.ts",
+    "mcp": "node dist/main/mcp.js",
+    "cli": "node dist/main/cli.js",
+    "gen:site": "node dist/main/cli.js build-site --out docs-site --root . --db .docs-kit/index.db",
+    "gen:docs": "node dist/main/cli.js generate-repo-docs . docs-output",
     "serve:site": "npx serve docs-site"
   },
   "engines": {

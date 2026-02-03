@@ -1,8 +1,5 @@
 /**
- * Jest configuration with tree-sitter isolation.
- *
- * The indexer tests use tree-sitter which has global state.
- * Managed via resetModules and aggressive cleanup between test files.
+ * Jest configuration for DDD architecture.
  */
 
 /** @type {import('jest').Config} */
@@ -12,6 +9,10 @@ export default {
   extensionsToTreatAsEsm: [".ts"],
   moduleNameMapper: {
     "^(\\.{1,2}/.*)\\.js$": "$1",
+    "^@core/(.*)$": "<rootDir>/src/@core/$1",
+    "^@shared/(.*)$": "<rootDir>/src/@shared/$1",
+    "^@modules/(.*)$": "<rootDir>/src/modules/$1",
+    "^@adapters/(.*)$": "<rootDir>/src/adapters/$1",
   },
   transform: {
     "^.+\\.tsx?$": [
@@ -22,23 +23,18 @@ export default {
       },
     ],
   },
-  testMatch: ["**.test.ts"],
+  testMatch: ["**/__tests__/**/*.test.ts", "**/*.test.ts"],
   clearMocks: true,
   restoreMocks: true,
   resetModules: true,
   forceExit: false,
-  // Isolate tree-sitter state: restart workers periodically
   maxWorkers: 2,
   workerIdleMemoryLimit: "50MB",
-  // Setup file for cleanup between tests
-  setupFilesAfterEnv: ["<rootDir>/src/__tests__/setup.ts"],
 
   // Coverage configuration
   collectCoverageFrom: [
     "src/**/*.ts",
-    "!src/cli.ts",
-    "!src/server.ts",
-    "!src/configLoader.ts",
+    "!src/main/*.ts",
     "!src/**/*.d.ts",
     "!src/**/index.ts",
     "!**/__tests__/**",
