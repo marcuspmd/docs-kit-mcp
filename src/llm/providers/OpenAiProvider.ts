@@ -4,12 +4,24 @@ import OpenAI from "openai";
 
 type OpenAIClient = InstanceType<typeof OpenAI>;
 
+/** Interface for dependency injection in tests */
+export interface OpenAIClientLike {
+  chat: {
+    completions: {
+      create: OpenAIClient["chat"]["completions"]["create"];
+    };
+  };
+  embeddings: {
+    create: OpenAIClient["embeddings"]["create"];
+  };
+}
+
 export class OpenAiProvider implements LlmProvider {
-  private client: OpenAIClient | undefined;
+  private client: OpenAIClient | OpenAIClientLike | undefined;
 
   constructor(
     private config: ResolvedConfig,
-    client?: OpenAIClient,
+    client?: OpenAIClient | OpenAIClientLike,
   ) {
     if (client) this.client = client;
   }

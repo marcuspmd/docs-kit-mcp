@@ -28,20 +28,30 @@ src/
 - Target ES2022, `moduleResolution: Node16`
 - Use Zod for all schema validation (prefer `z.uuid()` over deprecated `z.string().uuid()`)
 
-### Testing (Jest + ESM)
-```typescript
-// REQUIRED: Import jest for ESM mocking
-import { jest } from "@jest/globals";
 
-// Use dependency injection for LLM providers (see tests/docs.test.ts)
-const mockProvider = {
-  chat: async () => "mock response",
-  embed: jest.fn().mockResolvedValue([[0.1, 0.2]]),
-};
-const updater = createDocUpdater({ llm: mockProvider });
+## Test Structure
+
+Tests are colocated with source code using `__tests__` folders inside each directory:
+
+```
+src/
+├── analysis/
+│   ├── __tests__/
+│   │   └── analyzer.test.ts
+│   └── analyzer.ts
+├── cli/
+│   ├── usecases/
+│   │   ├── __tests__/
+│   │   │   └── analyzePatterns.usecase.test.ts
+│   │   └── analyzePatterns.usecase.ts
+│   └── ...
+└── ...
 ```
 
-Run tests: `npm run test` (uses `--experimental-vm-modules`)
+**Conventions:**
+- Test files follow the pattern `<filename>.test.ts`
+- Each `__tests__` folder is placed alongside the code it tests
+- Use Jest as the test runner
 
 ### LLM Provider Pattern (Strategy + Factory)
 ```typescript

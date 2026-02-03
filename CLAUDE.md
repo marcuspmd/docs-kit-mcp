@@ -33,6 +33,30 @@ Central data model revolves around `CodeSymbol` with kinds: class, method, funct
 node dist/server.js &
 ```
 
+## Test Structure
+
+Tests are colocated with source code using `__tests__` folders inside each directory:
+
+```
+src/
+├── analysis/
+│   ├── __tests__/
+│   │   └── analyzer.test.ts
+│   └── analyzer.ts
+├── cli/
+│   ├── usecases/
+│   │   ├── __tests__/
+│   │   │   └── analyzePatterns.usecase.test.ts
+│   │   └── analyzePatterns.usecase.ts
+│   └── ...
+└── ...
+```
+
+**Conventions:**
+- Test files follow the pattern `<filename>.test.ts`
+- Each `__tests__` folder is placed alongside the code it tests
+- Use Jest as the test runner
+
 ## Key Design Decisions
 
 - Documentation updates only modify relevant sections; never create new files or destroy existing content

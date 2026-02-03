@@ -4,12 +4,19 @@ import Anthropic from "@anthropic-ai/sdk";
 
 type AnthropicClient = InstanceType<typeof Anthropic>;
 
+/** Interface for dependency injection in tests */
+export interface AnthropicClientLike {
+  messages: {
+    create: AnthropicClient["messages"]["create"];
+  };
+}
+
 export class ClaudeProvider implements LlmProvider {
-  private client: AnthropicClient | undefined;
+  private client: AnthropicClient | AnthropicClientLike | undefined;
 
   constructor(
     private config: ResolvedConfig,
-    client?: AnthropicClient,
+    client?: AnthropicClient | AnthropicClientLike,
   ) {
     if (client) this.client = client;
   }
