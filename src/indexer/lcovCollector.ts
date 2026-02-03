@@ -1,4 +1,5 @@
 import lcovParse from "lcov-parse";
+import path from "node:path";
 import { promisify } from "node:util";
 import type { CodeSymbol } from "./symbol.types.js";
 
@@ -87,6 +88,31 @@ export async function parseLcov(lcovPath: string): Promise<LcovFileData[]> {
   }
 }
 
+/* ================== Path Normalization ================== */
+
+/**
+ * Normalize file paths for consistent comparison.
+ * Handles:
+ * - Leading ./
+ * - Absolute paths converted to relative (when projectRoot provided)
+ * - Backslashes converted to forward slashes
+ */
+export function normalizePath(filePath: string, projectRoot?: string): string {
+  // Remove leading ./
+  let normalized = filePath.replace(/^\.\//, "");
+
+  // Convert absolute paths to relative if projectRoot is provided
+  if (path.isAbsolute(normalized) && projectRoot) {
+    const root = path.resolve(projectRoot);
+    if (normalized.startsWith(root)) {
+      normalized = normalized.slice(root.length).replace(/^[/\\]/, "");
+    }
+  }
+
+  // Normalize path separators to forward slashes
+  return normalized.replace(/\\/g, "/");
+}
+
 /* ================== Coverage Enrichment ================== */
 
 /**
@@ -134,10 +160,15 @@ function calculateSymbolCoverage(
 /**
  * Enrich symbols with test coverage data from lcov.
  * Returns new array with coverage metrics added to matching symbols.
+ *
+ * @param symbols - Array of code symbols to enrich
+ * @param coverageData - Parsed lcov coverage data
+ * @param projectRoot - Optional project root for normalizing absolute paths
  */
 export function enrichSymbolsWithCoverage(
   symbols: CodeSymbol[],
   coverageData: LcovFileData[],
+  projectRoot?: string,
 ): { enrichedSymbols: CodeSymbol[]; stats: CoverageEnrichmentStats } {
   const stats: CoverageEnrichmentStats = {
     totalSymbols: symbols.length,
@@ -149,14 +180,13 @@ export function enrichSymbolsWithCoverage(
   // Build file -> coverage map for fast lookup
   const coverageByFile = new Map<string, LcovFileData>();
   coverageData.forEach((data) => {
-    // Normalize file paths (remove leading ./)
-    const normalizedPath = data.file.replace(/^\.\//, "");
+    const normalizedPath = normalizePath(data.file, projectRoot);
     coverageByFile.set(normalizedPath, data);
   });
 
   const enrichedSymbols = symbols.map((symbol) => {
-    // Normalize symbol file path
-    const normalizedFile = symbol.file.replace(/^\.\//, "");
+    // Normalize symbol file path using the same function
+    const normalizedFile = normalizePath(symbol.file, projectRoot);
     const lcovFile = coverageByFile.get(normalizedFile);
 
     if (!lcovFile) {

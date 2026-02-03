@@ -128,7 +128,7 @@ export async function indexUseCase(params: IndexUseCaseParams): Promise<void> {
   const coverageData = await loadCoverageData(config, configDir);
 
   // Phase 7: Collect metrics
-  await collectMetricsPhase(allSymbols, trees, coverageData);
+  await collectMetricsPhase(allSymbols, trees, coverageData, configDir);
 
   // Phase 8: Detect patterns
   const patterns = await detectPatterns(allSymbols, relationships);
@@ -363,9 +363,15 @@ async function collectMetricsPhase(
   allSymbols: CodeSymbol[],
   trees: Map<string, Parser.Tree>,
   coverageData: LcovFileData[] | undefined,
+  projectRoot: string,
 ) {
   step("Computing metrics");
-  const updatedSymbols = collectMetrics({ symbols: allSymbols, trees, coverage: coverageData });
+  const updatedSymbols = collectMetrics({
+    symbols: allSymbols,
+    trees,
+    coverage: coverageData,
+    projectRoot,
+  });
   allSymbols.splice(0, allSymbols.length, ...updatedSymbols);
   done();
 }

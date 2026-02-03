@@ -1,13 +1,12 @@
 ---
 title: MCP Server
 module: server
-lastUpdated: 2026-02-01
+lastUpdated: 2026-02-03
 symbols:
-  - server
+  - startServer
+  - registerAllTools
   - generateDocs
-  - explainSymbol
   - generateMermaid
-  - scanFile
 ---
 
 # MCP Server - Model Context Protocol
@@ -16,7 +15,9 @@ symbols:
 
 ## Visão Geral
 
-O MCP Server (`src/server.ts`) implementa o [Model Context Protocol](https://modelcontextprotocol.io/) para permitir que LLMs e agentes de IA interajam com o docs-kit. Ele expõe 18 tools registradas que encapsulam toda a funcionalidade do sistema.
+O MCP Server (`src/server.ts` e `src/server/index.ts`) implementa o [Model Context Protocol](https://modelcontextprotocol.io/) para permitir que LLMs e agentes de IA interajam com o docs-kit. Ele expõe 18 tools registradas que encapsulam toda a funcionalidade do sistema.
+
+**Ponto de entrada:** `src/server.ts` chama `startServer()` de `src/server/index.ts`
 
 ## Arquitetura
 
@@ -93,9 +94,11 @@ Lista de atualizações aplicadas ou "No doc updates needed."
 }
 ```
 
-### 2. `explainSymbol`
+### 2. `explainSymbol` (MCP Tool)
 
 Explica um símbolo combinando análise de código e docs existentes.
+
+**Registrada em:** [src/server/tools/explainSymbol.tool.ts](src/server/tools/explainSymbol.tool.ts) via `registerExplainSymbolTool()`
 
 **Input Schema:**
 ```typescript
@@ -151,9 +154,11 @@ Bloco de código Mermaid formatado.
 }
 ```
 
-### 4. `scanFile`
+### 4. `scanFile` (MCP Tool)
 
 Escaneia arquivo TypeScript e gera documentação para símbolos não documentados.
+
+**Registrada em:** [src/server/tools/scanFile.tool.ts](src/server/tools/scanFile.tool.ts) via `registerScanFileTool()`
 
 **Input Schema:**
 ```typescript

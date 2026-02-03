@@ -1,11 +1,11 @@
 ---
 title: Analyzer - Análise de Mudanças
 module: analyzer
-lastUpdated: 2026-02-01
+lastUpdated: 2026-02-03
 symbols:
   - analyzeChanges
   - parseGitDiff
-  - computeAstDiff
+  - diffSymbols
 ---
 
 # Analyzer - Análise Semântica de Mudanças
@@ -28,7 +28,7 @@ analyzeChanges()
   ↓
 parseGitDiff() → FileDiff[]
   ↓
-computeAstDiff() → AstDiff
+diffSymbols() → AstChange[]
   ↓
 ChangeImpact[] (symbols + change types)
 ```
@@ -107,46 +107,34 @@ Resulta em:
 - Arquivos renomeados (`changeType: "renamed"`)
 - Binary files (ignored)
 
-### 2. AST Diff Computer (`astDiff.ts`)
+### 2. AST Symbol Differ (`astDiff.ts`)
 
-Compara ASTs de versões antigas e novas do código para detectar mudanças **semânticas**.
+Compara listas de símbolos extraídos de versões antigas e novas do código para detectar mudanças **semânticas**.
 
 **Função principal:**
 ```typescript
-function computeAstDiff(params: {
-  oldSource: string;
-  newSource: string;
-  filePath: string;
-  parser: Parser;
-}): AstDiff
+function diffSymbols(oldSymbols: CodeSymbol[], newSymbols: CodeSymbol[]): AstChange[]
 ```
 
 **Tipo de retorno:**
 ```typescript
-interface AstDiff {
-  changedSymbols: ChangedSymbol[];
+interface AstChange {
+  symbol: CodeSymbol;
+  changeType: AstChangeType;
+  details: string;
+  oldSymbol?: CodeSymbol;
 }
 
-interface ChangedSymbol {
-  name: string;
-  kind: SymbolKind;
-  changeType: "added" | "removed" | "signature_changed" | "body_changed";
-  oldSignature?: string;
-  newSignature?: string;
-  location: {
-    file: string;
-    startLine: number;
-    endLine: number;
-  };
-}
+type AstChangeType = "added" | "removed" | "signature_changed" | "body_changed" | "moved";
 ```
 
 **Algoritmo:**
 
-1. **Parse both versions:**
+1. **Indexa símbolos por chave:**
    ```typescript
-   const oldTree = parser.parse(oldSource);
-   const newTree = parser.parse(newSource);
+   const makeKey = (s: CodeSymbol) => `${s.name}:${s.kind}`;
+   const oldMap = new Map(oldSymbols.map(s => [makeKey(s), s]));
+   const newMap = new Map(newSymbols.map(s => [makeKey(s), s]));
    ```
 
 2. **Extract symbols from both trees:**

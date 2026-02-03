@@ -54,6 +54,7 @@ export class DefaultStrategy implements LanguageStrategy {
     _classSymbol: CodeSymbol,
     _addRel: AddRelFn,
     _file: string,
+    _ctx?: unknown,
   ): void {
     // No-op for unsupported languages
   }
@@ -63,6 +64,7 @@ export class DefaultStrategy implements LanguageStrategy {
     _symsInFile: CodeSymbol[],
     _addRel: AddRelFn,
     _file: string,
+    _ctx?: unknown,
   ): void {
     // No-op for unsupported languages
   }
@@ -72,6 +74,7 @@ export class DefaultStrategy implements LanguageStrategy {
     _symsInFile: CodeSymbol[],
     _addRel: AddRelFn,
     _file: string,
+    _ctx?: unknown,
   ): void {
     // No-op for unsupported languages
   }
@@ -81,6 +84,7 @@ export class DefaultStrategy implements LanguageStrategy {
     _symsInFile: CodeSymbol[],
     _addRel: AddRelFn,
     _file: string,
+    _ctx?: unknown,
   ): void {
     // No-op for unsupported languages
   }

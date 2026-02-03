@@ -45,7 +45,8 @@ export function renderMarkdown(markdown: string | undefined | null): string {
  * @param markdown - Raw markdown text
  * @returns HTML string safe for embedding in page
  */
-export function renderMarkdownInline(markdown: string | undefined | null): string {
+// renderMarkdownInline has been removed (unused helper).
+export function renderMarkdownInline_DEPRECATED(markdown: string | undefined | null): string {
   if (!markdown || markdown.trim() === "") {
     return "";
   }

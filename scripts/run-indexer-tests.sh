@@ -15,6 +15,8 @@ $JEST_CMD src/indexer/__tests__/indexer.test.ts
 $JEST_CMD src/indexer/__tests__/symbol.types.test.ts
 $JEST_CMD src/indexer/__tests__/relationshipExtractor.test.ts
 $JEST_CMD src/indexer/__tests__/metricsCollector.test.ts
+$JEST_CMD src/indexer/__tests__/lcovCollector.test.ts
+$JEST_CMD src/indexer/__tests__/dynamicRelationshipDetector.test.ts
 
 echo ""
 echo "✅ All indexer tests passed!"

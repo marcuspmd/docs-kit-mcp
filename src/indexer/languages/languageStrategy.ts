@@ -1,5 +1,6 @@
 import type Parser from "tree-sitter";
 import type { CodeSymbol, SymbolKind, SymbolRelationship, Visibility } from "../symbol.types.js";
+import type { ResolutionContext } from "../relationshipExtractor.js";
 
 export type AddRelFn = (
   sourceId: string,
@@ -7,6 +8,7 @@ export type AddRelFn = (
   type: SymbolRelationship["type"],
   file: string,
   line: number,
+  ctx?: ResolutionContext,
 ) => void;
 
 export interface LanguageStrategy {
@@ -28,29 +30,43 @@ export interface LanguageStrategy {
     classSymbol: CodeSymbol,
     addRel: AddRelFn,
     file: string,
+    ctx?: ResolutionContext,
   ): void;
   extractInstantiationRelationships(
     node: Parser.SyntaxNode,
     symsInFile: CodeSymbol[],
     addRel: AddRelFn,
     file: string,
+    ctx?: ResolutionContext,
   ): void;
   extractImportRelationships(
     node: Parser.SyntaxNode,
     symsInFile: CodeSymbol[],
     addRel: AddRelFn,
     file: string,
+    ctx?: ResolutionContext,
   ): void;
   extractCallRelationships(
     node: Parser.SyntaxNode,
     symsInFile: CodeSymbol[],
     addRel: AddRelFn,
     file: string,
+    ctx?: ResolutionContext,
   ): void;
   extractEventListenerRelationships?(
     node: Parser.SyntaxNode,
     symsInFile: CodeSymbol[],
     addRel: AddRelFn,
     file: string,
+    ctx?: ResolutionContext,
   ): void;
+  /** PHP-specific: extract use statements for namespace resolution */
+  extractUseStatements?(root: Parser.SyntaxNode): Map<string, string>;
+
+  /**
+   * Extract import statements from a file.
+   * Returns a map of local name → source module path.
+   * Used for precise call relationship resolution.
+   */
+  extractImports?(root: Parser.SyntaxNode): Map<string, string>;
 }

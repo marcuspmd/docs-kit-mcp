@@ -2,7 +2,7 @@ import { describe, it, expect, beforeEach } from "@jest/globals";
 import * as fs from "fs";
 import * as path from "path";
 import { fileURLToPath } from "url";
-import { parseLcov, enrichSymbolsWithCoverage } from "../lcovCollector.js";
+import { parseLcov, enrichSymbolsWithCoverage, normalizePath } from "../lcovCollector.js";
 import type { CodeSymbol } from "../symbol.types.js";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -301,6 +301,127 @@ end_of_record
       expect(greet.metrics?.parameterCount).toBe(1);
       expect(greet.metrics?.testCoverage).toBeDefined();
       expect(greet.metrics?.testCoverage?.coveragePercent).toBe(100);
+    });
+
+    it("should handle absolute paths with projectRoot", async () => {
+      // Create lcov file with absolute paths
+      const absoluteLcovPath = path.join(fixturesDir, "absolute.lcov");
+      const projectRoot = "/home/user/project";
+      const absoluteLcov = `TN:
+SF:${projectRoot}/src/example.ts
+FN:5,greet
+FNF:1
+FNH:1
+FNDA:10,greet
+DA:5,10
+DA:6,10
+DA:7,10
+DA:8,10
+LF:4
+LH:4
+end_of_record
+`;
+      fs.writeFileSync(absoluteLcovPath, absoluteLcov, "utf-8");
+
+      const coverageData = await parseLcov(absoluteLcovPath);
+
+      const symbols: CodeSymbol[] = [
+        {
+          id: "9",
+          name: "greet",
+          kind: "function",
+          file: "src/example.ts", // Relative path
+          startLine: 5,
+          endLine: 8,
+        },
+      ];
+
+      const { enrichedSymbols, stats } = enrichSymbolsWithCoverage(
+        symbols,
+        coverageData,
+        projectRoot,
+      );
+
+      expect(stats.symbolsEnriched).toBe(1);
+      expect(enrichedSymbols[0].metrics?.testCoverage).toBeDefined();
+      expect(enrichedSymbols[0].metrics?.testCoverage?.coveragePercent).toBe(100);
+    });
+
+    it("should match when symbol has absolute path", async () => {
+      const absoluteLcovPath = path.join(fixturesDir, "relative.lcov");
+      const projectRoot = "/home/user/project";
+      const relativeLcov = `TN:
+SF:src/example.ts
+FN:5,greet
+FNF:1
+FNH:1
+FNDA:10,greet
+DA:5,10
+DA:6,10
+DA:7,10
+DA:8,10
+LF:4
+LH:4
+end_of_record
+`;
+      fs.writeFileSync(absoluteLcovPath, relativeLcov, "utf-8");
+
+      const coverageData = await parseLcov(absoluteLcovPath);
+
+      const symbols: CodeSymbol[] = [
+        {
+          id: "10",
+          name: "greet",
+          kind: "function",
+          file: `${projectRoot}/src/example.ts`, // Absolute path
+          startLine: 5,
+          endLine: 8,
+        },
+      ];
+
+      const { enrichedSymbols, stats } = enrichSymbolsWithCoverage(
+        symbols,
+        coverageData,
+        projectRoot,
+      );
+
+      expect(stats.symbolsEnriched).toBe(1);
+      expect(enrichedSymbols[0].metrics?.testCoverage).toBeDefined();
+    });
+  });
+
+  describe("normalizePath", () => {
+    it("should remove leading ./", () => {
+      expect(normalizePath("./src/file.ts")).toBe("src/file.ts");
+    });
+
+    it("should convert backslashes to forward slashes", () => {
+      expect(normalizePath("src\\nested\\file.ts")).toBe("src/nested/file.ts");
+    });
+
+    it("should convert absolute path to relative with projectRoot", () => {
+      const projectRoot = "/home/user/project";
+      expect(normalizePath("/home/user/project/src/file.ts", projectRoot)).toBe("src/file.ts");
+    });
+
+    it("should handle absolute path without matching projectRoot", () => {
+      const projectRoot = "/home/user/project";
+      expect(normalizePath("/other/path/file.ts", projectRoot)).toBe("/other/path/file.ts");
+    });
+
+    it("should handle mixed slashes with projectRoot", () => {
+      const projectRoot = "/home/user/project";
+      expect(normalizePath("/home/user/project\\src\\file.ts", projectRoot)).toBe("src/file.ts");
+    });
+
+    it("should not modify relative paths without projectRoot", () => {
+      expect(normalizePath("src/file.ts")).toBe("src/file.ts");
+    });
+
+    it("should handle trailing slash in projectRoot", () => {
+      const projectRoot = "/home/user/project/";
+      // path.resolve removes trailing slash, so this should still work
+      expect(normalizePath("/home/user/project/src/file.ts", projectRoot)).toBe("src/file.ts");
     });
   });
 });

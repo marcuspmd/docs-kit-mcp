@@ -1,15 +1,15 @@
 ---
 title: CLI (Command Line Interface)
 module: cli
-lastUpdated: 2026-02-01
+lastUpdated: 2026-02-03
 symbols:
   - main
+  - runInit
   - runIndex
   - runBuildSite
   - runBuildDocs
-  - runGenerateRepoDocumentation
-  - runProjectStatus
-  - runSmartCodeReview
+  - runImpactAnalysis
+  - runAnalyzePatterns
 ---
 
 # CLI - Command Line Interface
@@ -24,12 +24,12 @@ O CLI (`src/cli.ts`) é o ponto de entrada principal para interação com o docs
 
 ```typescript
 main() → parseArgs() → runCommand()
-  ├─> runIndex()          // Indexação de símbolos
-  ├─> runBuildSite()      // Geração de site HTML
-  ├─> runBuildDocs()      // Geração de Markdown
-  ├─> runGenerateDocs()   // Atualização inteligente
-  ├─> runProjectStatus()  // Relatório de status
-  └─> runSmartCodeReview() // Code review automatizado
+  ├─> runInit()            // Inicializa projeto
+  ├─> runIndex()           // Indexação de símbolos
+  ├─> runBuildSite()       // Geração de site HTML
+  ├─> runBuildDocs()       // Geração de Markdown
+  ├─> runImpactAnalysis()  // Análise de impacto
+  └─> runAnalyzePatterns() // Análise de patterns
 ```
 
 ## Comandos Disponíveis

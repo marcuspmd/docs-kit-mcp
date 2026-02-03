@@ -173,7 +173,8 @@ export function createLayeredDiagrams(
 /**
  * Create diagrams separated by relationship type
  */
-export function createRelationshipTypeDiagrams(
+// createRelationshipTypeDiagrams has been removed (feature not implemented).
+export function createRelationshipTypeDiagrams_DEPRECATED(
   symbols: CodeSymbol[],
   relationships: RelationshipRow[],
   clickable = false,

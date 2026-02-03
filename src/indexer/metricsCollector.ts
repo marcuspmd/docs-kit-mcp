@@ -77,6 +77,7 @@ export interface MetricsCollectorOptions {
   symbols: CodeSymbol[];
   trees: Map<string, Parser.Tree>;
   coverage?: LcovFileData[];
+  projectRoot?: string;
 }
 
 /**
@@ -84,7 +85,7 @@ export interface MetricsCollectorOptions {
  * If coverage data is provided, enriches symbols with test coverage metrics.
  */
 export function collectMetrics(options: MetricsCollectorOptions): CodeSymbol[] {
-  const { symbols, trees, coverage } = options;
+  const { symbols, trees, coverage, projectRoot } = options;
 
   // First, collect static metrics (LOC, complexity, parameters)
   const symbolsWithStaticMetrics = symbols.map((symbol) => {
@@ -114,6 +115,7 @@ export function collectMetrics(options: MetricsCollectorOptions): CodeSymbol[] {
     const { enrichedSymbols, stats } = enrichSymbolsWithCoverage(
       symbolsWithStaticMetrics,
       coverage,
+      projectRoot,
     );
 
     if (stats.symbolsEnriched > 0) {

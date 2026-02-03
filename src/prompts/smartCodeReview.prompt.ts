@@ -8,7 +8,8 @@ export interface SmartCodeReviewInput {
   docCoverage: { documented: number; total: number };
 }
 
-export function buildSmartCodeReviewPrompt(input: SmartCodeReviewInput): string {
+// buildSmartCodeReviewPrompt has been removed (obsolete/unused).
+export function buildSmartCodeReviewPrompt_DEPRECATED(input: SmartCodeReviewInput): string {
   const { symbols, architectureViolations, patterns, deadCodeFindings, docCoverage } = input;
 
   const parts: string[] = [

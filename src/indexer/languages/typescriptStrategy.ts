@@ -1,6 +1,7 @@
 import type Parser from "tree-sitter";
 import type { CodeSymbol, SymbolKind, Visibility } from "../symbol.types.js";
 import type { AddRelFn, LanguageStrategy } from "./languageStrategy.js";
+import type { ResolutionContext } from "../relationshipExtractor.js";
 
 export class TypeScriptStrategy implements LanguageStrategy {
   extractNamespace(_root: Parser.SyntaxNode): string | undefined {
@@ -70,6 +71,7 @@ export class TypeScriptStrategy implements LanguageStrategy {
     classSymbol: CodeSymbol,
     addRel: AddRelFn,
     file: string,
+    _ctx?: unknown,
   ): void {
     const heritage = node.children.filter((c) => c.type === "class_heritage");
     for (const h of heritage) {
@@ -104,6 +106,7 @@ export class TypeScriptStrategy implements LanguageStrategy {
     symsInFile: CodeSymbol[],
     addRel: AddRelFn,
     file: string,
+    _ctx?: unknown,
   ): void {
     if (node.type !== "new_expression") return;
     const constructorNode = node.childForFieldName("constructor");
@@ -126,6 +129,7 @@ export class TypeScriptStrategy implements LanguageStrategy {
     symsInFile: CodeSymbol[],
     addRel: AddRelFn,
     file: string,
+    _ctx?: unknown,
   ): void {
     if (node.type !== "import_statement") return;
     const importClause = node.children.find((c) => c.type === "import_clause");
@@ -146,18 +150,115 @@ export class TypeScriptStrategy implements LanguageStrategy {
     symsInFile: CodeSymbol[],
     addRel: AddRelFn,
     file: string,
+    ctx?: ResolutionContext,
   ): void {
     // Extract function calls
     if (node.type === "call_expression") {
       const functionNode = node.childForFieldName("function");
+
+      // Only handle direct function calls (identifier), not method calls (member_expression)
+      // Method calls like obj.count() should NOT match standalone functions named "count"
       if (functionNode?.type === "identifier") {
+        const funcName = functionNode.text;
         const enclosing =
           findEnclosingSymbol(node.startPosition.row, symsInFile) ??
           symsInFile.find((s) => !s.parent) ??
           syntheticModuleSymbol(file);
-        addRel(enclosing.id, functionNode.text, "calls", file, node.startPosition.row + 1);
+
+        // Check if this function is defined in the same file (local function)
+        const isLocalFunction = symsInFile.some(
+          (s) =>
+            (s.kind === "function" || s.kind === "method") &&
+            (s.name === funcName || s.name.endsWith(`.${funcName}`)),
+        );
+
+        // Check if this function was imported from another file
+        const isImported = ctx?.imports.has(funcName);
+
+        // Only create relationship if we have high confidence about the target
+        if (isLocalFunction || isImported) {
+          // Use the imported module path to help with resolution if available
+          const importSource = ctx?.imports.get(funcName);
+          const targetName = importSource ? `${importSource}::${funcName}` : funcName;
+          addRel(enclosing.id, targetName, "calls", file, node.startPosition.row + 1);
+        }
+      }
+
+      // Handle method calls on 'this' (e.g., this.count())
+      if (functionNode?.type === "member_expression") {
+        const object = functionNode.childForFieldName("object");
+        const property = functionNode.childForFieldName("property");
+
+        if (object?.text === "this" && property?.type === "property_identifier") {
+          const methodName = property.text;
+          const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
+          if (enclosing) {
+            // Find the parent class to build qualified name
+            const parentClass = symsInFile.find(
+              (s) => s.id === enclosing.parent && (s.kind === "class" || s.kind === "abstract_class"),
+            );
+            if (parentClass) {
+              const qualifiedName = `${parentClass.name}.${methodName}`;
+              addRel(enclosing.id, qualifiedName, "calls", file, node.startPosition.row + 1);
+            }
+          }
+        }
       }
     }
+  }
+
+  /**
+   * Extract import statements from a TypeScript file.
+   * Returns a map of local name → source module path.
+   */
+  extractImports(root: Parser.SyntaxNode): Map<string, string> {
+    const imports = new Map<string, string>();
+
+    for (const child of root.children) {
+      if (child.type !== "import_statement") continue;
+
+      // Get the source module path
+      const sourceNode = child.childForFieldName("source");
+      const source = sourceNode?.text?.replace(/['"]/g, "") ?? "";
+
+      // Skip external packages (node_modules)
+      if (!source.startsWith(".") && !source.startsWith("/")) continue;
+
+      const importClause = child.children.find((c) => c.type === "import_clause");
+      if (!importClause) continue;
+
+      // Handle default import: import Foo from './foo'
+      const defaultImport = importClause.children.find((c) => c.type === "identifier");
+      if (defaultImport) {
+        imports.set(defaultImport.text, source);
+      }
+
+      // Handle named imports: import { foo, bar as baz } from './foo'
+      const namedImports = importClause.descendantsOfType("import_specifier");
+      for (const spec of namedImports) {
+        const aliasNode = spec.childForFieldName("alias");
+        const nameNode = spec.childForFieldName("name");
+
+        // If there's an alias, use it as the local name
+        const localName = aliasNode?.text ?? nameNode?.text;
+        const originalName = nameNode?.text;
+
+        if (localName && originalName) {
+          imports.set(localName, `${source}::${originalName}`);
+        }
+      }
+
+      // Handle namespace import: import * as foo from './foo'
+      const namespaceImport = importClause.descendantsOfType("namespace_import");
+      for (const ns of namespaceImport) {
+        const nameNode = ns.children.find((c) => c.type === "identifier");
+        if (nameNode) {
+          imports.set(nameNode.text, `${source}::*`);
+        }
+      }
+    }
+
+    return imports;
   }
 }
 

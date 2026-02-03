@@ -1,10 +1,11 @@
 ---
 title: Indexer - Extração de Símbolos via AST
 module: indexer
-lastUpdated: 2026-02-01
+lastUpdated: 2026-02-03
 symbols:
   - indexFile
   - extractRelationships
+  - detectDynamicRelationships
   - collectMetrics
   - parseLcov
 ---
@@ -246,7 +247,28 @@ type RelationshipType =
   | "imports"         // Módulo A importa módulo B
   | "instantiates"    // Função A cria instância de classe B
   | "references"      // Símbolo A referencia símbolo B
+  | "dynamic_call"    // Função A registra símbolo B dinamicamente (NEW)
   | "contains";       // Classe A contém método B
+```
+
+**Tipos de relacionamentos detectados:**
+
+1. **Static Relationships** (AST-based):
+   - **extends**: Herança de classes
+   - **implements**: Implementação de interfaces
+   - **calls**: Chamadas de função/método
+   - **instantiates**: Criação de instâncias (`new Class()`)
+   - **imports**: Importações de módulos
+
+2. **Dynamic Relationships** (Pattern-based via `detectDynamicRelationships`):
+   - **dynamic_call**: Registros dinâmicos detectados por padrões
+     - MCP tools: `server.registerTool("name", ...)`
+     - Event listeners: `emitter.on("event", handler)`
+     - HTTP routes: `app.get("/path", handler)`
+     - DI containers: `container.register("service", impl)`
+     - Test frameworks: `describe("name", callback)`
+
+Ver [Dynamic Relationship Detection](../examples/dynamic-relationship-detection.md) para detalhes.
 ```
 
 **Algoritmo:**

@@ -28,6 +28,7 @@ export default {
     "**/package-lock.json",
     "**/yarn.lock",
     "**/pnpm-lock.yaml",
+    '**/__tests__/**',
   ],
   respectGitignore: true,
   maxFileSize: 512_000,

@@ -1,5 +1,6 @@
 import type Parser from "tree-sitter";
 import type { CodeSymbol, SymbolKind, Visibility } from "../symbol.types.js";
+import type { ResolutionContext } from "../relationshipExtractor.js";
 import type { AddRelFn, LanguageStrategy } from "./languageStrategy.js";
 
 export class PhpStrategy implements LanguageStrategy {
@@ -11,6 +12,75 @@ export class PhpStrategy implements LanguageStrategy {
       }
     }
     return undefined;
+  }
+
+  /**
+   * Extract use statements from PHP file for namespace resolution.
+   * Returns a map of alias/shortName → fully qualified name.
+   *
+   * Handles:
+   * - `use App\Services\Request;` → "Request" → "App\Services\Request"
+   * - `use App\Services\Request as HttpReq;` → "HttpReq" → "App\Services\Request"
+   * - `use App\Services\{Request, Response};` → group imports
+   */
+  extractUseStatements(root: Parser.SyntaxNode): Map<string, string> {
+    const imports = new Map<string, string>();
+
+    for (const child of root.children) {
+      if (child.type === "namespace_use_declaration") {
+        for (const clause of child.children) {
+          if (clause.type === "namespace_use_clause") {
+            const nameNode = clause.children.find(
+              (c) => c.type === "name" || c.type === "qualified_name",
+            );
+            if (nameNode) {
+              const qualifiedName = nameNode.text;
+              // Check for alias: `use Foo\Bar as Baz;`
+              const aliasNode = clause.children.find((c) => c.type === "namespace_aliasing_clause");
+              let alias: string;
+              if (aliasNode) {
+                const aliasName = aliasNode.children.find((c) => c.type === "name");
+                alias = aliasName?.text ?? qualifiedName.split("\\").pop()!;
+              } else {
+                alias = qualifiedName.split("\\").pop()!;
+              }
+              imports.set(alias, qualifiedName);
+            }
+          } else if (clause.type === "namespace_use_group") {
+            // Handle group imports: `use App\Services\{Request, Response};`
+            const prefixNode = clause.children.find(
+              (c) => c.type === "name" || c.type === "qualified_name",
+            );
+            const prefix = prefixNode?.text ?? "";
+
+            for (const groupClause of clause.children) {
+              if (groupClause.type === "namespace_use_group_clause") {
+                const subName = groupClause.children.find(
+                  (c) => c.type === "name" || c.type === "qualified_name",
+                );
+                if (subName) {
+                  const qualifiedName = prefix ? `${prefix}\\${subName.text}` : subName.text;
+                  // Check for alias within group
+                  const aliasNode = groupClause.children.find(
+                    (c) => c.type === "namespace_aliasing_clause",
+                  );
+                  let alias: string;
+                  if (aliasNode) {
+                    const aliasName = aliasNode.children.find((c) => c.type === "name");
+                    alias = aliasName?.text ?? subName.text.split("\\").pop()!;
+                  } else {
+                    alias = subName.text.split("\\").pop()!;
+                  }
+                  imports.set(alias, qualifiedName);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+
+    return imports;
   }
 
   buildQualifiedName(name: string, parentName?: string, namespace?: string): string {
@@ -99,6 +169,7 @@ export class PhpStrategy implements LanguageStrategy {
     classSymbol: CodeSymbol,
     addRel: AddRelFn,
     file: string,
+    ctx?: ResolutionContext,
   ): void {
     // extends via base_clause
     const baseClause = node.children.find((c) => c.type === "base_clause");
@@ -107,7 +178,7 @@ export class PhpStrategy implements LanguageStrategy {
         (c) => c.type === "name" || c.type === "qualified_name",
       );
       if (nameNode) {
-        addRel(classSymbol.id, nameNode.text, "inherits", file, node.startPosition.row + 1);
+        addRel(classSymbol.id, nameNode.text, "inherits", file, node.startPosition.row + 1, ctx);
       }
     }
 
@@ -116,7 +187,14 @@ export class PhpStrategy implements LanguageStrategy {
     if (ifaceClause) {
       for (const typeChild of ifaceClause.children) {
         if (typeChild.type === "name" || typeChild.type === "qualified_name") {
-          addRel(classSymbol.id, typeChild.text, "implements", file, node.startPosition.row + 1);
+          addRel(
+            classSymbol.id,
+            typeChild.text,
+            "implements",
+            file,
+            node.startPosition.row + 1,
+            ctx,
+          );
         }
       }
     }
@@ -128,7 +206,7 @@ export class PhpStrategy implements LanguageStrategy {
         if (child.type === "use_declaration") {
           for (const n of child.children) {
             if (n.type === "name" || n.type === "qualified_name") {
-              addRel(classSymbol.id, n.text, "uses_trait", file, child.startPosition.row + 1);
+              addRel(classSymbol.id, n.text, "uses_trait", file, child.startPosition.row + 1, ctx);
             }
           }
         }
@@ -141,6 +219,7 @@ export class PhpStrategy implements LanguageStrategy {
     symsInFile: CodeSymbol[],
     addRel: AddRelFn,
     file: string,
+    ctx?: ResolutionContext,
   ): void {
     // object_creation_expression → instantiates
     if (node.type === "object_creation_expression") {
@@ -148,7 +227,14 @@ export class PhpStrategy implements LanguageStrategy {
       if (nameNode) {
         const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
         if (enclosing) {
-          addRel(enclosing.id, nameNode.text, "instantiates", file, node.startPosition.row + 1);
+          addRel(
+            enclosing.id,
+            nameNode.text,
+            "instantiates",
+            file,
+            node.startPosition.row + 1,
+            ctx,
+          );
         }
       }
       return;
@@ -161,9 +247,8 @@ export class PhpStrategy implements LanguageStrategy {
       if (scope && methodName === "dispatch") {
         const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
         if (enclosing) {
-          const parts = scope.text.split("\\");
-          const shortName = parts[parts.length - 1];
-          addRel(enclosing.id, shortName, "dispatches", file, node.startPosition.row + 1);
+          // Pass full qualified name if available, or short name for resolution
+          addRel(enclosing.id, scope.text, "dispatches", file, node.startPosition.row + 1, ctx);
         }
       }
     }
@@ -174,6 +259,7 @@ export class PhpStrategy implements LanguageStrategy {
     symsInFile: CodeSymbol[],
     addRel: AddRelFn,
     file: string,
+    ctx?: ResolutionContext,
   ): void {
     if (node.type !== "method_declaration") return;
     const methodName = node.childForFieldName("name")?.text;
@@ -194,7 +280,7 @@ export class PhpStrategy implements LanguageStrategy {
     );
     if (!typeNode) return;
 
-    // For union_type, take the first type; for qualified_name, take last segment
+    // For union_type, take the first type
     let typeName = typeNode.text;
     if (typeNode.type === "union_type") {
       const first = typeNode.children.find(
@@ -202,8 +288,6 @@ export class PhpStrategy implements LanguageStrategy {
       );
       if (first) typeName = first.text;
     }
-    const parts = typeName.split("\\");
-    const shortName = parts[parts.length - 1];
 
     // Find the enclosing class symbol
     const enclosingClass = symsInFile.find(
@@ -213,7 +297,8 @@ export class PhpStrategy implements LanguageStrategy {
         s.endLine >= node.endPosition.row + 1,
     );
     if (enclosingClass) {
-      addRel(enclosingClass.id, shortName, "listens_to", file, node.startPosition.row + 1);
+      // Pass full type name for resolution via context
+      addRel(enclosingClass.id, typeName, "listens_to", file, node.startPosition.row + 1, ctx);
     }
   }
 
@@ -222,6 +307,7 @@ export class PhpStrategy implements LanguageStrategy {
     symsInFile: CodeSymbol[],
     addRel: AddRelFn,
     file: string,
+    ctx?: ResolutionContext,
   ): void {
     if (node.type !== "namespace_use_declaration") return;
     for (const child of node.children) {
@@ -230,11 +316,11 @@ export class PhpStrategy implements LanguageStrategy {
           (c) => c.type === "name" || c.type === "qualified_name",
         );
         if (nameNode) {
-          const parts = nameNode.text.split("\\");
-          const shortName = parts[parts.length - 1];
+          // Use full qualified name for resolution
+          const qualifiedName = nameNode.text;
           const topLevel = symsInFile.find((s) => !s.parent);
           if (topLevel) {
-            addRel(topLevel.id, shortName, "uses", file, node.startPosition.row + 1);
+            addRel(topLevel.id, qualifiedName, "uses", file, node.startPosition.row + 1, ctx);
           }
         }
       }
@@ -246,39 +332,117 @@ export class PhpStrategy implements LanguageStrategy {
     symsInFile: CodeSymbol[],
     addRel: AddRelFn,
     file: string,
+    ctx?: ResolutionContext,
   ): void {
     // Extract function calls
     if (node.type === "function_call_expression") {
       const functionNode = node.childForFieldName("function");
       if (functionNode?.type === "name" || functionNode?.type === "qualified_name") {
+        const funcName = functionNode.text;
         const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
-        if (enclosing) {
-          const parts = functionNode.text.split("\\");
-          const shortName = parts[parts.length - 1];
-          const symbol = symsInFile.find((s) => s.name === shortName);
-          if (symbol && enclosing.id !== symbol.id) {
-            addRel(enclosing.id, shortName, "calls", file, node.startPosition.row + 1);
-          }
+        if (!enclosing) return;
+
+        // If it's a fully qualified name (starts with \), use it directly
+        if (funcName.startsWith("\\")) {
+          addRel(enclosing.id, funcName.slice(1), "calls", file, node.startPosition.row + 1, ctx);
+          return;
+        }
+
+        // If it's already a qualified name (contains \), use it directly
+        if (funcName.includes("\\")) {
+          // Could be relative to current namespace or absolute
+          const qualifiedName = ctx?.namespace ? `${ctx.namespace}\\${funcName}` : funcName;
+          addRel(enclosing.id, qualifiedName, "calls", file, node.startPosition.row + 1, ctx);
+          return;
+        }
+
+        // Short name - need to verify it's a known function
+        // Check if function is defined locally in the same file
+        const isLocalFunction = symsInFile.some(
+          (s) => s.kind === "function" && (s.name === funcName || s.name.endsWith(`\\${funcName}`)),
+        );
+
+        // Check if there's a use statement for this function
+        // (ctx.imports contains class imports, but PHP also has `use function`)
+        const isImported = ctx?.imports.has(funcName);
+
+        // Build qualified name using namespace if available
+        const qualifiedName = ctx?.namespace ? `${ctx.namespace}\\${funcName}` : funcName;
+
+        // Check if a function with this qualified name exists in the index
+        const existsInNamespace = symsInFile.some(
+          (s) => s.kind === "function" && s.name === qualifiedName,
+        );
+
+        // Only create relationship if we have confidence about the target
+        if (isLocalFunction || isImported || existsInNamespace) {
+          addRel(enclosing.id, qualifiedName, "calls", file, node.startPosition.row + 1, ctx);
         }
       }
     }
 
-    // Extract member access
+    // Extract member access - only for static class method calls
     if (node.type === "member_access_expression" || node.type === "member_call_expression") {
       const object = node.childForFieldName("object");
+
+      // Skip variable access like $this->method() or $obj->method()
       if (object?.type === "variable_name" && object.text.startsWith("$")) {
-        // Skip variable access for now
         return;
       }
+
+      // Handle static class access like ClassName::method()
       if (object?.type === "name" || object?.type === "qualified_name") {
+        const className = object.text;
         const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
-        if (enclosing) {
-          const parts = object.text.split("\\");
-          const shortName = parts[parts.length - 1];
-          const symbol = symsInFile.find((s) => s.name === shortName);
-          if (symbol) {
-            addRel(enclosing.id, shortName, "uses", file, node.startPosition.row + 1);
-          }
+        if (!enclosing) return;
+
+        // If it's a fully qualified name, use it directly
+        if (className.startsWith("\\")) {
+          addRel(enclosing.id, className.slice(1), "uses", file, node.startPosition.row + 1, ctx);
+          return;
+        }
+
+        // Check if this class is imported via use statement
+        if (ctx?.imports.has(className)) {
+          const qualifiedName = ctx.imports.get(className)!;
+          addRel(enclosing.id, qualifiedName, "uses", file, node.startPosition.row + 1, ctx);
+          return;
+        }
+
+        // Check if class exists in current namespace
+        const qualifiedName = ctx?.namespace ? `${ctx.namespace}\\${className}` : className;
+        const existsInNamespace = symsInFile.some(
+          (s) =>
+            (s.kind === "class" || s.kind === "abstract_class" || s.kind === "interface") &&
+            s.name === qualifiedName,
+        );
+
+        if (existsInNamespace || className.includes("\\")) {
+          addRel(enclosing.id, qualifiedName, "uses", file, node.startPosition.row + 1, ctx);
+        }
+      }
+    }
+
+    // Handle $this->method() calls - create relationship to parent class method
+    if (node.type === "member_call_expression") {
+      const object = node.childForFieldName("object");
+      const methodName = node.childForFieldName("name")?.text;
+
+      if (object?.type === "variable_name" && object.text === "$this" && methodName) {
+        const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
+        if (!enclosing) return;
+
+        // Find the parent class
+        const parentClass = symsInFile.find(
+          (s) =>
+            s.id === enclosing.parent &&
+            (s.kind === "class" || s.kind === "abstract_class" || s.kind === "service"),
+        );
+
+        if (parentClass) {
+          // Use qualified method name: ClassName.methodName
+          const qualifiedMethodName = `${parentClass.name}.${methodName}`;
+          addRel(enclosing.id, qualifiedMethodName, "calls", file, node.startPosition.row + 1, ctx);
         }
       }
     }

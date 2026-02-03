@@ -293,9 +293,61 @@ describe("TypeScriptStrategy", () => {
       expect(addRel).not.toHaveBeenCalled();
     });
 
-    it("should add calls relationship", () => {
+    it("should add calls relationship for local function", () => {
       const addRel = jest.fn();
       const functionNode = { ...mockSyntaxNode, type: "identifier", text: "myFunction" };
+      const node = {
+        ...mockSyntaxNode,
+        type: "call_expression",
+        childForFieldName: jest.fn().mockReturnValue(functionNode as Parser.SyntaxNode),
+        startPosition: { row: 10, column: 0 },
+      };
+      const enclosingSymbol = { id: "method1", startLine: 1, endLine: 20 } as CodeSymbol;
+      // Include the target function as a local function in the same file
+      const localFunction = {
+        id: "func1",
+        name: "myFunction",
+        kind: "function",
+        startLine: 25,
+        endLine: 30,
+      } as CodeSymbol;
+      const symsInFile = [enclosingSymbol, localFunction];
+      const file = "test.ts";
+
+      strategy.extractCallRelationships(node, symsInFile, addRel, file);
+
+      expect(addRel).toHaveBeenCalledWith("method1", "myFunction", "calls", "test.ts", 11);
+    });
+
+    it("should add calls relationship for imported function", () => {
+      const addRel = jest.fn();
+      const functionNode = { ...mockSyntaxNode, type: "identifier", text: "importedFunc" };
+      const node = {
+        ...mockSyntaxNode,
+        type: "call_expression",
+        childForFieldName: jest.fn().mockReturnValue(functionNode as Parser.SyntaxNode),
+        startPosition: { row: 10, column: 0 },
+      };
+      const enclosingSymbol = { id: "method1", startLine: 1, endLine: 20 } as CodeSymbol;
+      const symsInFile = [enclosingSymbol];
+      const file = "test.ts";
+      // Provide resolution context with imports
+      const ctx = { imports: new Map([["importedFunc", "./utils::importedFunc"]]) };
+
+      strategy.extractCallRelationships(node, symsInFile, addRel, file, ctx);
+
+      expect(addRel).toHaveBeenCalledWith(
+        "method1",
+        "./utils::importedFunc::importedFunc",
+        "calls",
+        "test.ts",
+        11,
+      );
+    });
+
+    it("should NOT add calls relationship for unknown function (prevents false positives)", () => {
+      const addRel = jest.fn();
+      const functionNode = { ...mockSyntaxNode, type: "identifier", text: "unknownFunction" };
       const node = {
         ...mockSyntaxNode,
         type: "call_expression",
@@ -308,7 +360,8 @@ describe("TypeScriptStrategy", () => {
 
       strategy.extractCallRelationships(node, symsInFile, addRel, file);
 
-      expect(addRel).toHaveBeenCalledWith("method1", "myFunction", "calls", "test.ts", 11);
+      // Should NOT create relationship for unknown function
+      expect(addRel).not.toHaveBeenCalled();
     });
   });
 });

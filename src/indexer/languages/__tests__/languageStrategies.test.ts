@@ -415,7 +415,14 @@ describe("Language Strategies", () => {
       } as unknown as Parser.SyntaxNode;
       const addRel = jest.fn();
       strategy.extractClassRelationships(nodeWithExtends, classSymbol, addRel, "test.php");
-      expect(addRel).toHaveBeenCalledWith("class1", "BaseClass", "inherits", "test.php", 11);
+      expect(addRel).toHaveBeenCalledWith(
+        "class1",
+        "BaseClass",
+        "inherits",
+        "test.php",
+        11,
+        undefined,
+      );
     });
 
     it("extractClassRelationships extracts implements relationships", () => {
@@ -435,13 +442,21 @@ describe("Language Strategies", () => {
       } as unknown as Parser.SyntaxNode;
       const addRel = jest.fn();
       strategy.extractClassRelationships(nodeWithImplements, classSymbol, addRel, "test.php");
-      expect(addRel).toHaveBeenCalledWith("class1", "Interface1", "implements", "test.php", 11);
+      expect(addRel).toHaveBeenCalledWith(
+        "class1",
+        "Interface1",
+        "implements",
+        "test.php",
+        11,
+        undefined,
+      );
       expect(addRel).toHaveBeenCalledWith(
         "class1",
         "Namespace\\Interface2",
         "implements",
         "test.php",
         11,
+        undefined,
       );
     });
 
@@ -468,13 +483,21 @@ describe("Language Strategies", () => {
       } as unknown as Parser.SyntaxNode;
       const addRel = jest.fn();
       strategy.extractClassRelationships(nodeWithTraits, classSymbol, addRel, "test.php");
-      expect(addRel).toHaveBeenCalledWith("class1", "Trait1", "uses_trait", "test.php", 13);
+      expect(addRel).toHaveBeenCalledWith(
+        "class1",
+        "Trait1",
+        "uses_trait",
+        "test.php",
+        13,
+        undefined,
+      );
       expect(addRel).toHaveBeenCalledWith(
         "class1",
         "Namespace\\Trait2",
         "uses_trait",
         "test.php",
         13,
+        undefined,
       );
     });
 
@@ -489,7 +512,14 @@ describe("Language Strategies", () => {
       } as unknown as Parser.SyntaxNode;
       const addRel = jest.fn();
       strategy.extractInstantiationRelationships(node, symsInFile, addRel, "test.php");
-      expect(addRel).toHaveBeenCalledWith("method1", "SomeClass", "instantiates", "test.php", 11);
+      expect(addRel).toHaveBeenCalledWith(
+        "method1",
+        "SomeClass",
+        "instantiates",
+        "test.php",
+        11,
+        undefined,
+      );
     });
 
     it("extractInstantiationRelationships extracts dispatches for scoped_call_expression", () => {
@@ -510,6 +540,7 @@ describe("Language Strategies", () => {
         "dispatches",
         "test.php",
         11,
+        undefined,
       );
     });
 
@@ -536,7 +567,15 @@ describe("Language Strategies", () => {
       } as unknown as Parser.SyntaxNode;
       const addRel = jest.fn();
       strategy.extractEventListenerRelationships(node, symsInFile, addRel, "test.php");
-      expect(addRel).toHaveBeenCalledWith("class1", "OrderEvent", "listens_to", "test.php", 11);
+      // Now passes full qualified name for proper resolution
+      expect(addRel).toHaveBeenCalledWith(
+        "class1",
+        "App\\Events\\OrderEvent",
+        "listens_to",
+        "test.php",
+        11,
+        undefined,
+      );
     });
 
     it("extractEventListenerRelationships handles union_type", () => {
@@ -570,7 +609,14 @@ describe("Language Strategies", () => {
       } as unknown as Parser.SyntaxNode;
       const addRel = jest.fn();
       strategy.extractEventListenerRelationships(node, symsInFile, addRel, "test.php");
-      expect(addRel).toHaveBeenCalledWith("class1", "OrderEvent", "listens_to", "test.php", 11);
+      expect(addRel).toHaveBeenCalledWith(
+        "class1",
+        "OrderEvent",
+        "listens_to",
+        "test.php",
+        11,
+        undefined,
+      );
     });
 
     it("extractImportRelationships extracts uses for namespace_use_declaration", () => {
@@ -589,13 +635,21 @@ describe("Language Strategies", () => {
       } as unknown as Parser.SyntaxNode;
       const addRel = jest.fn();
       strategy.extractImportRelationships(node, symsInFile, addRel, "test.php");
-      expect(addRel).toHaveBeenCalledWith("class1", "User", "uses", "test.php", 6);
+      // Now passes full qualified name for proper resolution
+      expect(addRel).toHaveBeenCalledWith(
+        "class1",
+        "App\\Models\\User",
+        "uses",
+        "test.php",
+        6,
+        undefined,
+      );
     });
 
-    it("extractCallRelationships extracts calls for function_call_expression", () => {
+    it("extractCallRelationships extracts calls for local function", () => {
       const symsInFile = [
-        { id: "method1", name: "testMethod", startLine: 5, endLine: 15, parent: "class1" },
-        { id: "func1", name: "someFunction", startLine: 1, endLine: 3 },
+        { id: "method1", name: "testMethod", kind: "method", startLine: 5, endLine: 15, parent: "class1" },
+        { id: "func1", name: "someFunction", kind: "function", startLine: 1, endLine: 3 },
       ] as CodeSymbol[];
       const node = {
         type: "function_call_expression",
@@ -604,13 +658,34 @@ describe("Language Strategies", () => {
       } as unknown as Parser.SyntaxNode;
       const addRel = jest.fn();
       strategy.extractCallRelationships(node, symsInFile, addRel, "test.php");
-      expect(addRel).toHaveBeenCalledWith("method1", "someFunction", "calls", "test.php", 11);
+      expect(addRel).toHaveBeenCalledWith(
+        "method1",
+        "someFunction",
+        "calls",
+        "test.php",
+        11,
+        undefined,
+      );
     });
 
-    it("extractCallRelationships extracts uses for member_access_expression", () => {
+    it("extractCallRelationships does NOT create relationship for unknown function (prevents false positives)", () => {
       const symsInFile = [
-        { id: "method1", name: "testMethod", startLine: 5, endLine: 15, parent: "class1" },
-        { id: "class2", name: "SomeClass", startLine: 1, endLine: 20 },
+        { id: "method1", name: "testMethod", kind: "method", startLine: 5, endLine: 15, parent: "class1" },
+      ] as CodeSymbol[];
+      const node = {
+        type: "function_call_expression",
+        childForFieldName: jest.fn().mockReturnValue({ type: "name", text: "unknownFunction" }),
+        startPosition: { row: 10 },
+      } as unknown as Parser.SyntaxNode;
+      const addRel = jest.fn();
+      strategy.extractCallRelationships(node, symsInFile, addRel, "test.php");
+      // Should NOT create relationship for unknown function
+      expect(addRel).not.toHaveBeenCalled();
+    });
+
+    it("extractCallRelationships extracts uses for imported class via member_access_expression", () => {
+      const symsInFile = [
+        { id: "method1", name: "testMethod", kind: "method", startLine: 5, endLine: 15, parent: "class1" },
       ] as CodeSymbol[];
       const node = {
         type: "member_access_expression",
@@ -618,8 +693,32 @@ describe("Language Strategies", () => {
         startPosition: { row: 10 },
       } as unknown as Parser.SyntaxNode;
       const addRel = jest.fn();
+      // Pass resolution context with imported class
+      const ctx = { imports: new Map([["SomeClass", "App\\Services\\SomeClass"]]) };
+      strategy.extractCallRelationships(node, symsInFile, addRel, "test.php", ctx);
+      expect(addRel).toHaveBeenCalledWith(
+        "method1",
+        "App\\Services\\SomeClass",
+        "uses",
+        "test.php",
+        11,
+        ctx,
+      );
+    });
+
+    it("extractCallRelationships does NOT create uses for unknown class (prevents false positives)", () => {
+      const symsInFile = [
+        { id: "method1", name: "testMethod", kind: "method", startLine: 5, endLine: 15, parent: "class1" },
+      ] as CodeSymbol[];
+      const node = {
+        type: "member_access_expression",
+        childForFieldName: jest.fn().mockReturnValue({ type: "name", text: "UnknownClass" }),
+        startPosition: { row: 10 },
+      } as unknown as Parser.SyntaxNode;
+      const addRel = jest.fn();
       strategy.extractCallRelationships(node, symsInFile, addRel, "test.php");
-      expect(addRel).toHaveBeenCalledWith("method1", "SomeClass", "uses", "test.php", 11);
+      // Should NOT create relationship for unknown class
+      expect(addRel).not.toHaveBeenCalled();
     });
 
     it("extractCallRelationships skips variable access", () => {

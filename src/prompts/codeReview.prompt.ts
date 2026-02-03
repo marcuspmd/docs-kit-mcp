@@ -7,7 +7,9 @@ export interface CodeReviewInput {
   architectureViolations?: Array<{ rule: string; severity: string; message: string }>;
 }
 
-export function buildCodeReviewPrompt(input: CodeReviewInput): string {
+// buildCodeReviewPrompt has been removed (obsolete/unused).
+// Use smartCodeReview.prompt.ts instead.
+export function buildCodeReviewPrompt_DEPRECATED(input: CodeReviewInput): string {
   const { diff, affectedSymbols, relatedDocs, architectureViolations } = input;
 
   const parts: string[] = [
