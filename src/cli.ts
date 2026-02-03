@@ -13,6 +13,7 @@ import {
   buildDocsUseCase,
   impactAnalysisUseCase,
   analyzePatternsUseCase,
+  explainSymbolUseCase,
 } from "./cli/usecases/index.js";
 
 /* ================== Command Handlers ================== */
@@ -106,6 +107,33 @@ async function runAnalyzePatterns(args: string[]) {
   console.log(report || "No patterns detected.");
 }
 
+async function runExplainSymbol(args: string[]) {
+  const { positional, flags } = parseArgs(args, {
+    docs: "docs",
+    db: "",
+    cwd: "",
+    llm: "true",
+  });
+
+  const symbolName = positional[0];
+  if (!symbolName) {
+    console.error("Usage: docs-kit explain-symbol <symbol> [--docs dir] [--db path] [--cwd dir]");
+    process.exit(1);
+  }
+
+  const useLlm = flags["no-llm"] === "true" ? false : flags.llm !== "false";
+
+  const result = await explainSymbolUseCase({
+    symbolName,
+    docsDir: flags.docs,
+    dbPath: flags.db,
+    cwd: flags.cwd,
+    useLlm,
+  });
+
+  console.log(result);
+}
+
 /* ================== Main ================== */
 
 async function main() {
@@ -131,6 +159,9 @@ async function main() {
         break;
       case "analyze-patterns":
         await runAnalyzePatterns(args.slice(1));
+        break;
+      case "explain-symbol":
+        await runExplainSymbol(args.slice(1));
         break;
       default:
         printHelp();

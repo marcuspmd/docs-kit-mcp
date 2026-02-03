@@ -97,7 +97,7 @@ export async function loadConfig(workspaceRoot: string): Promise<ResolvedConfig>
   // Load .env file from workspace root
   const envPath = path.resolve(workspaceRoot, ".env");
   if (fs.existsSync(envPath)) {
-    dotenv.config({ path: envPath });
+    dotenv.config({ path: envPath, override: true });
   }
 
   let userConfig: Record<string, unknown> = {};

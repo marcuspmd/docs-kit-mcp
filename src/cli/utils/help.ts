@@ -20,7 +20,8 @@ Usage:
   docs-kit dead-code [--db path] [--docs dir]            Scan and mark dead code in database
   docs-kit generate-docs [--base ref] [--head ref] [--dry-run] [--docs dir]
                                                         Update docs for symbols affected by changes
-  docs-kit explain-symbol <symbol> [--docs dir]          Explain symbol with code + docs context
+  docs-kit explain-symbol <symbol> [--docs dir] [--db path] [--cwd dir] [--llm true|false] [--no-llm]
+                                                        Explain symbol with code + docs context
   docs-kit generate-mermaid <symbols> [--type classDiagram|sequenceDiagram|flowchart]
                                                         Generate Mermaid diagram for symbols
   docs-kit scan-file <file> [--docs dir] [--db path]    Scan file and create docs for symbols
