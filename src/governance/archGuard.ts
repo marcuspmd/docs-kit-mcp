@@ -31,6 +31,9 @@ export interface ArchGuard {
 }
 
 function matchGlob(pattern: string, value: string): boolean {
+  // Guard against undefined or empty inputs
+  if (!pattern || !value) return false;
+
   const regex = pattern
     .replace(/[.+^${}()|[\]\\]/g, "\\$&")
     .replace(/\*\*/g, "§§")
@@ -45,9 +48,9 @@ function matchAnyGlob(patterns: string[], value: string): boolean {
 
 /** Ignore patterns: globs or regex (string in /slashes/). Returns true if filePath should be ignored. */
 function isIgnored(filePath: string, ignore: string[] | undefined): boolean {
-  if (!ignore?.length) return false;
+  if (!ignore?.length || !filePath) return false;
   for (const p of ignore) {
-    const s = p.trim();
+    const s = p?.trim();
     if (!s) continue;
     if (s.length >= 2 && s.startsWith("/") && s.endsWith("/")) {
       try {
@@ -143,15 +146,28 @@ const FILE_EXT_REGEX = /\.(php|ts|tsx|js|jsx|go|py|rs|java)$/i;
  * Strips file extension when present. */
 function nameForNamingCheck(symbol: CodeSymbol): string {
   const name = symbol.qualifiedName ?? symbol.name;
+
+  // Guard against undefined or empty names
+  if (!name) return symbol.name || "unknown";
+
   let segment = name;
   if (name.includes("\\") || name.includes("/")) {
-    segment = name.split(/[\\/]/).pop() ?? name;
+    const parts = name.split(/[\\/]/);
+    segment = parts[parts.length - 1] ?? name;
   }
+
   // For method/function kinds, qualifiedName is often "ClassName.methodName" or "Class::method"; use short name.
-  if (segment.includes(".") || segment.includes("::")) {
-    segment = segment.split(/[.]|::/).pop() ?? segment;
+  if (segment && (segment.includes(".") || segment.includes("::"))) {
+    const parts = segment.split(/[.]|::/);
+    const lastPart = parts[parts.length - 1];
+    segment = lastPart && lastPart.length > 0 ? lastPart : segment;
   }
-  return segment.replace(FILE_EXT_REGEX, "") || segment;
+
+  // Ensure segment is defined before calling replace
+  if (!segment) return name;
+
+  const cleaned = segment.replace(FILE_EXT_REGEX, "");
+  return cleaned || segment;
 }
 
 function checkNamingConvention(rule: ArchRule, symbols: CodeSymbol[]): ArchViolation[] {

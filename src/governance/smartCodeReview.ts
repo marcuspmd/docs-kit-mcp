@@ -83,9 +83,9 @@ export async function performSmartCodeReview(
   const mappings = await registry.findAllMappings();
 
   // Sequential analysis
-  patternAnalyzer.analyze(allSymbols, allRels);
-  archGuard.analyze(allSymbols, allRels);
-  reaper.scan(allSymbols, graph, mappings);
+  const patterns = patternAnalyzer.analyze(allSymbols, allRels);
+  const violations = archGuard.analyze(allSymbols, allRels);
+  const findings = reaper.scan(allSymbols, graph, mappings);
 
   let exampleResults: ValidationResult[] = [];
   if (includeExamples && codeExampleValidator) {
@@ -101,11 +101,123 @@ export async function performSmartCodeReview(
   }
 
   // Build comprehensive report
-  const report = [`# 🔍 Smart Code Review Report\n`];
+  const report: string[] = [`# 🔍 Smart Code Review Report\n`];
 
-  // TODO: Complete the report building logic - currently only partial implementation
-  // Add critical issues, architecture, patterns, code quality sections
-  // Implement proper result structure and formatting
+  // Summary statistics
+  const documentedSymbols = mappings.length;
+  const docCoverage = allSymbols.length > 0 ? (documentedSymbols / allSymbols.length) * 100 : 0;
+
+  report.push(`## 📊 Summary
+- **Total Symbols**: ${allSymbols.length}
+- **Documented**: ${documentedSymbols} (${docCoverage.toFixed(1)}%)
+- **Architecture Violations**: ${violations.length}
+- **Code Quality Issues**: ${findings.length}
+- **Patterns Detected**: ${patterns.length}
+${exampleResults.length > 0 ? `- **Examples Validated**: ${exampleResults.length}` : ""}
+\n`);
+
+  // Critical issues
+  if (violations.length > 0) {
+    const criticalViolations = violations.filter((v) => v.severity === "error");
+    report.push(`## ⚠️ Critical Issues (${criticalViolations.length})`);
+
+    if (criticalViolations.length > 0) {
+      report.push("### Architecture Violations");
+      for (const v of criticalViolations.slice(0, 10)) {
+        report.push(`- **${v.rule}** (${v.file}): ${v.message}`);
+      }
+      if (criticalViolations.length > 10) {
+        report.push(`- ... and ${criticalViolations.length - 10} more`);
+      }
+    }
+    report.push("");
+  }
+
+  // Architecture quality
+  if (violations.length > 0) {
+    const violationsBySeverity = violations.reduce(
+      (acc, v) => {
+        acc[v.severity] = (acc[v.severity] || 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+
+    report.push(`## 🏗️ Architecture Quality
+${Object.entries(violationsBySeverity)
+  .map(([severity, count]) => `- **${severity}**: ${count} violation(s)`)
+  .join("\n")}
+\n`);
+  }
+
+  // Detected patterns
+  if (patterns.length > 0) {
+    report.push(`## 🎯 Detected Patterns (${patterns.length})`);
+    for (const pattern of patterns.slice(0, 5)) {
+      report.push(
+        `- **${pattern.kind}**: ${pattern.symbols.length} symbol(s) (confidence: ${(pattern.confidence * 100).toFixed(0)}%)`,
+      );
+    }
+    if (patterns.length > 5) {
+      report.push(`- ... and ${patterns.length - 5} more`);
+    }
+    report.push("");
+  }
+
+  // Code quality findings
+  if (findings.length > 0) {
+    const findingsByType = findings.reduce(
+      (acc, f) => {
+        acc[f.type] = (acc[f.type] || 0) + 1;
+        return acc;
+      },
+      {} as Record<string, number>,
+    );
+
+    report.push(`## 🧹 Code Quality (${findings.length} issue(s))
+${Object.entries(findingsByType)
+  .map(([type, count]) => `- **${type}**: ${count}`)
+  .join("\n")}
+\n`);
+  }
+
+  // Example validation results
+  if (exampleResults.length > 0) {
+    const validCount = exampleResults.filter((r) => r.valid).length;
+    const passRate = exampleResults.length > 0 ? (validCount / exampleResults.length) * 100 : 0;
+
+    report.push(`## ✅ Documentation Examples
+- **Total**: ${exampleResults.length}
+- **Valid**: ${validCount}
+- **Pass Rate**: ${passRate.toFixed(1)}%
+\n`);
+  }
+
+  // Recommendations
+  const recommendations: string[] = [];
+  if (docCoverage < 50) {
+    recommendations.push(
+      `📚 **Documentation**: Coverage is at ${docCoverage.toFixed(1)}%. Target: 80%+`,
+    );
+  }
+  if (violations.filter((v) => v.severity === "error").length > 0) {
+    recommendations.push("🏗️ **Architecture**: Fix all error-level violations before merging");
+  }
+  if (findings.length > 0) {
+    recommendations.push(`🧹 **Code Quality**: Address ${findings.length} identified issue(s)`);
+  }
+  if (exampleResults.length > 0 && exampleResults.some((r) => !r.valid)) {
+    recommendations.push("✏️ **Examples**: Update code examples in documentation");
+  }
+
+  if (recommendations.length > 0) {
+    report.push(`## 💡 Recommendations
+${recommendations.map((r) => `- ${r}`).join("\n")}
+\n`);
+  }
+
+  report.push(`---
+*Report generated on ${new Date().toISOString().split("T")[0]}*`);
 
   return report.join("\n");
 }
