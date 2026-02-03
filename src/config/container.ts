@@ -1,4 +1,8 @@
 import Database from "better-sqlite3";
+import Parser from "tree-sitter";
+import TypeScriptLanguage from "tree-sitter-typescript";
+import { mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import {
   SqliteSymbolRepository,
   SqliteRelationshipRepository,
@@ -17,6 +21,11 @@ import {
 import { ExplainSymbolUseCase } from "../modules/symbol/application/use-cases/ExplainSymbol.usecase.js";
 import { BuildDocsUseCase } from "../modules/documentation/application/use-cases/BuildDocs.usecase.js";
 import { BuildSiteUseCase } from "../modules/documentation/application/use-cases/BuildSite.usecase.js";
+import {
+  FileIndexer,
+  ParserRegistry,
+  TypeScriptParser,
+} from "../modules/symbol/infrastructure/parsers/index.js";
 import type { ISymbolRepository } from "../modules/symbol/domain/repositories/ISymbolRepository.js";
 import type { IRelationshipRepository } from "../modules/symbol/domain/repositories/IRelationshipRepository.js";
 import type { IFileHashRepository } from "../modules/symbol/domain/repositories/IFileHashRepository.js";
@@ -47,13 +56,35 @@ CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file);
 CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind);
 `;
 
+/**
+ * Setup Parser Registry with all supported parsers
+ */
+function setupParserRegistry(): ParserRegistry {
+  const registry = new ParserRegistry();
+
+  // Create and configure TypeScript parser
+  const tsParser = new Parser();
+  tsParser.setLanguage(TypeScriptLanguage.typescript as unknown as Parser.Language);
+  registry.register("typescript", new TypeScriptParser(tsParser));
+
+  // TODO: Add more parsers as needed
+  // const pyParser = new Parser();
+  // pyParser.setLanguage(PythonLanguage);
+  // registry.register("python", new PythonParser(pyParser));
+
+  return registry;
+}
+
 export function createContainer(config: ContainerConfig): Container {
   let symbolRepo: ISymbolRepository;
   let relationshipRepo: IRelationshipRepository;
   let fileHashRepo: IFileHashRepository;
 
   if (config.database.type === "sqlite") {
-    const db = new Database(config.database.path ?? ".docs-kit/index.db");
+    const dbPath = config.database.path ?? ".docs-kit/index.db";
+    // Ensure directory exists
+    mkdirSync(dirname(dbPath), { recursive: true });
+    const db = new Database(dbPath);
     db.pragma("journal_mode = WAL");
     db.exec(SCHEMA);
     symbolRepo = new SqliteSymbolRepository(db);
@@ -65,22 +96,15 @@ export function createContainer(config: ContainerConfig): Container {
     fileHashRepo = new InMemoryFileHashRepository();
   }
 
-  const stubIndexer: IFileIndexer = {
-    discoverFiles: async () => [],
-    indexFile: async () => ({ symbols: [], relationships: [], skipped: true }),
-    getSupportedExtensions: () => [".ts", ".js"],
-  };
+  // Setup parser registry and file indexer
+  const parserRegistry = setupParserRegistry();
+  const fileIndexer = config.fileIndexer ?? new FileIndexer(parserRegistry, fileHashRepo);
 
   return {
     symbolRepo,
     relationshipRepo,
     fileHashRepo,
-    indexProject: new IndexProjectUseCase(
-      symbolRepo,
-      relationshipRepo,
-      fileHashRepo,
-      config.fileIndexer ?? stubIndexer,
-    ),
+    indexProject: new IndexProjectUseCase(symbolRepo, relationshipRepo, fileHashRepo, fileIndexer),
     findSymbol: new FindSymbolUseCase(symbolRepo),
     getSymbolById: new GetSymbolByIdUseCase(symbolRepo),
     explainSymbol: new ExplainSymbolUseCase(symbolRepo, relationshipRepo),
