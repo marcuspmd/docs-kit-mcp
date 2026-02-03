@@ -1,5 +1,9 @@
 import { z } from "zod";
 import { createHash } from "node:crypto";
+import {
+  type Language as CanonicalLanguage,
+  LEGACY_LANGUAGE_ALIASES,
+} from "../constants/languages.js";
 
 /* ================== Enums ================== */
 
@@ -43,8 +47,24 @@ export type SymbolKind = z.infer<typeof SymbolKindSchema>;
 export const VisibilitySchema = z.enum(["public", "protected", "private"]);
 export type Visibility = z.infer<typeof VisibilitySchema>;
 
+/**
+ * Language schema for code symbols.
+ * NOTE: For backward compatibility, this supports legacy short codes (ts, js, py)
+ * but internally uses canonical names (typescript, javascript, python).
+ *
+ * @deprecated The short codes will be removed in a future version.
+ * Use canonical names from constants/languages.ts instead.
+ */
 export const LanguageSchema = z.enum(["ts", "js", "php", "python", "go"]);
 export type Language = z.infer<typeof LanguageSchema>;
+
+/**
+ * Convert legacy language code to canonical name.
+ * @internal
+ */
+export function normalizeSymbolLanguage(lang: Language): CanonicalLanguage {
+  return LEGACY_LANGUAGE_ALIASES[lang] ?? (lang as CanonicalLanguage);
+}
 
 export const LayerSchema = z.enum([
   "domain",

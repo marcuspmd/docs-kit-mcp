@@ -522,12 +522,65 @@ async function runGovernance(
   }));
   const archGuard = resolve<ArchGuard>(ARCH_GUARD_TOKEN);
 
-  if (config.archGuard?.rules && config.archGuard.rules.length > 0) {
-    archGuard.setRules(config.archGuard.rules);
-  } else {
-    const { buildArchGuardBaseRules } = await import("../../governance/archGuardBase.js");
-    archGuard.setRules(buildArchGuardBaseRules({ languages: ["ts", "js"], metricRules: true }));
+  // Use new language-specific guard system if languages are configured
+  if (config.archGuard?.languages && config.archGuard.languages.length > 0) {
+    const { buildLanguageGuardResult } = await import("../../governance/languageGuardManager.js");
+    const guardResult = buildLanguageGuardResult(config.archGuard);
+    archGuard.setRules(guardResult.rules);
+
+    // Run analysis and filter by ignorePaths
+    let archViolations = archGuard.analyze(allSymbols, symRelationships);
+    archViolations = guardResult.filterViolations(archViolations);
+
+    replaceAllArchViolations(
+      db,
+      archViolations.map((v) => ({
+        rule: v.rule,
+        file: v.file,
+        symbol_id: v.symbolId ?? null,
+        message: v.message,
+        severity: v.severity,
+      })),
+    );
+
+    // Run reaper
+    const docMappingsForReaper = (
+      db.prepare("SELECT symbol_name, doc_path FROM doc_mappings").all() as Array<{
+        symbol_name: string;
+        doc_path: string;
+      }>
+    ).map((m) => ({ symbolName: m.symbol_name, docPath: m.doc_path }));
+
+    const reaper = resolve<Reaper>(REAPER_TOKEN);
+    const reaperFindings = reaper.scan(allSymbols, graph, docMappingsForReaper);
+    replaceAllReaperFindings(
+      db,
+      reaperFindings.map((f) => ({
+        type: f.type,
+        target: f.target,
+        reason: f.reason,
+        suggested_action: f.suggestedAction,
+      })),
+    );
+    done(`${archViolations.length} arch, ${reaperFindings.length} reaper`);
+
+    if (archViolations.length > 0) {
+      console.log("\n  Arch Guard violations:");
+      const maxShow = 15;
+      for (let i = 0; i < Math.min(archViolations.length, maxShow); i++) {
+        const v = archViolations[i];
+        console.log(`    [${v.severity}] ${v.rule}: ${v.message} (${v.file})`);
+      }
+      if (archViolations.length > maxShow) {
+        console.log(`    ... and ${archViolations.length - maxShow} more`);
+      }
+    }
+    return;
   }
+
+  // Fallback: use legacy buildArchGuardBaseRules (for backwards compatibility during transition)
+  const { buildArchGuardBaseRules } = await import("../../governance/archGuardBase.js");
+  archGuard.setRules(buildArchGuardBaseRules({ languages: ["ts", "js"], metricRules: true }));
 
   const archViolations = archGuard.analyze(allSymbols, symRelationships);
   replaceAllArchViolations(

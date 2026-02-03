@@ -46,37 +46,31 @@ export default {
     chunkSize: 500, // Words per chunk (optional)
     overlapSize: 50, // Overlapping words between chunks (optional)
   },
-  // Architecture governance rules (optional - replaces arch-guard.json)
+  // Architecture governance rules (language-specific configuration)
   // archGuard: {
-  //   rules: [
+  //   languages: [
   //     {
-  //       name: "layer-boundary-domain-infra",
-  //       type: "layer_boundary",
-  //       severity: "error",
-  //       config: {
-  //         from: "domain",
-  //         to: "infrastructure",
-  //         message: "Domain layer cannot depend on infrastructure"
-  //       }
+  //       language: "php",
+  //       // Empty rules = apply ALL available PHP rules
+  //       // rules: ["php:layer_boundary", "php:naming_class"],
+  //       ignorePaths: ["**/legacy/**", "**/vendor/**"],
+  //       overrideRules: [
+  //         { code: "php:max_complexity", config: { max: 15 } }
+  //       ],
+  //       excludeRules: ["php:missing_return_type_strict"]
   //     },
   //     {
-  //       name: "naming-convention-classes",
-  //       type: "naming_convention",
-  //       severity: "warning",
-  //       config: {
-  //         pattern: "^[A-Z][a-zA-Z0-9]*$",
-  //         kinds: ["class", "interface"],
-  //         message: "Classes and interfaces must be PascalCase"
-  //       }
-  //     },
+  //       language: "typescript",
+  //       ignorePaths: ["**/*.test.ts", "**/__tests__/**"]
+  //     }
+  //   ],
+  //   customRules: [
   //     {
-  //       name: "max-complexity",
-  //       type: "max_complexity",
+  //       language: ["php", "typescript"],
+  //       code: "custom:no_todo",
+  //       description: "No TODO comments",
   //       severity: "warning",
-  //       config: {
-  //         threshold: 10,
-  //         kinds: ["function", "method"]
-  //       }
+  //       check: (content) => (content.match(/TODO:/g) || []).length
   //     }
   //   ]
   // },

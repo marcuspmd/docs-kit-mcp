@@ -63,48 +63,84 @@ export default {
     overlapSize: 50, // Overlapping words between chunks
   },
 
-  // Architecture governance rules (replaces arch-guard.json)
+  // Architecture governance rules (language-specific configuration)
   archGuard: {
-    rules: [
+    // Language-specific guard configurations
+    languages: [
       {
-        name: "layer-boundary-domain-infra",
-        type: "layer_boundary",
+        language: "php",
+        // If 'rules' is empty/undefined, ALL available PHP rules are applied
+        // To whitelist specific rules, list them here:
+        // rules: ["php:layer_boundary", "php:naming_class", "php:max_complexity"],
+
+        // Glob patterns for files to ignore (violations in these files won't be reported)
+        ignorePaths: [
+          "**/legacy/**",
+          "**/vendor/**",
+        ],
+
+        // Override specific rule configurations
+        overrideRules: [
+          {
+            code: "php:layer_boundary",
+            severity: "warning", // Change from default "error" to "warning"
+            config: {
+              source: "src/Domain/**",
+              forbidden: ["src/Infrastructure/**"],
+            },
+          },
+          {
+            code: "php:max_complexity",
+            config: {
+              max: 15, // Override default max of 10
+            },
+          },
+        ],
+
+        // Rule codes to exclude (these won't be applied even if in whitelist)
+        excludeRules: [
+          "php:missing_return_type_strict",
+        ],
+      },
+      {
+        language: "typescript",
+        // Apply all TypeScript rules (empty rules array = all)
+        ignorePaths: [
+          "**/*.test.ts",
+          "**/__tests__/**",
+        ],
+      },
+    ],
+
+    // Custom rules that can apply across multiple languages
+    customRules: [
+      {
+        language: ["php", "typescript", "javascript"],
+        code: "custom:no_todo_comments",
+        description: "Disallow TODO comments in production code",
+        severity: "warning",
+        check: (fileContent, _filePath) => {
+          const todoRegex = /\/\/\s*TODO:/gi;
+          const matches = fileContent.match(todoRegex);
+          return matches ? matches.length : 0;
+        },
+        ignorePaths: [
+          "**/LegacyCode/**",
+          "**/ThirdParty/**",
+        ],
+      },
+      {
+        language: ["php"],
+        code: "custom:no_die_exit",
+        description: "Avoid die() and exit() calls in PHP code",
         severity: "error",
-        config: {
-          from: "domain",
-          to: "infrastructure",
-          message: "Domain layer cannot depend on infrastructure"
-        }
+        check: (fileContent) => {
+          const pattern = /\b(die|exit)\s*\(/gi;
+          const matches = fileContent.match(pattern);
+          return matches ? matches.length : 0;
+        },
       },
-      {
-        name: "naming-convention-classes",
-        type: "naming_convention",
-        severity: "warning",
-        config: {
-          pattern: "^[A-Z][a-zA-Z0-9]*$",
-          kinds: ["class", "interface"],
-          message: "Classes and interfaces must be PascalCase"
-        }
-      },
-      {
-        name: "max-complexity",
-        type: "max_complexity",
-        severity: "warning",
-        config: {
-          threshold: 10,
-          kinds: ["function", "method"]
-        }
-      },
-      {
-        name: "max-parameters",
-        type: "max_parameters",
-        severity: "warning",
-        config: {
-          threshold: 5,
-          kinds: ["function", "method", "constructor"]
-        }
-      }
-    ]
+    ],
   },
 
   docs: [

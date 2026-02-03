@@ -2,7 +2,6 @@ import "reflect-metadata";
 import { container } from "tsyringe";
 import Database from "better-sqlite3";
 import { loadConfig } from "../configLoader.js";
-import type { ResolvedConfig } from "../configLoader.js";
 import { initializeSchema } from "../storage/db.js";
 import { createSymbolRepository } from "../storage/db.js";
 import { createRelationshipRepository } from "../storage/db.js";
@@ -12,7 +11,8 @@ import { createKnowledgeGraph } from "../knowledge/graph.js";
 import { createPatternAnalyzer } from "../patterns/patternAnalyzer.js";
 import { createEventFlowAnalyzer } from "../events/eventFlowAnalyzer.js";
 import { createRagIndex } from "../knowledge/rag.js";
-import { createArchGuard } from "../governance/archGuard.js";
+import { ArchGuard, createArchGuard } from "../governance/archGuard.js";
+import { expandAllLanguageGuards } from "../governance/languageGuardManager.js";
 import { createReaper } from "../governance/reaper.js";
 import { createContextMapper } from "../business/contextMapper.js";
 import { createBusinessTranslator } from "../business/businessTranslator.js";
@@ -70,9 +70,7 @@ export interface SetupContainerOptions {
 export async function setupContainer(
   cwdOrOptions: string | SetupContainerOptions = process.cwd(),
 ): Promise<void> {
-  const opts = typeof cwdOrOptions === "string"
-    ? { cwd: cwdOrOptions }
-    : cwdOrOptions;
+  const opts = typeof cwdOrOptions === "string" ? { cwd: cwdOrOptions } : cwdOrOptions;
   const cwd = opts.cwd ?? process.cwd();
 
   resetContainer();
@@ -115,7 +113,13 @@ export async function setupContainer(
 
   // Governance
   const archGuard = createArchGuard();
-  archGuard.setRules(config.archGuard?.rules ?? DEFAULT_ARCH_RULES);
+
+  const rules = config.archGuard?.languages
+    ? expandAllLanguageGuards(config.archGuard)
+    : ((config.archGuard as ArchGuard & { rules?: typeof DEFAULT_ARCH_RULES })?.rules ??
+      DEFAULT_ARCH_RULES);
+
+  archGuard.setRules(rules);
   container.register(ARCH_GUARD_TOKEN, { useValue: archGuard });
   container.register(REAPER_TOKEN, { useValue: createReaper() });
 

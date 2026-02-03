@@ -85,70 +85,52 @@ describe("ConfigSchema", () => {
     const config = ConfigSchema.parse({
       projectRoot: "/tmp/test",
       archGuard: {
-        rules: [
+        languages: [
           {
-            name: "max-complexity",
-            type: "max_complexity",
-            severity: "warning",
-            config: { threshold: 10 },
-          },
-          {
-            name: "naming-convention",
-            type: "naming_convention",
-            severity: "error",
-            config: { pattern: "^[A-Z]", kinds: ["class"] },
+            language: "php",
+            rules: ["php:layer_boundary", "php:naming_class"],
+            ignorePaths: ["**/vendor/**"],
           },
         ],
       },
     });
 
     expect(config.archGuard).toBeDefined();
-    expect(config.archGuard?.rules).toHaveLength(2);
-    expect(config.archGuard?.rules[0].name).toBe("max-complexity");
-    expect(config.archGuard?.rules[0].type).toBe("max_complexity");
-    expect(config.archGuard?.rules[0].severity).toBe("warning");
-    expect(config.archGuard?.rules[1].type).toBe("naming_convention");
+    expect(config.archGuard?.languages).toHaveLength(1);
+    expect(config.archGuard?.languages?.[0].language).toBe("php");
+    expect(config.archGuard?.languages?.[0].rules).toHaveLength(2);
+    expect(config.archGuard?.languages?.[0].ignorePaths).toContain("**/vendor/**");
   });
 
-  it("should accept all archGuard rule types", () => {
-    const ruleTypes = [
-      "layer_boundary",
-      "forbidden_import",
-      "naming_convention",
-      "max_complexity",
-      "max_parameters",
-      "max_lines",
-      "missing_return_type",
-    ];
+  it("should accept archGuard with overrideRules and excludeRules", () => {
+    const supportedLanguages = ["php", "typescript", "javascript", "python", "java", "go", "rust"];
 
-    ruleTypes.forEach((type) => {
+    supportedLanguages.forEach((lang) => {
       const config = ConfigSchema.parse({
         projectRoot: "/tmp/test",
         archGuard: {
-          rules: [
+          languages: [
             {
-              name: `test-${type}`,
-              type,
-              config: {},
+              language: lang,
+              overrideRules: [{ code: "php:max_complexity", severity: "error" }],
+              excludeRules: ["php:missing_return_type"],
             },
           ],
         },
       });
 
-      expect(config.archGuard?.rules[0].type).toBe(type);
+      expect(config.archGuard?.languages?.[0].language).toBe(lang);
     });
   });
 
-  it("should reject invalid archGuard rule types", () => {
+  it("should reject invalid archGuard language", () => {
     expect(() =>
       ConfigSchema.parse({
         projectRoot: "/tmp/test",
         archGuard: {
-          rules: [
+          languages: [
             {
-              name: "invalid-rule",
-              type: "invalid_type",
-              config: {},
+              language: "invalid_language",
             },
           ],
         },

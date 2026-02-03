@@ -1,16 +1,12 @@
 /**
- * Jest configuration with projects for proper test isolation.
+ * Jest configuration with tree-sitter isolation.
  *
- * The indexer tests use tree-sitter which has global state that conflicts
- * with other tests when run in the same process. Using Jest projects ensures
- * each group runs in its own isolated environment.
- *
- * IMPORTANT: The indexer project uses forceExit and runInBand to ensure
- * complete isolation between test files due to tree-sitter's native bindings.
+ * The indexer tests use tree-sitter which has global state.
+ * Managed via resetModules and aggressive cleanup between test files.
  */
 
 /** @type {import('jest').Config} */
-const baseConfig = {
+export default {
   preset: "ts-jest/presets/default-esm",
   testEnvironment: "node",
   extensionsToTreatAsEsm: [".ts"],
@@ -26,46 +22,23 @@ const baseConfig = {
       },
     ],
   },
+  testMatch: ["**/__tests__/**/*.test.ts"],
   clearMocks: true,
   restoreMocks: true,
-};
+  resetModules: true,
+  forceExit: false,
+  // Isolate tree-sitter state: restart workers periodically
+  maxWorkers: 2,
+  workerIdleMemoryLimit: "50MB",
+  // Setup file for cleanup between tests
+  // setupFilesAfterEnv: ["<rootDir>/src/__tests__/setup.ts"],
 
-export default {
-  // Use projects for proper isolation
-  projects: [
-    {
-      ...baseConfig,
-      displayName: "indexer",
-      roots: ["<rootDir>/src/indexer/__tests__"],
-      // Critical: tree-sitter has global state - each test file needs isolation
-      // Run with only 1 worker but allow Jest to restart workers between files
-      maxWorkers: 1,
-      // Force worker restart between files to clear tree-sitter state
-      workerIdleMemoryLimit: "50MB",
-      // Reset modules between tests for clean tree-sitter state
-      resetModules: true,
-      // Setup file to force cleanup between tests
-      setupFilesAfterEnv: ["<rootDir>/src/indexer/__tests__/setup.ts"],
-    },
-    {
-      ...baseConfig,
-      displayName: "unit",
-      roots: ["<rootDir>/src"],
-      testMatch: ["**/__tests__/**/*.test.ts"],
-      testPathIgnorePatterns: ["/node_modules/", "/src/indexer/__tests__/"],
-      // Other tests can run in parallel
-      maxWorkers: "50%",
-      // Reset modules to prevent state contamination from indexer tests
-      resetModules: true,
-      workerIdleMemoryLimit: "512MB",
-    },
-  ],
-
-  // Coverage configuration (applies to all projects)
+  // Coverage configuration
   collectCoverageFrom: [
     "src/**/*.ts",
     "!src/**/*.d.ts",
     "!src/**/index.ts",
+    "!**/__tests__/**",
   ],
   coverageDirectory: "coverage",
   coverageReporters: ["text", "lcov", "clover", "json"],
