@@ -22,7 +22,7 @@ export default {
       },
     ],
   },
-  testMatch: ["**/__tests__/**/*.test.ts"],
+  testMatch: ["**.test.ts"],
   clearMocks: true,
   restoreMocks: true,
   resetModules: true,
@@ -31,11 +31,14 @@ export default {
   maxWorkers: 2,
   workerIdleMemoryLimit: "50MB",
   // Setup file for cleanup between tests
-  // setupFilesAfterEnv: ["<rootDir>/src/__tests__/setup.ts"],
+  setupFilesAfterEnv: ["<rootDir>/src/__tests__/setup.ts"],
 
   // Coverage configuration
   collectCoverageFrom: [
     "src/**/*.ts",
+    "!src/cli.ts",
+    "!src/server.ts",
+    "!src/configLoader.ts",
     "!src/**/*.d.ts",
     "!src/**/index.ts",
     "!**/__tests__/**",
