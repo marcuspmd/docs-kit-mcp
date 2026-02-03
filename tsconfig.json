@@ -9,6 +9,13 @@
     "emitDecoratorMetadata": true,
     "outDir": "dist",
     "rootDir": "src",
+    "baseUrl": ".",
+    "paths": {
+      "@core/*": ["src/@core/*"],
+      "@shared/*": ["src/@shared/*"],
+      "@modules/*": ["src/modules/*"],
+      "@adapters/*": ["src/adapters/*"]
+    },
     "declaration": true,
     "esModuleInterop": true,
     "skipLibCheck": true,
