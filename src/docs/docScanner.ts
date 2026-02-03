@@ -15,7 +15,7 @@ export interface ScanFileResult {
   createdSymbols: string[];
 }
 
-const DEFAULT_INITIAL_CONTENT = (symbol: CodeSymbol, relativeFile: string) => `---
+export const DEFAULT_INITIAL_CONTENT = (symbol: CodeSymbol, relativeFile: string) => `---
 title: ${symbol.name}
 symbols:
   - ${symbol.name}
