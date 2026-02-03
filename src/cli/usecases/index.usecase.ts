@@ -43,6 +43,7 @@ import type { Reaper } from "../../governance/reaper.js";
 import type { LlmProvider } from "../../llm/provider.js";
 import type { RagIndex } from "../../knowledge/rag.js";
 import { indexFile } from "../../indexer/indexer.js";
+import { indexInParallel } from "../../indexer/parallelIndexer.js";
 import { extractRelationships } from "../../indexer/relationshipExtractor.js";
 import { parseLcov, type LcovFileData } from "../../indexer/lcovCollector.js";
 import { collectMetrics } from "../../indexer/metricsCollector.js";
@@ -219,9 +220,132 @@ async function indexSymbols(
   fileHashRepo: FileHashRepository,
   parser: Parser,
   fullRebuild: boolean,
-  _config: ResolvedConfig,
+  config: ResolvedConfig,
 ) {
   step("Parsing AST and extracting symbols");
+
+  // Check if parallel indexing is enabled
+  const parallelEnabled = config.indexing?.parallel ?? true;
+  const maxWorkers = config.indexing?.maxWorkers;
+
+  if (parallelEnabled && tsFiles.length > 10) {
+    // Use parallel indexing for larger projects
+    return await indexSymbolsParallel(
+      tsFiles,
+      configDir,
+      symbolRepo,
+      fileHashRepo,
+      fullRebuild,
+      maxWorkers,
+    );
+  } else {
+    // Use sequential indexing for small projects or when disabled
+    return await indexSymbolsSequential(
+      tsFiles,
+      configDir,
+      symbolRepo,
+      fileHashRepo,
+      parser,
+      fullRebuild,
+    );
+  }
+}
+
+async function indexSymbolsParallel(
+  tsFiles: string[],
+  configDir: string,
+  symbolRepo: SymbolRepository,
+  fileHashRepo: FileHashRepository,
+  fullRebuild: boolean,
+  maxWorkers?: number,
+) {
+  const files = tsFiles.map((filePath) => ({
+    filePath,
+    relPath: path.relative(configDir, path.resolve(filePath)),
+  }));
+
+  const result = await indexInParallel({
+    files,
+    configDir,
+    fileHashRepo,
+    fullRebuild,
+    maxWorkers,
+  });
+
+  // Update file hashes in DB and collect all symbols (including skipped)
+  const allSymbols: CodeSymbol[] = [];
+  const trees = new Map<string, Parser.Tree>();
+  const sources = new Map<string, string>();
+
+  for (const file of files) {
+    const { relPath } = file;
+    const hash = result.hashes.get(relPath);
+    const source = result.sources.get(relPath);
+    const fileSymbols = result.symbols.filter((s) => s.file === relPath);
+
+    if (hash) {
+      fileHashRepo.upsert(relPath, hash);
+    }
+
+    // If file was processed (not skipped), add its symbols and tree
+    if (fileSymbols.length > 0 || source) {
+      allSymbols.push(...fileSymbols);
+      if (source) {
+        sources.set(relPath, source);
+        // Parse with proper language configuration
+        const parser = new Parser();
+        const symbols = indexFile(relPath, source, parser);
+        if (symbols.length > 0) {
+          const tree = parser.parse(source);
+          if (tree && tree.rootNode) {
+            trees.set(relPath, tree);
+          }
+        }
+      }
+    } else {
+      // File was skipped - load existing symbols from DB
+      const existingSymbols = symbolRepo.findByFile(relPath);
+      allSymbols.push(...existingSymbols);
+      // For skipped files, we also need to load source for relationship extraction
+      try {
+        const fullPath = path.resolve(configDir, relPath);
+        const fileSource = fs.readFileSync(fullPath, "utf-8");
+        sources.set(relPath, fileSource);
+        // Parse with proper language configuration
+        const parser = new Parser();
+        const symbols = indexFile(relPath, fileSource, parser);
+        if (symbols.length > 0) {
+          const tree = parser.parse(fileSource);
+          if (tree && tree.rootNode) {
+            trees.set(relPath, tree);
+          }
+        }
+      } catch {
+        // If we can't load source, skip relationship extraction for this file
+      }
+    }
+  }
+
+  const skipMsg = result.skippedCount > 0 ? ` (${result.skippedCount} unchanged, skipped)` : "";
+  const errorMsg = result.errors.length > 0 ? ` (${result.errors.length} errors)` : "";
+  done(`${allSymbols.length} symbols${errorMsg}${skipMsg}`);
+
+  return {
+    allSymbols,
+    trees,
+    sources,
+    indexErrors: result.errors,
+  };
+}
+
+async function indexSymbolsSequential(
+  tsFiles: string[],
+  configDir: string,
+  symbolRepo: SymbolRepository,
+  fileHashRepo: FileHashRepository,
+  parser: Parser,
+  fullRebuild: boolean,
+) {
   const allSymbols: CodeSymbol[] = [];
   const trees = new Map<string, Parser.Tree>();
   const sources = new Map<string, string>();

@@ -128,6 +128,13 @@ export const ConfigSchema = z.object({
     .default({}),
 
   archGuard: ArchGuardConfigSchema.optional(),
+
+  indexing: z
+    .object({
+      parallel: z.boolean().default(true),
+      maxWorkers: z.number().min(1).max(32).optional(),
+    })
+    .default({}),
 });
 
 export type Config = z.infer<typeof ConfigSchema>;

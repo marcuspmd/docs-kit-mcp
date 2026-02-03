@@ -63,6 +63,13 @@ export default {
     overlapSize: 50, // Overlapping words between chunks
   },
 
+  // Indexing Configuration
+  // Control parallel processing during indexing for faster performance
+  indexing: {
+    parallel: true, // Enable parallel indexing using worker threads (default: true)
+    maxWorkers: undefined, // Max worker threads (default: CPU count - 1, capped at 8)
+  },
+
   // Architecture governance rules (language-specific configuration)
   archGuard: {
     // Language-specific guard configurations
