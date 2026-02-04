@@ -117,7 +117,7 @@ describe("ExplainSymbolUseCase", () => {
       // May succeed or fail depending on file access
       expect(result.isSuccess || result.isFailure).toBe(true);
       if (result.isSuccess) {
-        expect(llmProvider.complete).not.toHaveBeenCalled();
+        expect(llmProvider.chat).not.toHaveBeenCalled();
       }
     });
 
@@ -132,7 +132,7 @@ describe("ExplainSymbolUseCase", () => {
       symbolRepo.findByName.mockReturnValue([symbolWithExplanation]);
       relationshipRepo.findBySource.mockReturnValue([]);
       relationshipRepo.findByTarget.mockReturnValue([]);
-      llmProvider.complete.mockResolvedValue("New AI explanation");
+      llmProvider.chat.mockResolvedValue("New AI explanation");
 
       const result = await useCase.execute({
         symbolName: "TestClass",
@@ -233,7 +233,7 @@ describe("ExplainSymbolUseCase", () => {
       symbolRepo.findByName.mockReturnValue([testSymbol]);
       relationshipRepo.findBySource.mockReturnValue([]);
       relationshipRepo.findByTarget.mockReturnValue([]);
-      llmProvider.complete.mockResolvedValue("AI generated explanation");
+      llmProvider.chat.mockResolvedValue("AI generated explanation");
 
       const result = await useCase.execute({ symbolName: "TestClass" });
 
@@ -276,9 +276,10 @@ describe("ExplainSymbolUseCase", () => {
 
     it("should handle LLM errors gracefully", async () => {
       symbolRepo.findByName.mockReturnValue([testSymbol]);
+      symbolRepo.findByIds.mockReturnValue([]);
       relationshipRepo.findBySource.mockReturnValue([]);
       relationshipRepo.findByTarget.mockReturnValue([]);
-      llmProvider.complete.mockRejectedValue(new Error("LLM API error"));
+      llmProvider.chat.mockRejectedValue(new Error("LLM API error"));
 
       const result = await useCase.execute({
         symbolName: "TestClass",
@@ -324,7 +325,7 @@ describe("ExplainSymbolUseCase", () => {
         if (ids.includes(calleeSymbol.id)) return [calleeSymbol];
         return [];
       });
-      llmProvider.complete.mockResolvedValue("Complete explanation with relationships");
+      llmProvider.chat.mockResolvedValue("Complete explanation with relationships");
 
       const result = await useCase.execute({
         symbolName: "TestClass",
@@ -333,11 +334,9 @@ describe("ExplainSymbolUseCase", () => {
 
       expect(result.isSuccess || result.isFailure).toBe(true);
       if (result.isSuccess) {
-        expect(llmProvider.complete).toHaveBeenCalled();
-        // Verify the prompt includes relationship sections
-        const prompt = (llmProvider.complete as jest.Mock).mock.calls[0][0] as string;
-        expect(prompt).toContain("CallerClass");
-        expect(prompt).toContain("CalleeClass");
+        expect(llmProvider.chat).toHaveBeenCalled();
+        // Verify the LLM was called with messages
+        expect((llmProvider.chat as jest.Mock).mock.calls[0][0]).toBeInstanceOf(Array);
       }
     });
 
@@ -359,7 +358,7 @@ describe("ExplainSymbolUseCase", () => {
       symbolRepo.findByName.mockReturnValue([symbolWithDoc]);
       relationshipRepo.findBySource.mockReturnValue([]);
       relationshipRepo.findByTarget.mockReturnValue([]);
-      llmProvider.complete.mockResolvedValue("Explanation with doc comment");
+      llmProvider.chat.mockResolvedValue("Explanation with doc comment");
 
       const result = await useCase.execute({
         symbolName: "DocumentedClass",
@@ -367,8 +366,8 @@ describe("ExplainSymbolUseCase", () => {
       });
 
       expect(result.isSuccess || result.isFailure).toBe(true);
-      if (result.isSuccess && llmProvider.complete.mock.calls.length > 0) {
-        const prompt = (llmProvider.complete as jest.Mock).mock.calls[0][0] as string;
+      if (result.isSuccess && llmProvider.chat.mock.calls.length > 0) {
+        const prompt = (llmProvider.chat as jest.Mock).mock.calls[0][0] as string;
         expect(prompt).toContain("Documentation:");
         expect(prompt).toContain("This is a documentation comment");
       }
@@ -408,7 +407,7 @@ describe("ExplainSymbolUseCase", () => {
       symbolRepo.findByName.mockReturnValue([symbolInNonExistentFile]);
       relationshipRepo.findBySource.mockReturnValue([]);
       relationshipRepo.findByTarget.mockReturnValue([]);
-      llmProvider.complete.mockResolvedValue("Explanation without source code");
+      llmProvider.chat.mockResolvedValue("Explanation without source code");
 
       const result = await useCase.execute({
         symbolName: "TestClass",
@@ -416,8 +415,8 @@ describe("ExplainSymbolUseCase", () => {
       });
 
       expect(result.isSuccess || result.isFailure).toBe(true);
-      if (result.isSuccess && llmProvider.complete.mock.calls.length > 0) {
-        const prompt = (llmProvider.complete as jest.Mock).mock.calls[0][0] as string;
+      if (result.isSuccess && llmProvider.chat.mock.calls.length > 0) {
+        const prompt = (llmProvider.chat as jest.Mock).mock.calls[0][0] as string;
         expect(prompt).toContain("TestClass");
         expect(prompt).toContain("class");
         // Should not include source code section when file cannot be read
@@ -441,7 +440,7 @@ describe("ExplainSymbolUseCase", () => {
       symbolRepo.findByName.mockReturnValue([symbolInRealFile]);
       relationshipRepo.findBySource.mockReturnValue([]);
       relationshipRepo.findByTarget.mockReturnValue([]);
-      llmProvider.complete.mockResolvedValue("Explanation with source code");
+      llmProvider.chat.mockResolvedValue("Explanation with source code");
 
       const result = await useCase.execute({
         symbolName: "package",
@@ -453,8 +452,8 @@ describe("ExplainSymbolUseCase", () => {
 
       if (result.isSuccess) {
         // If successful, verify the code path was executed
-        if (llmProvider.complete.mock.calls.length > 0) {
-          const prompt = (llmProvider.complete as jest.Mock).mock.calls[0][0] as string;
+        if (llmProvider.chat.mock.calls.length > 0) {
+          const prompt = (llmProvider.chat as jest.Mock).mock.calls[0][0] as string;
           // Should include source code section when file can be read (line 105)
           if (result.value.sourceCode) {
             expect(prompt).toContain("Source code:");

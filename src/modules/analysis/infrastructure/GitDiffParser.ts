@@ -69,17 +69,22 @@ export class GitDiffParser {
     let currentHunk: Partial<DiffHunk> | null = null;
     let hunkLines: string[] = [];
 
+    const saveCurrentFile = () => {
+      if (!currentFile) return;
+      if (currentHunk) {
+        currentHunk.content = hunkLines.join("\n");
+        currentFile.hunks?.push(currentHunk as DiffHunk);
+      }
+      files.push(currentFile as FileDiff);
+    };
+
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
 
       // New file diff
       if (line.startsWith("diff --git")) {
         // Save previous file
-        if (currentFile && currentHunk) {
-          currentHunk.content = hunkLines.join("\n");
-          currentFile.hunks?.push(currentHunk as DiffHunk);
-          files.push(currentFile as FileDiff);
-        }
+        saveCurrentFile();
 
         currentFile = {
           filePath: "",
@@ -96,25 +101,30 @@ export class GitDiffParser {
       if (!currentFile) continue;
 
       // File paths
-      if (line.startsWith("--- a/")) {
-        const path = line.substring(6);
-        if (path !== "/dev/null") {
+      if (line.startsWith("--- ")) {
+        const path = line.substring(4);
+        if (path.startsWith("a/")) {
+          currentFile.oldPath = path.substring(2);
+          currentFile.filePath = path.substring(2);
+        } else if (path !== "/dev/null") {
           currentFile.oldPath = path;
           currentFile.filePath = path;
         }
-      } else if (line.startsWith("+++ b/")) {
-        const path = line.substring(6);
-        if (path !== "/dev/null") {
+      } else if (line.startsWith("+++ ")) {
+        const path = line.substring(4);
+        if (path.startsWith("b/")) {
+          currentFile.filePath = path.substring(2);
+        } else if (path !== "/dev/null") {
           currentFile.filePath = path;
         }
 
-        // Determine status
-        if (currentFile.oldPath === "/dev/null" || !currentFile.oldPath) {
+        // Determine status based on /dev/null presence
+        if (!currentFile.oldPath || currentFile.oldPath === "/dev/null") {
           currentFile.status = "added";
-        } else if (path === "/dev/null") {
+        } else if (path === "/dev/null" || path === "b/dev/null") {
           currentFile.status = "deleted";
           currentFile.filePath = currentFile.oldPath;
-        } else if (currentFile.oldPath !== path) {
+        } else if (currentFile.oldPath && currentFile.oldPath !== currentFile.filePath) {
           currentFile.status = "renamed";
         }
       }
@@ -150,11 +160,7 @@ export class GitDiffParser {
     }
 
     // Save last file
-    if (currentFile && currentHunk) {
-      currentHunk.content = hunkLines.join("\n");
-      currentFile.hunks?.push(currentHunk as DiffHunk);
-      files.push(currentFile as FileDiff);
-    }
+    saveCurrentFile();
 
     return files;
   }

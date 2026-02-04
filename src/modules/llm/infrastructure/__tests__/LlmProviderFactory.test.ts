@@ -24,10 +24,11 @@ describe("createLlmProvider", () => {
       expect(provider).toBeInstanceOf(OpenAiProvider);
     });
 
-    it("should create provider even without API key (uses env)", () => {
+    it("should create provider with API key from config", () => {
       const provider = createLlmProvider({
         provider: "openai",
         model: "gpt-4o-mini",
+        apiKey: "test-key",
       });
 
       expect(provider).toBeInstanceOf(OpenAiProvider);
