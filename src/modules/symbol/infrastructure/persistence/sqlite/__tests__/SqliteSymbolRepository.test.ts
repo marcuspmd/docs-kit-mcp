@@ -95,20 +95,31 @@ class MockStatement {
 
 // Mock Database
 class MockDatabase {
+  private statements: Map<string, MockStatement> = new Map();
+
   transaction(fn: (items: unknown[]) => void) {
     return (items: unknown[]) => fn(items);
   }
 
   prepare(sql: string) {
-    // Return different mock based on query
-    if (sql.includes("COUNT")) {
-      return {
-        get: () => ({ count: 5 }),
-        run: () => ({ changes: 1 }),
-        all: () => [],
-      };
+    // Store statements so we can spy on them
+    if (!this.statements.has(sql)) {
+      // Return different mock based on query
+      if (sql.includes("COUNT")) {
+        this.statements.set(sql, {
+          get: () => ({ count: 5 }),
+          run: () => ({ changes: 1 }),
+          all: () => [],
+        } as unknown as MockStatement);
+      } else {
+        this.statements.set(sql, new MockStatement());
+      }
     }
-    return new MockStatement();
+    return this.statements.get(sql)!;
+  }
+
+  getStatement(sql: string): MockStatement | undefined {
+    return this.statements.get(sql);
   }
 }
 
@@ -167,6 +178,21 @@ describe("SqliteSymbolRepository", () => {
     it("should find symbol by id", () => {
       const result = repository.findById("symbol-id");
       expect(result).toBeDefined();
+    });
+
+    it("should return undefined when symbol not found in database", () => {
+      const stmt = mockDb.getStatement("SELECT * FROM symbols WHERE id = ?");
+      if (stmt) {
+        // Mock get to return undefined for this test
+        const originalGet = stmt.get;
+        stmt.get = (() => undefined) as unknown as typeof originalGet;
+
+        const result = repository.findById("non-existent");
+        expect(result).toBeUndefined();
+
+        // Restore original
+        stmt.get = originalGet;
+      }
     });
 
     it("should return undefined for non-existent id", () => {

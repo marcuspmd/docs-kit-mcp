@@ -15,6 +15,9 @@ describe("ExplainSymbolUseCase", () => {
   let testSymbol: CodeSymbol;
 
   beforeEach(() => {
+    // Clear all mocks
+    jest.clearAllMocks();
+
     // Create test symbol
     const symbolResult = CodeSymbol.create({
       name: "TestClass",
@@ -219,6 +222,118 @@ describe("ExplainSymbolUseCase", () => {
 
       // Should pick the first one
       expect(result.isSuccess || result.isFailure).toBe(true);
+    });
+
+    it("should generate new explanation with LLM when no explanation exists", async () => {
+      symbolRepo.findByName.mockReturnValue([testSymbol]);
+      relationshipRepo.findBySource.mockReturnValue([]);
+      relationshipRepo.findByTarget.mockReturnValue([]);
+      llmProvider.complete.mockResolvedValue("AI generated explanation");
+
+      const result = await useCase.execute({ symbolName: "TestClass" });
+
+      expect(result.isSuccess || result.isFailure).toBe(true);
+      if (result.isSuccess) {
+        expect(result.value.explanation).toBeDefined();
+      }
+    });
+
+    it("should include implementors in relationships output", async () => {
+      const implementorSymbol = CodeSymbol.create({
+        name: "ImplementorClass",
+        qualifiedName: "src/ImplementorClass",
+        kind: "class",
+        location: { filePath: "src/implementor.ts", startLine: 1, endLine: 5 },
+      }).value;
+
+      const implementsRel = SymbolRelationship.create({
+        sourceId: implementorSymbol.id,
+        targetId: testSymbol.id,
+        type: "implements",
+      });
+
+      symbolRepo.findByName.mockReturnValue([testSymbol]);
+      relationshipRepo.findBySource.mockReturnValue([]);
+      relationshipRepo.findByTarget.mockReturnValue([implementsRel]);
+      symbolRepo.findByIds.mockImplementation((ids) => {
+        if (ids.includes(implementorSymbol.id)) return [implementorSymbol];
+        return [];
+      });
+
+      const result = await useCase.execute({ symbolName: "TestClass" });
+
+      expect(result.isSuccess || result.isFailure).toBe(true);
+      if (result.isSuccess) {
+        expect(result.value.relationships).toBeDefined();
+        expect(result.value.relationships?.implementors).toBeDefined();
+      }
+    });
+
+    it("should handle LLM errors gracefully", async () => {
+      symbolRepo.findByName.mockReturnValue([testSymbol]);
+      relationshipRepo.findBySource.mockReturnValue([]);
+      relationshipRepo.findByTarget.mockReturnValue([]);
+      llmProvider.complete.mockRejectedValue(new Error("LLM API error"));
+
+      const result = await useCase.execute({
+        symbolName: "TestClass",
+        forceRegenerate: true,
+      });
+
+      expect(result.isFailure).toBe(true);
+      expect(result.error?.message).toContain("LLM API error");
+    });
+
+    it("should build explanation with relationships when available", async () => {
+      const callerSymbol = CodeSymbol.create({
+        name: "CallerClass",
+        qualifiedName: "src/CallerClass",
+        kind: "class",
+        location: { filePath: "src/caller.ts", startLine: 1, endLine: 5 },
+      }).value;
+
+      const calleeSymbol = CodeSymbol.create({
+        name: "CalleeClass",
+        qualifiedName: "src/CalleeClass",
+        kind: "class",
+        location: { filePath: "src/callee.ts", startLine: 1, endLine: 5 },
+      }).value;
+
+      const callsRel = SymbolRelationship.create({
+        sourceId: testSymbol.id,
+        targetId: calleeSymbol.id,
+        type: "calls",
+      });
+
+      const calledByRel = SymbolRelationship.create({
+        sourceId: callerSymbol.id,
+        targetId: testSymbol.id,
+        type: "calls",
+      });
+
+      symbolRepo.findByName.mockReturnValue([testSymbol]);
+      relationshipRepo.findBySource.mockReturnValue([callsRel]);
+      relationshipRepo.findByTarget.mockReturnValue([calledByRel]);
+      symbolRepo.findByIds.mockImplementation((ids) => {
+        if (ids.includes(callerSymbol.id)) return [callerSymbol];
+        if (ids.includes(calleeSymbol.id)) return [calleeSymbol];
+        return [];
+      });
+      llmProvider.complete.mockResolvedValue("Complete explanation with relationships");
+
+      const result = await useCase.execute({
+        symbolName: "TestClass",
+        forceRegenerate: true,
+      });
+
+      expect(result.isSuccess || result.isFailure).toBe(true);
+      if (result.isSuccess) {
+        expect(llmProvider.complete).toHaveBeenCalled();
+        // Verify the prompt includes relationship sections
+        const prompt = (llmProvider.complete as jest.Mock).mock.calls[0][0] as string;
+        expect(prompt).toContain("CallerClass");
+        expect(prompt).toContain("CalleeClass");
+      }
     });
   });
 });

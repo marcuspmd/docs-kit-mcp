@@ -58,6 +58,19 @@ describe("SqliteFileHashRepository", () => {
       expect(result?.lastIndexedAt).toBe("2024-01-01T00:00:00Z");
     });
 
+    it("should return undefined when file hash does not exist", () => {
+      // Mock the get statement to return undefined
+      const getStmt = mockDb.statements.get(
+        "SELECT content_hash, last_indexed_at FROM file_hashes WHERE file_path = ?",
+      );
+      if (getStmt) {
+        jest.spyOn(getStmt, "get").mockReturnValueOnce(undefined);
+      }
+
+      const result = repository.get("non-existent.ts");
+      expect(result).toBeUndefined();
+    });
+
     it("should handle missing file paths", () => {
       // When get returns undefined from database
       const result = repository.get("non-existent.ts");

@@ -216,6 +216,22 @@ describe("IndexProjectUseCase", () => {
       expect(result.value.errors[0]).toContain("Parse error");
     });
 
+    it("should handle non-Error exceptions", async () => {
+      fileIndexer.discoverFiles.mockResolvedValue(["src/error.ts"]);
+      fileHashRepo.getAll.mockReturnValue([]);
+      // Reject with a non-Error object (string, number, etc.)
+      fileIndexer.indexFile.mockRejectedValue("String error message");
+
+      const result = await useCase.execute({
+        rootPath: "/test/path",
+      });
+
+      expect(result.isSuccess).toBe(true);
+      expect(result.value.errors).toHaveLength(1);
+      expect(result.value.errors[0]).toContain("error.ts");
+      expect(result.value.errors[0]).toContain("String error message");
+    });
+
     it("should process multiple files", async () => {
       const symbol1 = CodeSymbol.create({
         name: "Class1",

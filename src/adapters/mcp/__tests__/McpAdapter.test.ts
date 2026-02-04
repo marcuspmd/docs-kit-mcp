@@ -254,4 +254,11 @@ describe("McpAdapter", () => {
       });
     });
   });
+
+  describe("start method", () => {
+    it("should have start method that returns Promise", () => {
+      const result = adapter.start();
+      expect(result).toBeInstanceOf(Promise);
+    });
+  });
 });
