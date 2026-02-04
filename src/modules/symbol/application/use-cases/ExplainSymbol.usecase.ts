@@ -5,7 +5,7 @@ import type { IRelationshipRepository } from "../../domain/repositories/IRelatio
 import type { ExplainSymbolInput, ExplainSymbolOutput } from "../dtos/symbol.dto.js";
 import { SymbolMapper } from "../mappers/SymbolMapper.js";
 import { EntityNotFoundError } from "../../../../@shared/errors/DomainErrors.js";
-import type { ILlmProvider } from "../../../../@shared/types/llm.js";
+import type { ILlmProvider } from "../../../llm/domain/ILlmProvider.js";
 import * as fs from "node:fs";
 
 /**
@@ -67,7 +67,17 @@ export class ExplainSymbolUseCase implements UseCase<ExplainSymbolInput, Explain
       let explanation = symbol.explanation ?? "No explanation available.";
       if (this.llmProvider && (input.forceRegenerate || !symbol.explanation)) {
         const prompt = this.buildExplainPrompt(symbol, sourceCode, callers, callees);
-        const response = await this.llmProvider.complete(prompt);
+        const response = await this.llmProvider.chat([
+          {
+            role: "system",
+            content:
+              "You are a code documentation expert. Provide clear, concise explanations of code symbols.",
+          },
+          {
+            role: "user",
+            content: prompt,
+          },
+        ]);
         explanation = response;
 
         // Update symbol with explanation (would need to save back)

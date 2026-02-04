@@ -4,4 +4,5 @@ export type { IFileIndexer, FileIndexResult } from "./IFileIndexer.js";
 
 // Strategies
 export { TypeScriptParser } from "./strategies/TypeScriptParser.js";
+export { PhpParser } from "./strategies/PhpParser.js";
 export type { ILanguageParser, ParseResult } from "./strategies/ILanguageParser.js";

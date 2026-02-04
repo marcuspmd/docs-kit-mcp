@@ -3,6 +3,7 @@ import type { FindSymbolUseCase } from "../../modules/symbol/application/use-cas
 import type { ExplainSymbolUseCase } from "../../modules/symbol/application/use-cases/ExplainSymbol.usecase.js";
 import type { BuildDocsUseCase } from "../../modules/documentation/application/use-cases/BuildDocs.usecase.js";
 import type { BuildSiteUseCase } from "../../modules/documentation/application/use-cases/BuildSite.usecase.js";
+import type { AnalyzeImpactUseCase } from "../../modules/analysis/application/use-cases/AnalyzeImpact.usecase.js";
 
 export interface CliCommand {
   name: string;
@@ -20,6 +21,7 @@ export interface CliAdapterDeps {
   explainSymbol: ExplainSymbolUseCase;
   buildDocs: BuildDocsUseCase;
   buildSite: BuildSiteUseCase;
+  analyzeImpact: AnalyzeImpactUseCase;
 }
 
 /**
@@ -73,6 +75,66 @@ export class CliAdapter {
           console.log(`Generated ${result.value.pagesGenerated} pages`);
         } else {
           console.error("Build failed:", result.error.message);
+        }
+      },
+    });
+
+    this.commands.set("build-docs", {
+      name: "build-docs",
+      description: "Generate documentation for symbols",
+      options: {
+        path: { alias: "p", description: "Root path", default: "." },
+        output: { alias: "o", description: "Output directory", default: "docs-output" },
+      },
+      execute: async (args) => {
+        const result = await this.deps.buildDocs.execute({
+          rootPath: args.path as string,
+          outputDir: args.output as string,
+        });
+        if (result.isSuccess) {
+          console.log(
+            `Generated ${result.value.filesGenerated} files documenting ${result.value.symbolsDocumented} symbols`,
+          );
+          if (result.value.errors.length > 0) {
+            console.warn(`Encountered ${result.value.errors.length} errors`);
+          }
+        } else {
+          console.error("Build docs failed:", result.error.message);
+        }
+      },
+    });
+
+    this.commands.set("analyze-impact", {
+      name: "analyze-impact",
+      description: "Analyze impact of code changes",
+      options: {
+        base: { alias: "b", description: "Base branch/ref", required: true },
+        target: { alias: "t", description: "Target branch/ref (default: current)" },
+        path: { alias: "p", description: "Root path", default: "." },
+      },
+      execute: async (args) => {
+        const result = await this.deps.analyzeImpact.execute({
+          baseBranch: args.base as string,
+          targetBranch: args.target as string | undefined,
+          rootPath: args.path as string,
+        });
+        if (result.isSuccess) {
+          console.log(`\nImpact Analysis:`);
+          console.log(`  Files changed: ${result.value.filesChanged}`);
+          console.log(`  Symbols affected: ${result.value.symbolsAffected}`);
+          console.log(`  Breaking changes: ${result.value.breakingChanges}`);
+          console.log(`\nImpacts:`);
+          for (const impact of result.value.impacts.slice(0, 10)) {
+            console.log(`  - ${impact.symbolName} (${impact.changeType}) - ${impact.severity}`);
+            if (impact.reason) {
+              console.log(`    ${impact.reason}`);
+            }
+          }
+          if (result.value.impacts.length > 10) {
+            console.log(`  ... and ${result.value.impacts.length - 10} more`);
+          }
+        } else {
+          console.error("Analysis failed:", result.error.message);
         }
       },
     });

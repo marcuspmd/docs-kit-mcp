@@ -1,6 +1,7 @@
 import Database from "better-sqlite3";
 import Parser from "tree-sitter";
 import TypeScriptLanguage from "tree-sitter-typescript";
+import PhpLanguage from "tree-sitter-php";
 import { mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import {
@@ -21,11 +22,16 @@ import {
 import { ExplainSymbolUseCase } from "../modules/symbol/application/use-cases/ExplainSymbol.usecase.js";
 import { BuildDocsUseCase } from "../modules/documentation/application/use-cases/BuildDocs.usecase.js";
 import { BuildSiteUseCase } from "../modules/documentation/application/use-cases/BuildSite.usecase.js";
+import { AnalyzeImpactUseCase } from "../modules/analysis/application/use-cases/AnalyzeImpact.usecase.js";
+import { GitDiffParser } from "../modules/analysis/infrastructure/GitDiffParser.js";
+import { AstDiffAnalyzer } from "../modules/analysis/infrastructure/AstDiffAnalyzer.js";
 import {
   FileIndexer,
   ParserRegistry,
   TypeScriptParser,
+  PhpParser,
 } from "../modules/symbol/infrastructure/parsers/index.js";
+import { createLlmProvider, type ILlmProvider } from "../modules/llm/index.js";
 import type { ISymbolRepository } from "../modules/symbol/domain/repositories/ISymbolRepository.js";
 import type { IRelationshipRepository } from "../modules/symbol/domain/repositories/IRelationshipRepository.js";
 import type { IFileHashRepository } from "../modules/symbol/domain/repositories/IFileHashRepository.js";
@@ -34,6 +40,11 @@ import type { IFileIndexer } from "../modules/symbol/infrastructure/parsers/IFil
 export interface ContainerConfig {
   database: { type: "sqlite" | "memory"; path?: string };
   fileIndexer?: IFileIndexer;
+  llm?: {
+    provider: "openai" | "claude" | "gemini" | "ollama";
+    model: string;
+    apiKey?: string;
+  };
 }
 
 export interface Container {
@@ -46,6 +57,8 @@ export interface Container {
   explainSymbol: ExplainSymbolUseCase;
   buildDocs: BuildDocsUseCase;
   buildSite: BuildSiteUseCase;
+  analyzeImpact: AnalyzeImpactUseCase;
+  llmProvider?: ILlmProvider;
 }
 
 const SCHEMA = `
@@ -67,10 +80,10 @@ function setupParserRegistry(): ParserRegistry {
   tsParser.setLanguage(TypeScriptLanguage.typescript as unknown as Parser.Language);
   registry.register("typescript", new TypeScriptParser(tsParser));
 
-  // TODO: Add more parsers as needed
-  // const pyParser = new Parser();
-  // pyParser.setLanguage(PythonLanguage);
-  // registry.register("python", new PythonParser(pyParser));
+  // Create and configure PHP parser
+  const phpParser = new Parser();
+  phpParser.setLanguage(PhpLanguage.php as unknown as Parser.Language);
+  registry.register("php", new PhpParser(phpParser));
 
   return registry;
 }
@@ -100,15 +113,36 @@ export function createContainer(config: ContainerConfig): Container {
   const parserRegistry = setupParserRegistry();
   const fileIndexer = config.fileIndexer ?? new FileIndexer(parserRegistry, fileHashRepo);
 
+  // Setup LLM provider if configured
+  let llmProvider: ILlmProvider | undefined;
+  if (config.llm) {
+    try {
+      llmProvider = createLlmProvider(config.llm);
+    } catch (error) {
+      console.warn("Failed to create LLM provider:", error);
+    }
+  }
+
+  // Setup analysis infrastructure
+  const gitDiffParser = new GitDiffParser();
+  const astDiffAnalyzer = new AstDiffAnalyzer(fileIndexer);
+
   return {
     symbolRepo,
     relationshipRepo,
     fileHashRepo,
+    llmProvider,
     indexProject: new IndexProjectUseCase(symbolRepo, relationshipRepo, fileHashRepo, fileIndexer),
     findSymbol: new FindSymbolUseCase(symbolRepo),
     getSymbolById: new GetSymbolByIdUseCase(symbolRepo),
-    explainSymbol: new ExplainSymbolUseCase(symbolRepo, relationshipRepo),
-    buildDocs: new BuildDocsUseCase(),
+    explainSymbol: new ExplainSymbolUseCase(symbolRepo, relationshipRepo, llmProvider),
+    buildDocs: new BuildDocsUseCase(symbolRepo, llmProvider),
     buildSite: new BuildSiteUseCase(),
+    analyzeImpact: new AnalyzeImpactUseCase(
+      symbolRepo,
+      relationshipRepo,
+      gitDiffParser,
+      astDiffAnalyzer,
+    ),
   };
 }
