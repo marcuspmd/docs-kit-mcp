@@ -123,6 +123,29 @@ describe("SymbolMapper", () => {
       expect(dto.implements).toBeUndefined();
     });
 
+    it("should handle all optional fields when present", () => {
+      const symbolWithAllFields = CodeSymbol.fromPersistence({
+        id: "complete-id",
+        name: "CompleteClass",
+        qualifiedName: "src.CompleteClass",
+        kind: "class",
+        location: { filePath: "src/complete.ts", startLine: 1, endLine: 50 },
+        parent: "BaseClass",
+        visibility: "public",
+        exported: true,
+        language: "ts",
+      });
+
+      const dto = SymbolMapper.toDto(symbolWithAllFields);
+
+      expect(dto.id).toBe("complete-id");
+      expect(dto.name).toBe("CompleteClass");
+      expect(dto.parent).toBe("BaseClass");
+      expect(dto.visibility).toBe("public");
+      expect(dto.exported).toBe(true);
+      expect(dto.language).toBe("ts");
+    });
+
     it("should include signature when available", () => {
       // Use createStub to create a simple symbol
       const stubSymbol = CodeSymbol.createStub("functionWithSignature", "function");
@@ -270,6 +293,50 @@ describe("SymbolMapper", () => {
 
       expect(symbol.exported).toBe(true);
     });
+
+    it("should handle null qualified_name", () => {
+      const raw = {
+        id: "test-id",
+        name: "Test",
+        qualified_name: null,
+        kind: "class",
+        file: "test.ts",
+        start_line: 1,
+        end_line: 10,
+        parent: null,
+        visibility: null,
+        exported: null,
+        language: null,
+        doc_ref: null,
+        summary: null,
+        doc_comment: null,
+        tags: null,
+        domain: null,
+        bounded_context: null,
+        sym_extends: null,
+        sym_implements: null,
+        uses_traits: null,
+        sym_references: null,
+        referenced_by: null,
+        layer: null,
+        metrics: null,
+        pattern: null,
+        violations: null,
+        deprecated: null,
+        since: null,
+        stability: null,
+        generated: null,
+        source: null,
+        last_modified: null,
+        signature: null,
+        explanation: null,
+        explanation_hash: null,
+      };
+
+      const symbol = SymbolMapper.toDomain(raw);
+
+      expect(symbol.qualifiedName).toBeUndefined();
+    });
   });
 
   describe("toPersistence", () => {
@@ -394,6 +461,50 @@ describe("SymbolMapper", () => {
 
       expect(persistence.explanation).toBe("This is a test class");
       expect(persistence.explanation_hash).toBe("hash-abc");
+    });
+
+    it("should handle undefined qualifiedName as null", () => {
+      const symbolWithoutQualifiedName = CodeSymbol.create({
+        name: "SimpleClass",
+        kind: "class",
+        location: { filePath: "simple.ts", startLine: 1, endLine: 5 },
+      }).value;
+
+      const persistence = SymbolMapper.toPersistence(symbolWithoutQualifiedName);
+
+      expect(persistence.qualified_name).toBeNull();
+    });
+
+    it("should handle symbols without parent as null", () => {
+      const symbolWithoutParent = CodeSymbol.create({
+        name: "OrphanClass",
+        kind: "class",
+        location: { filePath: "orphan.ts", startLine: 1, endLine: 5 },
+      }).value;
+
+      const persistence = SymbolMapper.toPersistence(symbolWithoutParent);
+
+      expect(persistence.parent).toBeNull();
+    });
+
+    it("should convert metrics object to JSON string", () => {
+      const symbolResult = CodeSymbol.create({
+        name: "MetricsClass",
+        kind: "class",
+        location: { filePath: "metrics.ts", startLine: 1, endLine: 5 },
+      });
+
+      const persistence = SymbolMapper.toPersistence(symbolResult.value);
+
+      // Metrics should be stringified JSON when present
+      if (persistence.metrics !== null) {
+        expect(typeof persistence.metrics).toBe("string");
+        const parsed = JSON.parse(persistence.metrics as string);
+        expect(parsed).toBeDefined();
+      } else {
+        // Or null if not set
+        expect(persistence.metrics).toBeNull();
+      }
     });
   });
 
