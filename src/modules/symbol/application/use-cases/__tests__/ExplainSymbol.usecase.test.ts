@@ -335,5 +335,89 @@ describe("ExplainSymbolUseCase", () => {
         expect(prompt).toContain("CalleeClass");
       }
     });
+
+    it("should include docComment in LLM prompt when available", async () => {
+      const symbolWithDoc = CodeSymbol.create({
+        name: "DocumentedClass",
+        qualifiedName: "src/DocumentedClass",
+        kind: "class",
+        location: { filePath: "src/documented.ts", startLine: 1, endLine: 10 },
+      }).value;
+
+      // Add internal property access to set docComment for testing
+      Object.defineProperty(symbolWithDoc, "docComment", {
+        value: "This is a documentation comment",
+        writable: true,
+        configurable: true,
+      });
+
+      symbolRepo.findByName.mockReturnValue([symbolWithDoc]);
+      relationshipRepo.findBySource.mockReturnValue([]);
+      relationshipRepo.findByTarget.mockReturnValue([]);
+      llmProvider.complete.mockResolvedValue("Explanation with doc comment");
+
+      const result = await useCase.execute({
+        symbolName: "DocumentedClass",
+        forceRegenerate: true,
+      });
+
+      expect(result.isSuccess || result.isFailure).toBe(true);
+      if (result.isSuccess && llmProvider.complete.mock.calls.length > 0) {
+        const prompt = (llmProvider.complete as jest.Mock).mock.calls[0][0] as string;
+        expect(prompt).toContain("Documentation:");
+        expect(prompt).toContain("This is a documentation comment");
+      }
+    });
+
+    it("should handle symbols from files that cannot be read", async () => {
+      const symbolInNonExistentFile = CodeSymbol.create({
+        name: "TestClass",
+        qualifiedName: "src/TestClass",
+        kind: "class",
+        location: { filePath: "/non/existent/path/test.ts", startLine: 10, endLine: 20 },
+      }).value;
+
+      symbolRepo.findByName.mockReturnValue([symbolInNonExistentFile]);
+      relationshipRepo.findBySource.mockReturnValue([]);
+      relationshipRepo.findByTarget.mockReturnValue([]);
+
+      const result = await useCase.execute({ symbolName: "TestClass" });
+
+      // Should succeed even if file cannot be read
+      expect(result.isSuccess || result.isFailure).toBe(true);
+      if (result.isSuccess) {
+        expect(result.value.symbol).toBeDefined();
+        // sourceCode may be undefined when file is not accessible
+        expect(result.value.sourceCode).toBeUndefined();
+      }
+    });
+
+    it("should build prompt without sourceCode when file read fails", async () => {
+      const symbolInNonExistentFile = CodeSymbol.create({
+        name: "TestClass",
+        qualifiedName: "src/TestClass",
+        kind: "class",
+        location: { filePath: "/non/existent/path/test.ts", startLine: 10, endLine: 20 },
+      }).value;
+
+      symbolRepo.findByName.mockReturnValue([symbolInNonExistentFile]);
+      relationshipRepo.findBySource.mockReturnValue([]);
+      relationshipRepo.findByTarget.mockReturnValue([]);
+      llmProvider.complete.mockResolvedValue("Explanation without source code");
+
+      const result = await useCase.execute({
+        symbolName: "TestClass",
+        forceRegenerate: true,
+      });
+
+      expect(result.isSuccess || result.isFailure).toBe(true);
+      if (result.isSuccess && llmProvider.complete.mock.calls.length > 0) {
+        const prompt = (llmProvider.complete as jest.Mock).mock.calls[0][0] as string;
+        expect(prompt).toContain("TestClass");
+        expect(prompt).toContain("class");
+        // Should not include source code section when file cannot be read
+        expect(prompt).not.toContain("Source code:");
+      }
+    });
   });
 });

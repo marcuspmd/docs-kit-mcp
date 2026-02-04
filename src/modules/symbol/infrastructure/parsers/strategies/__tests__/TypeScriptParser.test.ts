@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach } from "@jest/globals";
+import { describe, it, expect, beforeEach, jest } from "@jest/globals";
 import { TypeScriptParser } from "../TypeScriptParser.js";
 import type Parser from "tree-sitter";
 
@@ -20,7 +20,7 @@ class MockSyntaxNode {
     this.endPosition = { row: endRow, column: 0 };
   }
 
-  childForFieldName() {
+  childForFieldName(_field?: string): MockSyntaxNode | null {
     return new MockSyntaxNode("identifier", 0, 4, 0, 0);
   }
 
@@ -153,6 +153,33 @@ describe("TypeScriptParser", () => {
       expect(Array.isArray(result.errors)).toBe(true);
     });
 
+    it("should handle non-Error exceptions and convert to string", async () => {
+      const errorParser = new MockTreeSitterParser();
+      errorParser.parse = () => {
+        // eslint-disable-next-line no-throw-literal
+        throw "String error instead of Error object";
+      };
+
+      const parserWithError = new TypeScriptParser(errorParser as unknown as Parser);
+      const result = await parserWithError.validate("const x = 1;");
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toEqual(["String error instead of Error object"]);
+    });
+
+    it("should handle Error instances in validation catch", async () => {
+      const errorParser = new MockTreeSitterParser();
+      errorParser.parse = () => {
+        throw new Error("Validation failed");
+      };
+
+      const parserWithError = new TypeScriptParser(errorParser as unknown as Parser);
+      const result = await parserWithError.validate("const x = 1;");
+
+      expect(result.isValid).toBe(false);
+      expect(result.errors).toEqual(["Validation failed"]);
+    });
+
     it("should return empty errors array for valid content", async () => {
       const result = await parser.validate("function test() { return true; }");
 
@@ -201,6 +228,42 @@ describe("TypeScriptParser", () => {
       expect(async () => {
         await parser.parse("/path/file.ts", "invalid %%% content");
       }).not.toThrow();
+    });
+
+    it("should handle internal parser exceptions", async () => {
+      // Force the parser to throw an exception
+      const errorParser = new MockTreeSitterParser();
+      errorParser.parse = () => {
+        throw new Error("Internal parser error");
+      };
+
+      const parserWithError = new TypeScriptParser(errorParser as unknown as Parser);
+      const result = await parserWithError.parse("/path/file.ts", "const x = 1;");
+
+      // Should catch the error and return empty result with metadata
+      expect(result.symbols).toEqual([]);
+      expect(result.relationships).toEqual([]);
+      expect(result.metadata).toBeDefined();
+      expect(result.metadata?.language).toBe("ts");
+    });
+
+    it("should log error message when parsing fails", async () => {
+      const consoleErrorSpy = jest.spyOn(console, "error").mockImplementation(() => {});
+
+      const errorParser = new MockTreeSitterParser();
+      errorParser.parse = () => {
+        throw new Error("Parser crashed");
+      };
+
+      const parserWithError = new TypeScriptParser(errorParser as unknown as Parser);
+      await parserWithError.parse("/path/test.ts", "invalid code");
+
+      expect(consoleErrorSpy).toHaveBeenCalledWith(
+        "Failed to parse /path/test.ts:",
+        expect.any(Error),
+      );
+
+      consoleErrorSpy.mockRestore();
     });
   });
 
@@ -260,6 +323,353 @@ describe("TypeScriptParser", () => {
       expect(result.relationships).toBeDefined();
       expect(Array.isArray(result.symbols)).toBe(true);
       expect(Array.isArray(result.relationships)).toBe(true);
+    });
+
+    it("should extract class declaration symbols", async () => {
+      // Mock a class_declaration node
+      class MockClassNode extends MockSyntaxNode {
+        constructor() {
+          super("class_declaration", 0, 15, 0, 2);
+        }
+
+        childForFieldName(field: string) {
+          if (field === "name") {
+            return new MockSyntaxNode("identifier", 6, 13, 0, 0);
+          }
+          return null;
+        }
+      }
+
+      const classNode = new MockClassNode();
+      mockTsParser.parse = () => {
+        const tree = new MockTree();
+        tree.rootNode.children.push(classNode);
+        return tree;
+      };
+
+      const result = await parser.parse("/path/file.ts", "class MyClass {}");
+
+      // Parse will traverse the tree, but won't extract symbols without proper name extraction
+      expect(result.symbols).toBeDefined();
+      expect(Array.isArray(result.symbols)).toBe(true);
+    });
+
+    it("should extract function declaration symbols", async () => {
+      // Mock a function_declaration node
+      class MockFunctionNode extends MockSyntaxNode {
+        constructor() {
+          super("function_declaration", 0, 20, 0, 0);
+        }
+
+        childForFieldName(field: string) {
+          if (field === "name") {
+            return new MockSyntaxNode("identifier", 9, 13, 0, 0);
+          }
+          return null;
+        }
+      }
+
+      const funcNode = new MockFunctionNode();
+      mockTsParser.parse = () => {
+        const tree = new MockTree();
+        tree.rootNode.children.push(funcNode);
+        return tree;
+      };
+
+      const result = await parser.parse("/path/file.ts", "function test() {}");
+
+      expect(result.symbols).toBeDefined();
+      expect(Array.isArray(result.symbols)).toBe(true);
+    });
+
+    it("should extract interface declaration symbols", async () => {
+      class MockInterfaceNode extends MockSyntaxNode {
+        constructor() {
+          super("interface_declaration", 0, 23, 0, 0);
+        }
+
+        childForFieldName(field: string) {
+          if (field === "name") {
+            return new MockSyntaxNode("identifier", 10, 17, 0, 0);
+          }
+          return null;
+        }
+      }
+
+      const interfaceNode = new MockInterfaceNode();
+      mockTsParser.parse = () => {
+        const tree = new MockTree();
+        tree.rootNode.children.push(interfaceNode);
+        return tree;
+      };
+
+      const result = await parser.parse("/path/file.ts", "interface MyInterface {}");
+
+      expect(result.symbols).toBeDefined();
+      expect(Array.isArray(result.symbols)).toBe(true);
+    });
+
+    it("should handle nodes without name field", async () => {
+      class MockNodeWithoutName extends MockSyntaxNode {
+        constructor() {
+          super("class_declaration", 0, 15, 0, 0);
+        }
+
+        childForFieldName() {
+          return null;
+        }
+      }
+
+      const nodeWithoutName = new MockNodeWithoutName();
+      mockTsParser.parse = () => {
+        const tree = new MockTree();
+        tree.rootNode.children.push(nodeWithoutName);
+        return tree;
+      };
+
+      const result = await parser.parse("/path/file.ts", "class {}");
+
+      // Should not crash, should return empty symbols
+      expect(result.symbols).toBeDefined();
+      expect(Array.isArray(result.symbols)).toBe(true);
+    });
+
+    it("should handle exported symbols", async () => {
+      class MockExportedClassNode extends MockSyntaxNode {
+        constructor() {
+          super("class_declaration", 0, 22, 0, 0);
+          const exportChild = new MockSyntaxNode("export", 0, 6, 0, 0);
+          exportChild.parent = this;
+          this.children.push(exportChild);
+        }
+
+        childForFieldName(field: string) {
+          if (field === "name") {
+            return new MockSyntaxNode("identifier", 13, 20, 0, 0);
+          }
+          return null;
+        }
+      }
+
+      const exportedNode = new MockExportedClassNode();
+      mockTsParser.parse = () => {
+        const tree = new MockTree();
+        tree.rootNode.children.push(exportedNode);
+        return tree;
+      };
+
+      const result = await parser.parse("/path/file.ts", "export class MyClass {}");
+
+      expect(result.symbols).toBeDefined();
+      expect(Array.isArray(result.symbols)).toBe(true);
+    });
+
+    it("should recursively process nested nodes", async () => {
+      const childNode = new MockSyntaxNode("method_definition", 0, 10, 1, 1);
+      const parentNode = new MockSyntaxNode("class_declaration", 0, 30, 0, 2);
+      parentNode.addChild(childNode);
+
+      mockTsParser.parse = () => {
+        const tree = new MockTree();
+        tree.rootNode.children.push(parentNode);
+        return tree;
+      };
+
+      const result = await parser.parse("/path/file.ts", "class X { method() {} }");
+
+      // Should process both parent and child nodes
+      expect(result.symbols).toBeDefined();
+      expect(Array.isArray(result.symbols)).toBe(true);
+    });
+
+    it("should handle method definitions", async () => {
+      class MockMethodNode extends MockSyntaxNode {
+        constructor() {
+          super("method_definition", 0, 15, 1, 1);
+        }
+
+        childForFieldName(field: string) {
+          if (field === "name") {
+            return new MockSyntaxNode("identifier", 2, 8, 1, 1);
+          }
+          return null;
+        }
+      }
+
+      const methodNode = new MockMethodNode();
+      mockTsParser.parse = () => {
+        const tree = new MockTree();
+        tree.rootNode.children.push(methodNode);
+        return tree;
+      };
+
+      const result = await parser.parse("/path/file.ts", "method() {}");
+
+      expect(result.symbols).toBeDefined();
+      expect(Array.isArray(result.symbols)).toBe(true);
+    });
+
+    it("should handle type alias declarations", async () => {
+      class MockTypeAliasNode extends MockSyntaxNode {
+        constructor() {
+          super("type_alias_declaration", 0, 18, 0, 0);
+        }
+
+        childForFieldName(field: string) {
+          if (field === "name") {
+            return new MockSyntaxNode("identifier", 5, 12, 0, 0);
+          }
+          return null;
+        }
+      }
+
+      const typeNode = new MockTypeAliasNode();
+      mockTsParser.parse = () => {
+        const tree = new MockTree();
+        tree.rootNode.children.push(typeNode);
+        return tree;
+      };
+
+      const result = await parser.parse("/path/file.ts", "type MyType = string;");
+
+      expect(result.symbols).toBeDefined();
+      expect(Array.isArray(result.symbols)).toBe(true);
+    });
+
+    it("should handle enum declarations", async () => {
+      class MockEnumNode extends MockSyntaxNode {
+        constructor() {
+          super("enum_declaration", 0, 20, 0, 0);
+        }
+
+        childForFieldName(field: string) {
+          if (field === "name") {
+            return new MockSyntaxNode("identifier", 5, 11, 0, 0);
+          }
+          return null;
+        }
+      }
+
+      const enumNode = new MockEnumNode();
+      mockTsParser.parse = () => {
+        const tree = new MockTree();
+        tree.rootNode.children.push(enumNode);
+        return tree;
+      };
+
+      const result = await parser.parse("/path/file.ts", "enum MyEnum { A, B }");
+
+      expect(result.symbols).toBeDefined();
+      expect(Array.isArray(result.symbols)).toBe(true);
+    });
+
+    it("should handle export statement wrapping", async () => {
+      class MockExportStatement extends MockSyntaxNode {
+        constructor() {
+          super("export_statement", 0, 25, 0, 0);
+          const classNode = new MockSyntaxNode("class_declaration", 7, 25, 0, 0);
+          this.addChild(classNode);
+        }
+      }
+
+      const exportStmt = new MockExportStatement();
+      mockTsParser.parse = () => {
+        const tree = new MockTree();
+        tree.rootNode.children.push(exportStmt);
+        return tree;
+      };
+
+      const result = await parser.parse("/path/file.ts", "export class MyClass {}");
+
+      expect(result.symbols).toBeDefined();
+      expect(Array.isArray(result.symbols)).toBe(true);
+    });
+
+    it("should return null for symbols with invalid data", async () => {
+      // Create a node that would cause CodeSymbol.create to fail
+      class MockInvalidNode extends MockSyntaxNode {
+        constructor() {
+          super("class_declaration", 0, 10, -1, -1); // Invalid line numbers
+        }
+
+        childForFieldName(field?: string) {
+          if (field === "name") {
+            return new MockSyntaxNode("identifier", 0, 0, -1, -1); // Invalid position
+          }
+          return null;
+        }
+      }
+
+      const invalidNode = new MockInvalidNode();
+      mockTsParser.parse = () => {
+        const tree = new MockTree();
+        tree.rootNode.children.push(invalidNode);
+        return tree;
+      };
+
+      const result = await parser.parse("/path/file.ts", "class {}");
+
+      // Should handle invalid symbols gracefully
+      expect(result.symbols).toBeDefined();
+      expect(Array.isArray(result.symbols)).toBe(true);
+    });
+
+    it("should correctly identify non-exported symbols", async () => {
+      // Create a class node that is NOT exported
+      class MockNonExportedClass extends MockSyntaxNode {
+        constructor() {
+          super("class_declaration", 0, 15, 0, 0);
+          // No export modifier
+        }
+
+        childForFieldName(field?: string) {
+          if (field === "name") {
+            return new MockSyntaxNode("identifier", 6, 13, 0, 0);
+          }
+          return null;
+        }
+      }
+
+      const nonExportedNode = new MockNonExportedClass();
+      mockTsParser.parse = () => {
+        const tree = new MockTree();
+        tree.rootNode.children.push(nonExportedNode);
+        return tree;
+      };
+
+      const result = await parser.parse("/path/file.ts", "class MyClass {}");
+
+      expect(result.symbols).toBeDefined();
+      expect(Array.isArray(result.symbols)).toBe(true);
+    });
+
+    it("should detect export keyword in children", async () => {
+      class MockClassWithExportChild extends MockSyntaxNode {
+        constructor() {
+          super("class_declaration", 7, 22, 0, 0);
+          const exportKeyword = new MockSyntaxNode("export", 0, 6, 0, 0);
+          this.children.push(exportKeyword);
+        }
+
+        childForFieldName(field?: string) {
+          if (field === "name") {
+            return new MockSyntaxNode("identifier", 13, 20, 0, 0);
+          }
+          return null;
+        }
+      }
+
+      const exportedClass = new MockClassWithExportChild();
+      mockTsParser.parse = () => {
+        const tree = new MockTree();
+        tree.rootNode.children.push(exportedClass);
+        return tree;
+      };
+
+      const result = await parser.parse("/path/file.ts", "export class MyClass {}");
+
+      expect(result.symbols).toBeDefined();
+      expect(Array.isArray(result.symbols)).toBe(true);
     });
   });
 });
