@@ -168,48 +168,89 @@ describe("CliAdapter", () => {
 
   describe("build-site command", () => {
     it("should execute build-site with default options", async () => {
-      const result: MockResult<{ pagesGenerated: number }> = {
+      const result: MockResult<{
+        symbolPages: number;
+        filePages: number;
+        totalFiles: number;
+        docEntries: number;
+        outputPath: string;
+      }> = {
         isSuccess: true,
-        value: { pagesGenerated: 15 },
+        value: {
+          symbolPages: 15,
+          filePages: 5,
+          totalFiles: 25,
+          docEntries: 3,
+          outputPath: "/path/docs-site",
+        },
       };
       mockBuildSite.execute.mockResolvedValue(result as never);
 
       await adapter.run(["build-site"]);
 
       expect(mockBuildSite.execute).toHaveBeenCalledWith({
-        rootPath: ".",
+        dbPath: ".docs-kit/index.db",
         outputDir: "docs-site",
+        rootPath: ".",
       });
-      expect(consoleLog).toHaveBeenCalledWith("Generated 15 pages");
+      expect(consoleLog).toHaveBeenCalledWith(
+        expect.stringContaining("Site generated successfully"),
+      );
     });
 
     it("should execute build-site with custom path and output", async () => {
-      const result: MockResult<{ pagesGenerated: number }> = {
+      const result: MockResult<{
+        symbolPages: number;
+        filePages: number;
+        totalFiles: number;
+        docEntries: number;
+        outputPath: string;
+      }> = {
         isSuccess: true,
-        value: { pagesGenerated: 20 },
+        value: {
+          symbolPages: 20,
+          filePages: 10,
+          totalFiles: 35,
+          docEntries: 5,
+          outputPath: "/path/public",
+        },
       };
       mockBuildSite.execute.mockResolvedValue(result as never);
 
       await adapter.run(["build-site", "--path", "src", "--output", "public"]);
 
       expect(mockBuildSite.execute).toHaveBeenCalledWith({
-        rootPath: "src",
+        dbPath: ".docs-kit/index.db",
         outputDir: "public",
+        rootPath: "src",
       });
     });
 
     it("should execute build-site with aliases", async () => {
-      const result: MockResult<{ pagesGenerated: number }> = {
+      const result: MockResult<{
+        symbolPages: number;
+        filePages: number;
+        totalFiles: number;
+        docEntries: number;
+        outputPath: string;
+      }> = {
         isSuccess: true,
-        value: { pagesGenerated: 10 },
+        value: {
+          symbolPages: 25,
+          filePages: 12,
+          totalFiles: 40,
+          docEntries: 7,
+          outputPath: "/path/dist",
+        },
       };
       mockBuildSite.execute.mockResolvedValue(result as never);
 
       await adapter.run(["build-site", "-p", "docs", "-o", "dist"]);
 
       expect(mockBuildSite.execute).toHaveBeenCalledWith({
-        rootPath: "docs",
+        dbPath: ".docs-kit/index.db",
         outputDir: "dist",
+        rootPath: "docs",
       });
     });
 
@@ -385,8 +426,9 @@ describe("CliAdapter", () => {
       await adapter.run(["build-site", "-p", "docs", "-o", "output"]);
 
       expect(mockBuildSite.execute).toHaveBeenCalledWith({
-        rootPath: "docs",
+        dbPath: ".docs-kit/index.db",
         outputDir: "output",
+        rootPath: "docs",
       });
     });
 
@@ -529,17 +571,30 @@ describe("CliAdapter", () => {
 
   describe("edge cases", () => {
     it("should handle arguments ending with flag without value", async () => {
-      const result: MockResult<{ pagesGenerated: number }> = {
+      const result: MockResult<{
+        symbolPages: number;
+        filePages: number;
+        totalFiles: number;
+        docEntries: number;
+        outputPath: string;
+      }> = {
         isSuccess: true,
-        value: { pagesGenerated: 0 },
+        value: {
+          symbolPages: 0,
+          filePages: 0,
+          totalFiles: 0,
+          docEntries: 0,
+          outputPath: "/path/docs-site",
+        },
       };
       mockBuildSite.execute.mockResolvedValue(result as never);
 
       await adapter.run(["build-site", "--path", "src"]);
 
       expect(mockBuildSite.execute).toHaveBeenCalledWith({
-        rootPath: "src",
+        dbPath: ".docs-kit/index.db",
         outputDir: "docs-site",
+        rootPath: "src",
       });
     });
 
@@ -611,15 +666,29 @@ describe("CliAdapter", () => {
     });
 
     it("should preserve original values from successful operations", async () => {
-      const result: MockResult<{ pagesGenerated: number }> = {
+      const result: MockResult<{
+        symbolPages: number;
+        filePages: number;
+        totalFiles: number;
+        docEntries: number;
+        outputPath: string;
+      }> = {
         isSuccess: true,
-        value: { pagesGenerated: 42 },
+        value: {
+          symbolPages: 42,
+          filePages: 21,
+          totalFiles: 70,
+          docEntries: 10,
+          outputPath: "/path/docs-site",
+        },
       };
       mockBuildSite.execute.mockResolvedValue(result as never);
 
       await adapter.run(["build-site"]);
 
-      expect(consoleLog).toHaveBeenCalledWith("Generated 42 pages");
+      expect(consoleLog).toHaveBeenCalledWith(
+        expect.stringContaining("Site generated successfully"),
+      );
     });
 
     it("should handle unknown short-form alias (should not crash)", async () => {
@@ -649,8 +718,9 @@ describe("CliAdapter", () => {
       await adapter.run(["build-site", "--path", "", "--output", ""]);
 
       expect(mockBuildSite.execute).toHaveBeenCalledWith({
-        rootPath: "",
+        dbPath: ".docs-kit/index.db",
         outputDir: "",
+        rootPath: "",
       });
     });
   });

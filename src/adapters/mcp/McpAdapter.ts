@@ -103,8 +103,9 @@ export class McpAdapter {
 
         case "build_site": {
           const result = await this.deps.buildSite.execute({
-            rootPath: (args?.rootPath as string) ?? ".",
+            dbPath: (args?.dbPath as string) ?? ".docs-kit/index.db",
             outputDir: (args?.outputDir as string) ?? "docs-site",
+            rootPath: (args?.rootPath as string) ?? ".",
           });
           if (result.isSuccess) {
             return { content: [{ type: "text", text: JSON.stringify(result.value, null, 2) }] };

@@ -65,14 +65,21 @@ export class CliAdapter {
       options: {
         path: { alias: "p", description: "Root path", default: "." },
         output: { alias: "o", description: "Output directory", default: "docs-site" },
+        db: { alias: "d", description: "Database path", default: ".docs-kit/index.db" },
       },
       execute: async (args) => {
         const result = await this.deps.buildSite.execute({
-          rootPath: args.path as string,
+          dbPath: args.db as string,
           outputDir: args.output as string,
+          rootPath: args.path as string,
         });
         if (result.isSuccess) {
-          console.log(`Generated ${result.value.pagesGenerated} pages`);
+          console.log(`✅ Site generated successfully!`);
+          console.log(`   Symbol pages: ${result.value.symbolPages}`);
+          console.log(`   File pages: ${result.value.filePages}`);
+          console.log(`   Total files: ${result.value.totalFiles}`);
+          console.log(`   Doc entries: ${result.value.docEntries}`);
+          console.log(`   Output: ${result.value.outputPath}`);
         } else {
           console.error("Build failed:", result.error.message);
         }

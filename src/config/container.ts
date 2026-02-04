@@ -22,6 +22,7 @@ import {
 import { ExplainSymbolUseCase } from "../modules/symbol/application/use-cases/ExplainSymbol.usecase.js";
 import { BuildDocsUseCase } from "../modules/documentation/application/use-cases/BuildDocs.usecase.js";
 import { BuildSiteUseCase } from "../modules/documentation/application/use-cases/BuildSite.usecase.js";
+import { SiteGenerator } from "../modules/documentation/infrastructure/generators/index.js";
 import { AnalyzeImpactUseCase } from "../modules/analysis/application/use-cases/AnalyzeImpact.usecase.js";
 import { GitDiffParser } from "../modules/analysis/infrastructure/GitDiffParser.js";
 import { AstDiffAnalyzer } from "../modules/analysis/infrastructure/AstDiffAnalyzer.js";
@@ -127,6 +128,9 @@ export function createContainer(config: ContainerConfig): Container {
   const gitDiffParser = new GitDiffParser();
   const astDiffAnalyzer = new AstDiffAnalyzer(fileIndexer);
 
+  // Create site generator
+  const siteGenerator = new SiteGenerator();
+
   return {
     symbolRepo,
     relationshipRepo,
@@ -137,7 +141,7 @@ export function createContainer(config: ContainerConfig): Container {
     getSymbolById: new GetSymbolByIdUseCase(symbolRepo),
     explainSymbol: new ExplainSymbolUseCase(symbolRepo, relationshipRepo, llmProvider),
     buildDocs: new BuildDocsUseCase(symbolRepo, llmProvider),
-    buildSite: new BuildSiteUseCase(),
+    buildSite: new BuildSiteUseCase(siteGenerator),
     analyzeImpact: new AnalyzeImpactUseCase(
       symbolRepo,
       relationshipRepo,
