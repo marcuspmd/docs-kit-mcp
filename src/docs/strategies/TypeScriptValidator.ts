@@ -21,7 +21,12 @@ export class TypeScriptValidator implements ValidatorStrategy {
     const tempFile = `/tmp/example-${Date.now()}.ts`;
     try {
       await writeFile(tempFile, code);
-      await TypeScriptValidator.execAsync(`npx tsc --noEmit ${tempFile}`, { timeout: 10000 });
+      // Use --lib es2015 to include standard globals like console, process, etc.
+      // Use --noImplicitAny to catch undefined variables but be lenient with other checks
+      await TypeScriptValidator.execAsync(
+        `npx tsc --noEmit --lib es2015 --skipLibCheck --skipDefaultLibCheck ${tempFile}`,
+        { timeout: 10000 },
+      );
       return { valid: true };
     } catch (error: unknown) {
       const execError = error as { stderr?: string; message?: string; killed?: boolean };

@@ -511,7 +511,9 @@ describe("Validator Strategies", () => {
       const code = "const x: number = 42;";
       await validator.validate(code);
       expect(mockExecAsync).toHaveBeenCalledWith(
-        expect.stringMatching(/^npx tsc --noEmit \/tmp\/example-\d+\.ts$/),
+        expect.stringMatching(
+          /^npx tsc --noEmit --lib es2015 --skipLibCheck --skipDefaultLibCheck \/tmp\/example-\d+\.ts$/,
+        ),
         { timeout: 10000 },
       );
       expect(mockExecAsync).toHaveBeenCalledWith(
@@ -528,7 +530,9 @@ describe("Validator Strategies", () => {
       const code = "invalid code";
       await validator.validate(code);
       expect(mockExecAsync).toHaveBeenCalledWith(
-        expect.stringMatching(/^npx tsc --noEmit \/tmp\/example-\d+\.ts$/),
+        expect.stringMatching(
+          /^npx tsc --noEmit --lib es2015 --skipLibCheck --skipDefaultLibCheck \/tmp\/example-\d+\.ts$/,
+        ),
         { timeout: 10000 },
       );
       expect(mockExecAsync).toHaveBeenCalledWith(
