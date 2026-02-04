@@ -1,0 +1,310 @@
+import { describe, it, expect, beforeEach } from "@jest/globals";
+import { SymbolMapper } from "../SymbolMapper.js";
+import { CodeSymbol } from "../../../domain/entities/CodeSymbol.js";
+
+describe("SymbolMapper", () => {
+  let testSymbol: CodeSymbol;
+
+  beforeEach(() => {
+    testSymbol = CodeSymbol.create({
+      name: "TestClass",
+      qualifiedName: "src.TestClass",
+      kind: "class",
+      location: {
+        filePath: "src/test.ts",
+        startLine: 10,
+        endLine: 20,
+      },
+      parent: "ParentClass",
+      visibility: "public",
+      exported: true,
+      language: "ts",
+    }).value;
+  });
+
+  describe("toDto", () => {
+    it("should convert CodeSymbol to SymbolOutput DTO", () => {
+      const dto = SymbolMapper.toDto(testSymbol);
+
+      expect(dto.id).toBe(testSymbol.id);
+      expect(dto.name).toBe("TestClass");
+      expect(dto.qualifiedName).toBe("src.TestClass");
+      expect(dto.kind).toBe("class");
+      expect(dto.file).toBe("src/test.ts");
+      expect(dto.startLine).toBe(10);
+      expect(dto.endLine).toBe(20);
+      expect(dto.parent).toBe("ParentClass");
+      expect(dto.visibility).toBe("public");
+      expect(dto.exported).toBe(true);
+      expect(dto.language).toBe("ts");
+    });
+
+    it("should include optional properties when present", () => {
+      const symbolWithDetails = CodeSymbol.create({
+        name: "DetailedClass",
+        qualifiedName: "src.DetailedClass",
+        kind: "class",
+        location: { filePath: "src/detailed.ts", startLine: 1, endLine: 50 },
+        exported: true,
+        language: "ts",
+      }).value.updateExplanation("This is a test", "hash123");
+
+      const dto = SymbolMapper.toDto(symbolWithDetails);
+
+      expect(dto.explanation).toBe("This is a test");
+    });
+
+    it("should have optional properties as undefined when not set", () => {
+      const dto = SymbolMapper.toDto(testSymbol);
+
+      expect(dto.docRef).toBeUndefined();
+      expect(dto.summary).toBeUndefined();
+      expect(dto.docComment).toBeUndefined();
+      expect(dto.domain).toBeUndefined();
+      expect(dto.boundedContext).toBeUndefined();
+    });
+
+    it("should include tags only when not empty", () => {
+      const dto = SymbolMapper.toDto(testSymbol);
+
+      expect(dto.tags).toBeUndefined();
+    });
+
+    it("should include implements only when not empty", () => {
+      const dto = SymbolMapper.toDto(testSymbol);
+
+      expect(dto.implements).toBeUndefined();
+    });
+
+    it("should include violations only when not empty", () => {
+      const dto = SymbolMapper.toDto(testSymbol);
+
+      expect(dto.violations).toBeUndefined();
+    });
+  });
+
+  describe("toDtoList", () => {
+    it("should convert array of symbols to DTOs", () => {
+      const symbol2 = CodeSymbol.create({
+        name: "TestFunction",
+        qualifiedName: "src.TestFunction",
+        kind: "function",
+        location: { filePath: "src/test.ts", startLine: 30, endLine: 40 },
+      }).value;
+
+      const dtos = SymbolMapper.toDtoList([testSymbol, symbol2]);
+
+      expect(dtos).toHaveLength(2);
+      expect(dtos[0].name).toBe("TestClass");
+      expect(dtos[1].name).toBe("TestFunction");
+    });
+
+    it("should handle empty array", () => {
+      const dtos = SymbolMapper.toDtoList([]);
+
+      expect(dtos).toEqual([]);
+    });
+  });
+
+  describe("toDomain", () => {
+    it("should convert raw persistence data to CodeSymbol", () => {
+      const raw = {
+        id: "test-id-123",
+        name: "PersistedClass",
+        qualified_name: "src.PersistedClass",
+        kind: "class",
+        file: "src/persisted.ts",
+        start_line: 5,
+        end_line: 15,
+        parent: null,
+        visibility: "public",
+        exported: 1,
+        language: "ts",
+        doc_ref: null,
+        summary: null,
+        doc_comment: null,
+        tags: null,
+        domain: null,
+        bounded_context: null,
+        sym_extends: null,
+        sym_implements: null,
+        uses_traits: null,
+        sym_references: null,
+        referenced_by: null,
+        layer: null,
+        metrics: null,
+        pattern: null,
+        violations: null,
+        deprecated: null,
+        since: null,
+        stability: null,
+        generated: null,
+        source: null,
+        last_modified: null,
+        signature: null,
+        explanation: null,
+        explanation_hash: null,
+      };
+
+      const symbol = SymbolMapper.toDomain(raw);
+
+      expect(symbol).toBeInstanceOf(CodeSymbol);
+      expect(symbol.name).toBe("PersistedClass");
+      expect(symbol.qualifiedName).toBe("src.PersistedClass");
+      expect(symbol.kind).toBe("class");
+      expect(symbol.file).toBe("src/persisted.ts");
+      expect(symbol.startLine).toBe(5);
+      expect(symbol.endLine).toBe(15);
+    });
+
+    it("should handle boolean conversion from integers", () => {
+      const raw = {
+        id: "test-id",
+        name: "Test",
+        kind: "class",
+        file: "test.ts",
+        start_line: 1,
+        end_line: 10,
+        exported: 1,
+        deprecated: 0,
+        generated: null,
+        visibility: null,
+        qualified_name: null,
+        parent: null,
+        language: null,
+        doc_ref: null,
+        summary: null,
+        doc_comment: null,
+        tags: null,
+        domain: null,
+        bounded_context: null,
+        sym_extends: null,
+        sym_implements: null,
+        uses_traits: null,
+        sym_references: null,
+        referenced_by: null,
+        layer: null,
+        metrics: null,
+        pattern: null,
+        violations: null,
+        since: null,
+        stability: null,
+        source: null,
+        last_modified: null,
+        signature: null,
+        explanation: null,
+        explanation_hash: null,
+      };
+
+      const symbol = SymbolMapper.toDomain(raw);
+
+      expect(symbol.exported).toBe(true);
+    });
+  });
+
+  describe("toPersistence", () => {
+    it("should convert CodeSymbol to persistence format", () => {
+      const persistence = SymbolMapper.toPersistence(testSymbol);
+
+      expect(persistence.id).toBe(testSymbol.id);
+      expect(persistence.name).toBe("TestClass");
+      expect(persistence.qualified_name).toBe("src.TestClass");
+      expect(persistence.kind).toBe("class");
+      expect(persistence.file).toBe("src/test.ts");
+      expect(persistence.start_line).toBe(10);
+      expect(persistence.end_line).toBe(20);
+      expect(persistence.parent).toBe("ParentClass");
+      expect(persistence.visibility).toBe("public");
+      expect(persistence.exported).toBe(1);
+      expect(persistence.language).toBe("ts");
+    });
+
+    it("should convert boolean to bit (1/0)", () => {
+      const symbolExported = CodeSymbol.create({
+        name: "Exported",
+        qualifiedName: "Exported",
+        kind: "class",
+        location: { filePath: "test.ts", startLine: 1, endLine: 5 },
+        exported: true,
+      }).value;
+
+      const symbolNotExported = CodeSymbol.create({
+        name: "NotExported",
+        qualifiedName: "NotExported",
+        kind: "class",
+        location: { filePath: "test.ts", startLine: 1, endLine: 5 },
+        exported: false,
+      }).value;
+
+      const persistence1 = SymbolMapper.toPersistence(symbolExported);
+      const persistence2 = SymbolMapper.toPersistence(symbolNotExported);
+
+      expect(persistence1.exported).toBe(1);
+      expect(persistence2.exported).toBe(0);
+    });
+
+    it("should handle undefined boolean as null", () => {
+      const symbolNoExported = CodeSymbol.create({
+        name: "NoExported",
+        qualifiedName: "NoExported",
+        kind: "class",
+        location: { filePath: "test.ts", startLine: 1, endLine: 5 },
+      }).value;
+
+      const persistence = SymbolMapper.toPersistence(symbolNoExported);
+
+      expect(persistence.exported).toBeNull();
+    });
+
+    it("should convert arrays to JSON when not empty", () => {
+      const symbolResult = CodeSymbol.create({
+        name: "TestClass",
+        qualifiedName: "TestClass",
+        kind: "class",
+        location: { filePath: "test.ts", startLine: 1, endLine: 5 },
+      });
+
+      const persistence = SymbolMapper.toPersistence(symbolResult.value);
+
+      // Empty arrays should be null
+      expect(persistence.tags).toBeNull();
+      expect(persistence.sym_implements).toBeNull();
+      expect(persistence.uses_traits).toBeNull();
+      expect(persistence.sym_references).toBeNull();
+      expect(persistence.referenced_by).toBeNull();
+      expect(persistence.violations).toBeNull();
+    });
+
+    it("should handle null values correctly", () => {
+      const persistence = SymbolMapper.toPersistence(testSymbol);
+
+      expect(persistence.doc_ref).toBeNull();
+      expect(persistence.summary).toBeNull();
+      expect(persistence.doc_comment).toBeNull();
+      expect(persistence.domain).toBeNull();
+      expect(persistence.bounded_context).toBeNull();
+      expect(persistence.sym_extends).toBeNull();
+      expect(persistence.layer).toBeNull();
+      expect(persistence.pattern).toBeNull();
+      expect(persistence.since).toBeNull();
+      expect(persistence.stability).toBeNull();
+      expect(persistence.source).toBeNull();
+    });
+  });
+
+  describe("round-trip conversion", () => {
+    it("should maintain data integrity through toPersistence and toDomain", () => {
+      const original = testSymbol;
+      const persistence = SymbolMapper.toPersistence(original);
+
+      // Verify persistence format
+      expect(persistence.id).toBe(original.id);
+      expect(persistence.name).toBe(original.name);
+      expect(persistence.qualified_name).toBe(original.qualifiedName);
+      expect(persistence.kind).toBe(original.kind);
+      expect(persistence.file).toBe(original.file);
+      expect(persistence.start_line).toBe(original.startLine);
+      expect(persistence.end_line).toBe(original.endLine);
+    });
+  });
+});

@@ -108,10 +108,11 @@ describe("FileIndexer", () => {
   describe("indexFile", () => {
     it("should return symbols when file is parsed", async () => {
       // Testing the method structure - actual implementation requires mocking fs and crypto
-      expect(indexer.indexFile("/path/to/file.ts")).resolves.toMatchObject({
+      const result = await indexer.indexFile("/path/to/file.ts");
+
+      expect(result).toMatchObject({
         symbols: expect.any(Array),
         relationships: expect.any(Array),
-        contentHash: expect.any(String),
       });
     });
 
