@@ -57,6 +57,7 @@ export function buildExplainSymbolPrompt(input: ExplainSymbolInput): string {
     `3. **Dependencies**: How it relates to the symbols listed above`,
     `4. **Usage**: How other code should use this symbol`,
     `5. **Gotchas**: Any non-obvious behavior, edge cases, or caveats`,
+    `**Responda em português brasileiro**`,
   );
 
   return parts.join("\n");

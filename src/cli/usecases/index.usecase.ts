@@ -64,7 +64,7 @@ export interface IndexUseCaseParams {
 }
 
 export async function indexUseCase(params: IndexUseCaseParams): Promise<void> {
-  const { rootDir = ".", fullRebuild = false } = params;
+  const { fullRebuild = false } = params;
 
   const configDir = process.cwd();
 
@@ -74,6 +74,7 @@ export async function indexUseCase(params: IndexUseCaseParams): Promise<void> {
   }
 
   const config = await loadConfig(configDir);
+  const rootDir = params.rootDir ?? config.rootDir;
   const dbPath = resolveConfigPath(params.dbPath, configDir, config.dbPath);
   const docsDir = params.docsDir || "docs";
 

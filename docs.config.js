@@ -1,5 +1,15 @@
 /** @type {import('docs-kit').Config} */
 export default {
+  // Source directory to scan when running `docs-kit index`
+  // Allows you to run `docs-kit index` without passing the path as argument
+  rootDir: "src",
+
+  // Output directories for generated content
+  output: {
+    site: "docs-site",   // used by `docs-kit build-site`
+    docs: "my-docs",     // used by `docs-kit build-docs`
+  },
+
   include: [
     "**/*.ts",
     "**/*.tsx",

@@ -1,11 +1,13 @@
 import "reflect-metadata";
 import fs from "node:fs";
 import path from "node:path";
+import { loadConfig } from "../../configLoader.js";
 import { setupContainer, resolve } from "../../di/container.js";
 import { DATABASE_TOKEN } from "../../di/tokens.js";
 import type Database from "better-sqlite3";
 import { generateDocs } from "../../site/mdGenerator.js";
 import { header, step, done, summary } from "../utils/index.js";
+import { resolveConfigPath } from "../utils/index.js";
 
 /**
  * Build docs command - Generate structured Markdown documentation
@@ -17,11 +19,12 @@ export interface BuildDocsUseCaseParams {
 }
 
 export async function buildDocsUseCase(params: BuildDocsUseCaseParams): Promise<void> {
-  const {
-    outDir = "docs-output",
-    dbPath = ".docs-kit/index.db",
-    rootDir = ".",
-  } = params;
+  const configDir = process.cwd();
+  const config = await loadConfig(configDir);
+
+  const outDir = params.outDir ?? config.output.docs;
+  const dbPath = resolveConfigPath(params.dbPath, configDir, config.dbPath);
+  const rootDir = params.rootDir ?? config.rootDir;
 
   if (!fs.existsSync(dbPath)) {
     console.error(`Error: Database not found at ${dbPath}`);
