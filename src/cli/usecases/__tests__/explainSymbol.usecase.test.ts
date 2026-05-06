@@ -20,10 +20,10 @@ jest.unstable_mockModule("../../utils/index.js", () => ({
 }));
 
 const mockBuildExplainSymbolContext = jest.fn();
-const mockGenerateExplanationHash = jest.fn();
+const mockCacheSymbolExplanation = jest.fn();
 jest.unstable_mockModule("../../../handlers/explainSymbol.js", () => ({
   buildExplainSymbolContext: mockBuildExplainSymbolContext,
-  generateExplanationHash: mockGenerateExplanationHash,
+  cacheSymbolExplanation: mockCacheSymbolExplanation,
 }));
 
 const mockReadFile = jest.fn();
@@ -94,7 +94,7 @@ describe("explainSymbolUseCase", () => {
       needsUpdate: true,
     });
 
-    mockGenerateExplanationHash.mockReturnValue("hash-123");
+    mockCacheSymbolExplanation.mockResolvedValue(undefined);
     mockReadFile.mockResolvedValue("class UserService { }");
   });
 
@@ -174,7 +174,12 @@ describe("explainSymbolUseCase", () => {
         temperature: 0.7,
       }),
     );
-    expect(mockSymbolRepo.upsert).toHaveBeenCalled();
+    expect(mockCacheSymbolExplanation).toHaveBeenCalledWith(
+      mockSymbolRepo,
+      expect.objectContaining({ id: "sym-1" }),
+      "This is the LLM explanation for UserService.",
+      expect.any(String),
+    );
     expect(mockDb.close).toHaveBeenCalled();
   });
 

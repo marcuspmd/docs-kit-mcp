@@ -3,6 +3,7 @@ import {
   initializeSchema,
   createSymbolRepository,
   createRelationshipRepository,
+  CURRENT_SCHEMA_VERSION,
 } from "../db.js";
 import type { CodeSymbol } from "../../indexer/symbol.types.js";
 import type Database from "better-sqlite3";
@@ -45,6 +46,51 @@ describe("Storage Layer", () => {
       expect(names).toContain("symbols");
       expect(names).toContain("relationships");
       expect(names).toContain("doc_mappings");
+    });
+
+    it("tracks the current schema version", () => {
+      expect(db.pragma("user_version", { simple: true })).toBe(CURRENT_SCHEMA_VERSION);
+    });
+
+    it("migrates legacy explanation and vector columns idempotently", () => {
+      const legacyDb = createDatabase({ inMemory: true });
+      try {
+        legacyDb.exec(`
+          CREATE TABLE symbols (
+            id TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            kind TEXT NOT NULL,
+            file TEXT NOT NULL,
+            start_line INTEGER NOT NULL,
+            end_line INTEGER NOT NULL
+          );
+          CREATE TABLE rag_chunks (
+            hash TEXT PRIMARY KEY,
+            content TEXT NOT NULL,
+            source TEXT NOT NULL,
+            symbol_id TEXT,
+            vector TEXT NOT NULL
+          );
+        `);
+
+        initializeSchema(legacyDb);
+        initializeSchema(legacyDb);
+
+        const symbolColumns = legacyDb.prepare("PRAGMA table_info(symbols)").all() as Array<{
+          name: string;
+        }>;
+        const ragColumns = legacyDb.prepare("PRAGMA table_info(rag_chunks)").all() as Array<{
+          name: string;
+        }>;
+
+        expect(symbolColumns.map((column) => column.name)).toEqual(
+          expect.arrayContaining(["doc_comment", "explanation", "explanation_hash"]),
+        );
+        expect(ragColumns.map((column) => column.name)).toContain("vector_blob");
+        expect(legacyDb.pragma("user_version", { simple: true })).toBe(CURRENT_SCHEMA_VERSION);
+      } finally {
+        legacyDb.close();
+      }
     });
   });
 

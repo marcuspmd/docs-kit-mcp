@@ -1,13 +1,8 @@
 import { z } from "zod";
-import * as fs from "node:fs";
-import * as path from "node:path";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerDependencies } from "../types.js";
 import { mcpSuccess, mcpError } from "../types.js";
-import {
-  buildExplainSymbolContext,
-  generateExplanationHash,
-} from "../../handlers/explainSymbol.js";
+import { buildExplainSymbolContext, cacheSymbolExplanation } from "../../handlers/explainSymbol.js";
 import { buildExplainSymbolPromptForMcp } from "../../prompts/explainSymbol.prompt.js";
 
 export const explainSymbolSchema = {
@@ -97,26 +92,7 @@ export function registerUpdateSymbolExplanationTool(
         }
 
         const sym = symbols[0];
-
-        // Generate hash for the current state
-        let sourceCode: string | undefined;
-        try {
-          const filePath = path.resolve(config.projectRoot, sym.file);
-          const fullSource = fs.readFileSync(filePath, "utf-8");
-          const lines = fullSource.split("\n").slice(sym.startLine - 1, sym.endLine);
-          sourceCode = lines.join("\n");
-        } catch {
-          /* skip */
-        }
-
-        const hash = generateExplanationHash(sym.id, sym.startLine, sym.endLine, sourceCode);
-
-        // Update symbol with explanation
-        symbolRepo.upsert({
-          ...sym,
-          explanation,
-          explanationHash: hash,
-        });
+        await cacheSymbolExplanation(symbolRepo, sym, explanation, config.projectRoot);
 
         return mcpSuccess(`✓ Explanation cached for ${symbolName}`);
       } catch (err) {

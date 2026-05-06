@@ -96,7 +96,11 @@ function extractIdentifier(node: Parser.SyntaxNode): string | null {
 /**
  * Check if node is a registration call expression
  */
-function isRegistrationCall(node: Parser.SyntaxNode): { pattern: string; method: string } | null {
+function isRegistrationCall(
+  node: Parser.SyntaxNode | null | undefined,
+): { pattern: string; method: string } | null {
+  if (!node) return null;
+
   // Must be a call_expression or similar
   if (!node.type.includes("call")) {
     return null;
@@ -206,7 +210,9 @@ export function detectDynamicRelationships(
 ): DynamicRelationship[] {
   const relationships: DynamicRelationship[] = [];
 
-  function walk(node: Parser.SyntaxNode) {
+  function walk(node: Parser.SyntaxNode | null | undefined) {
+    if (!node) return;
+
     // Check if this is a registration call
     const registration = isRegistrationCall(node);
 

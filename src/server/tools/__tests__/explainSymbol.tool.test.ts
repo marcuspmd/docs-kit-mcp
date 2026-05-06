@@ -15,11 +15,13 @@ const mockReadFileSync = jest.fn();
 // Mock Handlers and Prompts
 const mockBuildExplainSymbolContext = jest.fn();
 const mockGenerateExplanationHash = jest.fn();
+const mockCacheSymbolExplanation = jest.fn();
 const mockBuildPrompt = jest.fn();
 
 jest.unstable_mockModule("../../../handlers/explainSymbol.js", () => ({
   buildExplainSymbolContext: mockBuildExplainSymbolContext,
   generateExplanationHash: mockGenerateExplanationHash,
+  cacheSymbolExplanation: mockCacheSymbolExplanation,
 }));
 
 jest.unstable_mockModule("../../../prompts/explainSymbol.prompt.js", () => ({
@@ -172,18 +174,18 @@ describe("explainSymbol.tool", () => {
       mockFindByName.mockReturnValue([symbol]);
       mockReadFileSync.mockReturnValue("code");
       mockGenerateExplanationHash.mockReturnValue("hash123");
+      mockCacheSymbolExplanation.mockResolvedValue(undefined);
 
       const result = await updateToolCallback({
         symbol: "MySymbol",
         explanation: "New Explanation",
       });
 
-      expect(mockUpsert).toHaveBeenCalledWith(
-        expect.objectContaining({
-          id: "1",
-          explanation: "New Explanation",
-          explanationHash: "hash123",
-        }),
+      expect(mockCacheSymbolExplanation).toHaveBeenCalledWith(
+        mockDeps.symbolRepo,
+        symbol,
+        "New Explanation",
+        "/root",
       );
       expect(result.content[0].text).toContain("Explanation cached");
     });

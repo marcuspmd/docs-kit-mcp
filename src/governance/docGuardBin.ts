@@ -41,23 +41,26 @@ await setupContainer({ dbPath: values["db-path"]! });
 
 const db = resolve<Database.Database>(DATABASE_TOKEN);
 const registry = resolve<DocRegistry>(DOC_REGISTRY_TOKEN);
-await registry.rebuild(values["docs-dir"]!);
+let result;
+try {
+  await registry.rebuild(values["docs-dir"]!);
 
-const result = await runDocGuard(
-  {
-    repoPath: process.cwd(),
-    base: values.base!,
-    head: values.head,
-    strict: values.strict,
-  },
-  {
-    analyzeChanges,
-    registry,
-    getChangedFiles,
-  },
-);
-
-db.close();
+  result = await runDocGuard(
+    {
+      repoPath: process.cwd(),
+      base: values.base!,
+      head: values.head,
+      strict: values.strict,
+    },
+    {
+      analyzeChanges,
+      registry,
+      getChangedFiles,
+    },
+  );
+} finally {
+  db.close();
+}
 
 console.log(formatResult(result));
 

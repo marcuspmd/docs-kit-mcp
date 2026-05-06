@@ -41,18 +41,20 @@ export async function buildDocsUseCase(params: BuildDocsUseCaseParams): Promise<
 
   step("Generating Markdown pages");
   const db = resolve<Database.Database>(DATABASE_TOKEN);
-  const result = generateDocs({ db, outDir, rootDir });
-  done();
+  try {
+    const result = generateDocs({ db, outDir, rootDir });
+    done();
 
-  db.close();
-
-  header("Docs Summary");
-  summary([
-    ["Symbol pages", result.symbolPages],
-    ["File pages", result.filePages],
-    ["Total files", result.totalFiles],
-    ["Output", path.resolve(outDir)],
-  ]);
+    header("Docs Summary");
+    summary([
+      ["Symbol pages", result.symbolPages],
+      ["File pages", result.filePages],
+      ["Total files", result.totalFiles],
+      ["Output", path.resolve(outDir)],
+    ]);
+  } finally {
+    db.close();
+  }
 
   console.log(`\n  Open ${outDir}/README.md to browse the documentation.\n`);
 }

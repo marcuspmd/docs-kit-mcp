@@ -20,6 +20,7 @@ import {
 } from "../tokens.js";
 
 const mockLoadConfig = jest.fn<(workspaceRoot: string) => Promise<ResolvedConfig>>();
+const mockCreateDatabase = jest.fn();
 const mockInitializeSchema = jest.fn();
 const mockCreateSymbolRepository = jest.fn();
 const mockCreateRelationshipRepository = jest.fn();
@@ -38,17 +39,13 @@ const mockCreateCodeExampleValidator = jest.fn();
 const mockCreateLlmProvider = jest.fn();
 
 const mockDb = { name: "db" };
-const MockDatabase = jest.fn(() => mockDb);
-
-jest.unstable_mockModule("better-sqlite3", () => ({
-  default: MockDatabase,
-}));
 
 jest.unstable_mockModule("../../configLoader.js", () => ({
   loadConfig: mockLoadConfig,
 }));
 
 jest.unstable_mockModule("../../storage/db.js", () => ({
+  createDatabase: mockCreateDatabase,
   initializeSchema: mockInitializeSchema,
   createSymbolRepository: mockCreateSymbolRepository,
   createRelationshipRepository: mockCreateRelationshipRepository,
@@ -157,6 +154,7 @@ describe("setupContainer", () => {
   beforeEach(() => {
     jest.clearAllMocks();
 
+    mockCreateDatabase.mockReturnValue(mockDb);
     mockCreateSymbolRepository.mockReturnValue(mockSymbolRepo);
     mockCreateRelationshipRepository.mockReturnValue(mockRelationshipRepo);
     mockCreateFileHashRepository.mockReturnValue(mockFileHashRepo);
@@ -185,7 +183,7 @@ describe("setupContainer", () => {
 
     // Assert
     expect(mockLoadConfig).toHaveBeenCalledWith("/repo");
-    expect(MockDatabase).toHaveBeenCalledWith("/custom/db.sqlite");
+    expect(mockCreateDatabase).toHaveBeenCalledWith({ path: "/custom/db.sqlite" });
     expect(mockInitializeSchema).toHaveBeenCalledWith(mockDb);
 
     expect(resolve(CONFIG_TOKEN)).toBe(config);

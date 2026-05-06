@@ -32,22 +32,24 @@ const { values } = parseArgs({
 await setupContainer({ dbPath: values["db-path"]! });
 
 const db = resolve<Database.Database>(DATABASE_TOKEN);
-
-const result = await generateProjectStatus(
-  {
-    docsDir: values["docs-dir"],
-  },
-  {
-    symbolRepo: resolve<SymbolRepository>(SYMBOL_REPO_TOKEN),
-    relRepo: resolve<RelationshipRepository>(RELATIONSHIP_REPO_TOKEN),
-    registry: resolve<DocRegistry>(DOC_REGISTRY_TOKEN),
-    patternAnalyzer: resolve<PatternAnalyzer>(PATTERN_ANALYZER_TOKEN),
-    archGuard: resolve<ArchGuard>(ARCH_GUARD_TOKEN),
-    reaper: resolve<Reaper>(REAPER_TOKEN),
-    graph: resolve<KnowledgeGraph>(KNOWLEDGE_GRAPH_TOKEN),
-  },
-);
-
-db.close();
+let result;
+try {
+  result = await generateProjectStatus(
+    {
+      docsDir: values["docs-dir"],
+    },
+    {
+      symbolRepo: resolve<SymbolRepository>(SYMBOL_REPO_TOKEN),
+      relRepo: resolve<RelationshipRepository>(RELATIONSHIP_REPO_TOKEN),
+      registry: resolve<DocRegistry>(DOC_REGISTRY_TOKEN),
+      patternAnalyzer: resolve<PatternAnalyzer>(PATTERN_ANALYZER_TOKEN),
+      archGuard: resolve<ArchGuard>(ARCH_GUARD_TOKEN),
+      reaper: resolve<Reaper>(REAPER_TOKEN),
+      graph: resolve<KnowledgeGraph>(KNOWLEDGE_GRAPH_TOKEN),
+    },
+  );
+} finally {
+  db.close();
+}
 
 console.log(formatProjectStatus(result));

@@ -40,6 +40,35 @@ export function generateExplanationHash(
   return createHash("sha256").update(content).digest("hex").slice(0, 16);
 }
 
+export async function readSymbolSourceCode(
+  projectRoot: string,
+  symbol: CodeSymbol,
+): Promise<string | undefined> {
+  try {
+    const filePath = resolve(projectRoot, symbol.file);
+    const fullSource = await readFile(filePath, "utf-8");
+    const lines = fullSource.split("\n").slice(symbol.startLine - 1, symbol.endLine);
+    return lines.join("\n");
+  } catch {
+    return undefined;
+  }
+}
+
+export async function cacheSymbolExplanation(
+  symbolRepo: SymbolRepository,
+  symbol: CodeSymbol,
+  explanation: string,
+  projectRoot: string,
+): Promise<void> {
+  const sourceCode = await readSymbolSourceCode(projectRoot, symbol);
+  const hash = generateExplanationHash(symbol.id, symbol.startLine, symbol.endLine, sourceCode);
+  symbolRepo.upsert({
+    ...symbol,
+    explanation,
+    explanationHash: hash,
+  });
+}
+
 /**
  * Build explain-symbol prompt from index, docs, and graph. Reusable by MCP server and CLI.
  */
@@ -72,14 +101,7 @@ export async function buildExplainSymbolContext(
   const sym = symbols[0];
 
   if (sym) {
-    try {
-      const filePath = resolve(projectRoot, sym.file);
-      const fullSource = await readFile(filePath, "utf-8");
-      const lines = fullSource.split("\n").slice(sym.startLine - 1, sym.endLine);
-      sourceCode = lines.join("\n");
-    } catch {
-      /* skip */
-    }
+    sourceCode = await readSymbolSourceCode(projectRoot, sym);
 
     const depRels = graph.getDependencies(sym.id);
     dependencies = symbolRepo.findByIds(depRels.map((r) => r.targetId));

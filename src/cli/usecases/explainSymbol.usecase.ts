@@ -12,12 +12,7 @@ import type { DocRegistry } from "../../docs/docRegistry.js";
 import type { KnowledgeGraph } from "../../knowledge/graph.js";
 import type { LlmProvider } from "../../llm/provider.js";
 import type Database from "better-sqlite3";
-import { readFile } from "node:fs/promises";
-import { resolve as resolvePath } from "node:path";
-import {
-  buildExplainSymbolContext,
-  generateExplanationHash,
-} from "../../handlers/explainSymbol.js";
+import { buildExplainSymbolContext, cacheSymbolExplanation } from "../../handlers/explainSymbol.js";
 import { resolveConfigPath } from "../utils/index.js";
 import { loadConfig } from "../../configLoader.js";
 
@@ -103,22 +98,8 @@ export async function explainSymbolUseCase(params: ExplainSymbolUseCaseParams): 
         const sym = symbols[0];
         if (sym) {
           console.log("💾 explain-symbol: salvando explicação em cache...");
-          let sourceCode: string | undefined;
           try {
-            const filePath = resolvePath(configDir, sym.file);
-            const fullSource = await readFile(filePath, "utf-8");
-            const lines = fullSource.split("\n").slice(sym.startLine - 1, sym.endLine);
-            sourceCode = lines.join("\n");
-          } catch {
-            /* ignore source read errors */
-          }
-          try {
-            const hash = generateExplanationHash(sym.id, sym.startLine, sym.endLine, sourceCode);
-            symbolRepo.upsert({
-              ...sym,
-              explanation,
-              explanationHash: hash,
-            });
+            await cacheSymbolExplanation(symbolRepo, sym, explanation, configDir);
             console.log("✅ explain-symbol: cache atualizado.");
           } catch {
             /* ignore cache update errors */

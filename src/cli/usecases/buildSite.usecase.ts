@@ -42,18 +42,20 @@ export async function buildSiteUseCase(params: BuildSiteUseCaseParams): Promise<
 
   step("Generating HTML pages");
   const db = resolve<Database.Database>(DATABASE_TOKEN);
-  const result = generateSite({ db, outDir, rootDir });
-  done();
+  try {
+    const result = generateSite({ db, outDir, rootDir });
+    done();
 
-  db.close();
-
-  header("Site Summary");
-  summary([
-    ["Symbol pages", result.symbolPages],
-    ["File pages", result.filePages],
-    ["Total files", result.totalFiles],
-    ["Output", path.resolve(outDir)],
-  ]);
+    header("Site Summary");
+    summary([
+      ["Symbol pages", result.symbolPages],
+      ["File pages", result.filePages],
+      ["Total files", result.totalFiles],
+      ["Output", path.resolve(outDir)],
+    ]);
+  } finally {
+    db.close();
+  }
 
   console.log(`\n  Open ${outDir}/index.html in your browser.\n`);
 }

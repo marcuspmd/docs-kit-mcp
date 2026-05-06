@@ -1,7 +1,7 @@
 import "reflect-metadata";
 import { container } from "tsyringe";
-import Database from "better-sqlite3";
 import { loadConfig } from "../configLoader.js";
+import { createDatabase } from "../storage/db.js";
 import { initializeSchema } from "../storage/db.js";
 import { createSymbolRepository } from "../storage/db.js";
 import { createRelationshipRepository } from "../storage/db.js";
@@ -77,7 +77,7 @@ export async function setupContainer(
 
   const config = await loadConfig(cwd);
   const dbPath = opts.dbPath ?? config.dbPath;
-  const db = new Database(dbPath);
+  const db = createDatabase({ path: dbPath });
   initializeSchema(db);
 
   container.register(CONFIG_TOKEN, { useValue: config });
