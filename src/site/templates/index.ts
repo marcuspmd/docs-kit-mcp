@@ -34,6 +34,7 @@ export { renderMarkdownWrapper, renderDocsPage } from "./pages/docs.js";
 export { renderDeprecatedPage } from "./pages/deprecated.js";
 export { renderGovernancePage } from "./pages/governance.js";
 export { buildSearchIndex } from "./pages/search.js";
+export { renderInspectorPage } from "./pages/inspector.js";
 
 // Re-export fileSlug from shared
 export { fileSlug } from "../shared.js";

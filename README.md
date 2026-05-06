@@ -2,340 +2,265 @@
 
 living connection between code & knowledge
 
-**docs-kit** é um agente inteligente de documentação (via MCP) para repositórios de código. Ele analisa mudanças no código, mapeia símbolos para documentos Markdown, gera diagramas (Mermaid), mantém um registro de documentação e fornece uma CLI (`docs-guard`) para validar que PRs atualizam a documentação quando necessário.
+**docs-kit** é um agente inteligente de documentação (via MCP) para repositórios de código. Ele usa AST (Tree-sitter) para indexar símbolos, mapeia código para docs Markdown, gera diagramas, mantém um knowledge graph em SQLite e expõe 19 ferramentas MCP para Copilot/Claude. Inclui também um **Context Inspector** interativo para visualizar exatamente o que o agente envia para a IA.
 
 ---
 
-## 🔎 O que é o sistema
+## O que é o sistema
 
-- Analisa diferenças de código entre branches/commits e determina se mudanças exigem atualização de documentação.
-- Mantém um `DocRegistry` (um banco SQLite) que mapeia símbolos (classes, funções, interfaces) para arquivos de documentação `.md`.
-- Exibe avisos/erros quando mudanças exigem docs atualizados (útil como check de CI).
-- Fornece ferramentas auxiliares: indexador, analisador de mudanças, gerador de Mermaid, verificadores de arquitetura, e integração com RAG/knowledge graph.
-
----
-
-## ✅ Funcionalidades principais
-
-- Indexação de símbolos (TypeScript/JS/Python via Tree-sitter)
-- Análise de impacto de mudanças (quem precisa ser documentado)
-- `docs-guard` CLI para auditar PRs
-- Gerador de diagramas Mermaid e ferramentas de atualização de seção
-- Base persistente em SQLite (`.docs-kit/registry.db`)
+- **Indexação semântica** — extrai símbolos (classes, funções, interfaces, DTOs…) de TypeScript/JS/Python/Go/PHP/Dart via Tree-sitter
+- **Knowledge graph** — rastreia dependências entre símbolos e mapeia cada símbolo para seu arquivo de doc `.md`
+- **19 ferramentas MCP** — disponíveis em Copilot/Claude: `getRelevantContext`, `explainSymbol`, `impactAnalysis`, `smartCodeReview`, `generateDocs`, e mais
+- **Docs-Guard** — gate de CI/CD que falha o PR se símbolos foram alterados sem atualizar a documentação
+- **Context Inspector** — preview interativo do contexto exato enviado para a IA, com métricas de tokens, latência e cobertura de docs
 
 ---
 
-## 🛠 Requisitos
+## Funcionalidades principais
+
+- Indexação de símbolos via Tree-sitter (suporte multi-linguagem)
+- Análise de impacto: "quem quebra se eu mudar X?"
+- `docs-guard` CLI para auditar PRs em CI/CD
+- Site estático com dashboard, gráficos de relacionamento, padrões detectados
+- **Context Inspector** — nova página interativa no site para inspecionar qualidade do contexto
+- Base persistente em SQLite (`.docs-kit/index.db`)
+
+---
+
+## Requisitos
 
 - Node.js >= 18
 - npm
 
 ---
 
-## Começando (Quick Start)
-
-Instale dependências:
+## Quick Start
 
 ```bash
+# Instalar dependências
 npm install
-```
 
-Executar em modo de desenvolvimento (server):
-
-```bash
-npm run dev
-```
-
-Build (compila TS para `dist/`):
-
-```bash
+# Compilar
 npm run build
+
+# Indexar o repositório
+docs-kit index
+
+# Gerar site estático
+docs-kit build-site --out docs-site
+
+# Abrir o inspector interativo (em outro terminal)
+docs-kit serve --port 7337
+# Abra docs-site/inspector.html no browser
 ```
 
-Executar testes:
+Scripts disponíveis:
 
 ```bash
-npm run test
-npm run test:coverage        # Com relatório de cobertura
-npm run check:deps           # Verificar dependências instaladas
-```
-
-> **Nota sobre Testes**: O projeto suporta validação de código em múltiplas linguagens (TypeScript, JavaScript, Python, Go, PHP, Dart, Flutter, Bash). Para testes completos, consulte [CI Testing Setup](docs/examples/ci-testing-setup.md).
-
-Formatar / checar formatação:
-
-```bash
-npm run format
-npm run format:check
+npm run build          # Compila TypeScript para dist/
+npm run test           # Executa testes
+npm run test:coverage  # Testes com relatório de cobertura
+npm run format         # Formata código com Prettier
+npm run check:deps     # Verifica dependências instaladas
 ```
 
 ---
 
-## 🚀 CI/CD e Testes
+## Comandos CLI (`docs-kit`)
 
-O projeto está configurado com GitHub Actions para testes e deploy automático:
+Após `npm run build`, use `docs-kit` (se instalado/linkado) ou `node dist/cli.js`:
 
-### Workflows Disponíveis
+### SETUP
 
-1. **Test Workflow** (`.github/workflows/test.yml`)
-   - Executado em PRs e pushs
-   - Instala todas as dependências de linguagem
-   - Executa testes com cobertura
-   - Envia relatórios para Codecov
+| Comando               | Descrição                                |
+| --------------------- | ---------------------------------------- |
+| `docs-kit init [dir]` | Cria `docs.config.js` com valores padrão |
 
-2. **Deploy Workflow** (`.github/workflows/deploy.yml`)
-   - Executado em pushs para `master`
-   - Executa testes completos
-   - Gera documentação e site estático
-   - Deploy automático para GitHub Pages
+### INDEX
 
-### Validadores de Código
+| Comando                | Opções                     | Descrição                                        |
+| ---------------------- | -------------------------- | ------------------------------------------------ |
+| `docs-kit index [dir]` | `--db`, `--docs`, `--full` | Indexa repositório: símbolos, relações, métricas |
 
-O projeto inclui validadores para múltiplas linguagens:
+### BUILD
 
-- ✅ **Bash/Shell** - Validação de sintaxe shell
-- ✅ **TypeScript/JavaScript** - Compilação e validação TS/JS
-- ✅ **Python** - Validação de sintaxe Python
-- ✅ **Go** - Compilação e validação Go
-- ✅ **PHP** - Validação PHP + PHP-CS-Fixer
-- ✅ **Dart/Flutter** - Análise Dart/Flutter
+| Comando               | Opções                    | Descrição                                                       |
+| --------------------- | ------------------------- | --------------------------------------------------------------- |
+| `docs-kit build-site` | `--out`, `--db`, `--root` | Gera site HTML estático com dashboard, símbolo pages, inspector |
+| `docs-kit build-docs` | `--out`, `--db`, `--root` | Gera documentação estruturada em Markdown                       |
 
-**Graceful Degradation**: Os validadores funcionam mesmo sem as ferramentas instaladas (assumem código válido), mas no CI todas as ferramentas são instaladas para validação completa.
+### ANALYZE
 
-### Setup Local
+| Comando                             | Opções                                | Descrição                                |
+| ----------------------------------- | ------------------------------------- | ---------------------------------------- |
+| `docs-kit explain-symbol <symbol>`  | `--docs`, `--db`, `--cwd`, `--no-llm` | Explica um símbolo (código + docs + LLM) |
+| `docs-kit impact-analysis <symbol>` | `--max-depth`, `--db`, `--docs`       | O que quebra se este símbolo mudar       |
+| `docs-kit analyze-patterns`         | `--db`                                | Detecta padrões e violações SOLID        |
 
-Para desenvolvimento local com validação completa:
+### INSPECT
 
-```bash
-# Verificar dependências instaladas
-npm run check:deps
+| Comando                     | Opções                                  | Descrição                                                                          |
+| --------------------------- | --------------------------------------- | ---------------------------------------------------------------------------------- |
+| `docs-kit inspect <symbol>` | `--file`, `--db`, `--docs`, `--verbose` | Mostra métricas de qualidade do contexto no terminal (tokens, latência, cobertura) |
 
-# Instalar dependências faltantes
-# Consulte docs/examples/ci-testing-setup.md para instruções por plataforma
-```
+### SERVER
 
-Mais informações:
-- [CI Testing Setup](docs/examples/ci-testing-setup.md) - Guia completo de instalação
-- [CI Improvements](docs/examples/ci-improvements.md) - Detalhes sobre melhorias implementadas
+| Comando          | Opções                          | Descrição                                         |
+| ---------------- | ------------------------------- | ------------------------------------------------- |
+| `docs-kit serve` | `--port 7337`, `--db`, `--docs` | Inicia API HTTP local para o inspector interativo |
+
+> Banco padrão: `.docs-kit/index.db`. Docs padrão: `docs/`.
 
 ---
 
-## 📋 Comandos CLI (`docs-kit`)
+## Context Inspector
 
-Todos os comandos da CLI principal (após `npm run build`, use `docs-kit` ou `node dist/cli.js`):
+O **Context Inspector** permite visualizar exatamente o que o docs-kit envia para a IA — tokens estimados, latência, e quais partes do contexto (docs, source, relacionamentos) estão presentes.
 
-| Comando | Descrição | Opções principais |
-|---------|------------|-------------------|
-| `docs-kit init [dir]` | Cria `docs.config.js` com valores padrão | — |
-| `docs-kit index [dir]` | Indexa repositório (símbolos, relações, métricas) | `--db`, `--docs`, `--full` |
-| `docs-kit build-site` | Gera site HTML estático da documentação | `--out`, `--db`, `--root` |
-| `docs-kit build-docs` | Gera documentação em Markdown a partir do índice | `--out`, `--db`, `--root` |
-| `docs-kit generate-repo-docs [repo-dir] [docs-dir]` | Gera stubs de docs para símbolos não documentados | — |
-| `docs-kit project-status` | Relatório de status (cobertura, padrões, violações) | `--db`, `--docs` |
-| `docs-kit smart-code-review` | Revisão de código com múltiplas análises | `--db`, `--docs`, `--no-examples` |
-| `docs-kit dead-code` | Detecta código morto e docs órfãs no banco | `--db`, `--docs` |
-| `docs-kit --help` | Exibe ajuda | — |
+### Via browser (interativo)
 
-Banco padrão: `--db` usa `.docs-kit/index.db` (index/build-*) ou `.docs-kit/registry.db` (registry/guard). Diretório de docs padrão: `--docs docs`.
+1. Gere o site: `docs-kit build-site --out docs-site`
+2. Inicie o servidor local: `docs-kit serve --port 7337`
+3. Abra `docs-site/inspector.html` no browser
 
----
+A página exibe:
 
-## 📦 CLI: `docs-guard`
+- **Badge de status** — verde quando o servidor está rodando, vermelho com instrução de como iniciar
+- **Busca com autocomplete** — digita um símbolo e obtém sugestões em tempo real
+- **Métricas**: tokens estimados, total de chars, latência em ms, found: sim/não
+- **Badges de cobertura**: docs ✓/✗ · source ✓/✗ · relationships ✓/✗
+- **Context completo** — exatamente o texto enviado para a IA, com botão "Copy"
+- **Histórico** — últimas 5 buscas salvas no `localStorage`
 
-A ferramenta principal para auditoria de documentação. Ela reconstrói o `DocRegistry` com base na pasta `docs` e analisa as mudanças entre `base` e `head`.
-
-Exemplo (após `npm run build`):
+### Via terminal
 
 ```bash
-# build e roda o binário diretamente
-npm run build
-node dist/governance/docGuardBin.js --base main --head feature-branch
+# Contexto completo de um símbolo
+docs-kit inspect buildRelevantContext
+
+# Saída:
+# Symbol:  buildRelevantContext
+# Found:   yes
+# ---
+# Tokens:  ~847   Chars: 3,388   Elapsed: 12ms
+# Docs: ✓   Source: ✓   Relationships: ✓
+# --- Context Preview ---
+# ...
+
+# Output completo
+docs-kit inspect buildRelevantContext --verbose
+
+# Por arquivo
+docs-kit inspect --file src/knowledge/contextBuilder.ts
 ```
 
-Opções úteis:
+### API HTTP (para integração)
 
-- `--base` (string, default: `main`) — branch/base para comparar
-- `--head` (string) — branch/commit head (padrão: `HEAD`)
-- `--strict` (boolean, default: true) — falhar (exit code != 0) se houver violações
-- `--db-path` (string, default: `.docs-kit/registry.db`) — localização do banco SQLite
-- `--docs-dir` (string, default: `docs`) — diretório de documentação
-
-Observação: se a execução terminar com exit code `1`, significa que houve mudanças que exigiam docs e não foram cobertas.
-
-Se preferir usar o bin exposado, você pode instalar/ligar o pacote localmente:
+Quando `docs-kit serve` está rodando:
 
 ```bash
-# instala globalmente (opcional) ou usar `npm link`
-npm link
-# então
-docs-guard --base main --head feature-branch
-```
+# Status
+curl http://localhost:7337/api/health
 
----
+# Contexto de um símbolo
+curl "http://localhost:7337/api/context?symbol=buildRelevantContext&mode=compact"
+# → { found, text, tokenEstimate, charCount, elapsedMs, hasDocs, hasSource, hasRelationships }
 
-## Exemplo de uso programático (TypeScript)
-
-```ts
-import Database from "better-sqlite3";
-import { runDocGuard } from "./dist/governance/docGuardCli.js";
-import { createDocRegistry } from "./dist/docs/docRegistry.js";
-import { analyzeChanges } from "./dist/analyzer/changeAnalyzer.js";
-
-const db = new Database('.docs-kit/registry.db');
-const registry = createDocRegistry(db);
-await registry.rebuild('docs');
-
-const result = await runDocGuard({ repoPath: process.cwd(), base: 'main' }, {
-  analyzeChanges,
-  registry,
-  getChangedFiles: async () => [], // implementa conforme necessidade
-});
-
-console.log(result);
+# Busca de símbolos
+curl "http://localhost:7337/api/symbols/search?q=Registry&limit=10"
 ```
 
 ---
 
-## 🧑‍💻 Exemplos de Uso — CLI, Indexação e Integração MCP
+## Ferramentas MCP (Copilot / Claude)
 
-### 1. Indexação manual dos símbolos (rebuild do registro)
-
-```ts
-import Database from "better-sqlite3";
-import { createDocRegistry } from "./dist/docs/docRegistry.js";
-
-const db = new Database('.docs-kit/registry.db');
-const registry = createDocRegistry(db);
-await registry.rebuild('docs');
-// O registro agora está sincronizado com os arquivos Markdown.
-```
-
-### 2. Consulta de símbolos/documentos
-
-```ts
-const docs = await registry.findDocBySymbol("OrderService.createOrder");
-// → [{ symbolName: "OrderService.createOrder", docPath: "domain/orders.md" }]
-
-const symbols = await registry.findSymbolsByDoc("domain/orders.md");
-// → ["OrderService", "OrderService.createOrder", "OrderService.cancelOrder"]
-```
-
-### 3. Uso via CLI (docs-guard)
-
-Auditoria de documentação em CI/CD ou local:
-
-```bash
-# Após build
-npm run build
-node dist/governance/docGuardBin.js --base main --head feature-branch
-
-# Ou via npx (se instalado globalmente ou linkado)
-npx docs-guard --base origin/main
-# Saída típica:
-# docs-guard: 2 symbol(s) changed without doc updates:
-#   - OrderService.createOrder (src/services/order.ts): Linked doc was not updated in this PR
-#   - PaymentGateway (src/services/payment.ts): No doc linked to this symbol
-# exit code 1
-```
-
-Opções principais:
-- `--base` (branch base, default: main)
-- `--head` (branch/commit head, default: HEAD)
-- `--strict` (fail on violation, default: true)
-- `--db-path` (caminho do banco, default: .docs-kit/registry.db)
-- `--docs-dir` (diretório de docs, default: docs)
-
-### 4. Integração com MCP (VS Code, Copilot, automação)
-
-O agente pode ser exposto como servidor MCP para integração com IDEs e automações:
-
-#### a) Rodando o servidor MCP
+O servidor MCP expõe **19 ferramentas** acessíveis via Copilot ou Claude. Inicie o servidor:
 
 ```bash
 npm run build
 node dist/server.js &
-# Ou conforme mcp.json:
-# node dist/server.js
+# ou configure via mcp.json
 ```
 
-#### b) Exemplos de comandos MCP (VS Code/Copilot ou automação)
+Principais ferramentas:
 
-No VS Code (via extensão MCP ou Copilot):
+| Ferramenta                | Descrição                                                                                                                                                                |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `getRelevantContext`      | Contexto completo para um símbolo ou arquivo (combina index, graph, docs, source)                                                                                        |
+| `explainSymbol`           | Explica um símbolo em linguagem natural (LLM)                                                                                                                            |
+| `impactAnalysis`          | Analisa o impacto de mudar um símbolo                                                                                                                                    |
+| `generateDocs`            | Atualiza seções de docs para símbolos afetados por mudanças git                                                                                                          |
+| `smartCodeReview`         | Revisão de código com múltiplas perspectivas                                                                                                                             |
+| `scanFile`                | Indexa um arquivo e cria docs para símbolos não documentados                                                                                                             |
+| `analyzePatterns`         | Detecta padrões de design e violações SOLID                                                                                                                              |
+| `askKnowledgeBase`        | Q&A sobre código + docs (RAG + LLM)                                                                                                                                      |
+| `buildTraceabilityMatrix` | Rastreabilidade requisito → código                                                                                                                                       |
+| `searchSymbols`           | Busca de símbolos por nome/padrão                                                                                                                                        |
+| `getFileOutline`          | Estrutura/outline de um arquivo                                                                                                                                          |
+| …e mais                   | `generateMermaid`, `createOnboarding`, `describeInBusinessTerms`, `validateExamples`, `projectStatus`, `generateEventFlow`, `scanForDeadCode`, `updateSymbolExplanation` |
 
-```
-@docs-kit generateDocs --base main [--dryRun true]
-# → "Updated 3 doc sections across 2 files"
-# Recomendado: use dryRun: true para revisar antes de aplicar; não commitar direto.
+---
 
-@docs-kit explainSymbol symbol=OrderService.createOrder
-# → "OrderService.createOrder cria um novo pedido... [resumo do código + doc]"
+## CLI: `docs-guard`
 
-@docs-kit generateMermaid symbols=OrderService,PaymentService type=classDiagram
-# → (retorna diagrama Mermaid)
-
-@docs-kit projectStatus
-# → Comprehensive project status report with coverage, patterns, violations, etc.
-```
-
-#### c) Exemplos de automação/pipeline
-
-No CI/CD:
+Gate de CI/CD que falha o build se símbolos foram alterados sem atualizar a documentação correspondente.
 
 ```bash
-npx docs-guard --base origin/main
-# Falha se houver símbolos alterados sem doc correspondente
+npm run build
+node dist/governance/docGuardBin.js --base main --head feature-branch
+
+# Ou via npm link
+npm link
+docs-guard --base main --head feature-branch
+```
+
+Opções:
+
+| Flag         | Padrão                  | Descrição                        |
+| ------------ | ----------------------- | -------------------------------- |
+| `--base`     | `main`                  | Branch/commit base para comparar |
+| `--head`     | `HEAD`                  | Branch/commit head               |
+| `--strict`   | `true`                  | Exit code 1 se houver violações  |
+| `--db-path`  | `.docs-kit/registry.db` | Banco SQLite                     |
+| `--docs-dir` | `docs`                  | Diretório de documentação        |
+
+Saída típica quando há violações:
+
+```
+docs-guard: 2 symbol(s) changed without doc updates:
+  - OrderService.createOrder (src/services/order.ts): Linked doc was not updated
+  - PaymentGateway (src/services/payment.ts): No doc linked to this symbol
+exit code 1
 ```
 
 ---
 
-## 🔗 Referências rápidas
+## Estrutura do projeto
 
-- [docs/tasks/07-docs-registry.done.md](docs/tasks/07-docs-registry.done.md) — exemplos de uso do DocRegistry
-- [docs/tasks/09-docs-guard-cli.done.md](docs/tasks/09-docs-guard-cli.done.md) — exemplos de uso CLI
-- [docs/tasks/10-mcp-server.done.md](docs/tasks/10-mcp-server.done.md) — exemplos de integração MCP
+```
+src/
+├── cli.ts              # Entrypoint da CLI (9 comandos)
+├── server.ts           # Entrypoint do servidor MCP
+├── analyzer/           # Git diff + AST diff → ChangeImpact[]
+├── indexer/            # Tree-sitter: extração de símbolos e métricas
+├── docs/               # DocRegistry, frontmatter parser, validadores de código
+├── knowledge/          # Knowledge graph, contextBuilder (getRelevantContext)
+├── governance/         # docs-guard CLI, arch-guard, reaper
+├── llm/                # Provider abstraction (OpenAI, Claude, Ollama, Gemini)
+├── server/             # MCP tools (19) + HTTP API (serve)
+│   ├── http.ts         # API HTTP para o inspector (node:http nativo)
+│   └── tools/          # Um arquivo por ferramenta MCP
+├── site/               # Gerador de site estático (HTML + inspector.html)
+└── storage/            # SQLite: símbolos, relacionamentos, registry
+docs/                   # Documentação do projeto
+.docs-kit/              # Banco SQLite gerado (index.db, registry.db)
+```
 
 ---
 
----
+## docs-config.json
 
-## Estrutura do projeto (resumo)
-
-- `src/` — código-fonte (indexer, analyzer, docs, governance, server, etc.)
-- `docs/` — documentação do projeto (onde `DocRegistry` aponta)
-- `tests/` — testes automatizados
-- `schema.sql` — esquema inicial do banco
-
----
-
-## Contribuindo
-
-1. Abra uma issue descrevendo a proposta
-2. Crie uma branch de feature
-3. Adicione/atualize testes e rode `npm run test`
-4. Formate com `npm run format` e submeta um pull request
-
-Para lista completa de comandos CLI, veja a seção [Comandos CLI](#-comandos-cli-docs-kit) acima.
-
-
-   docs-kit init-arch-guard --lang ts
-   # Copie o snippet gerado e cole no docs.config.js
-   docs-kit index
-   docs-kit build-site
-
-### docs-config.json (página Docs do site)
-
-O `docs-config.json` é procurado **sempre na raiz de onde você roda o comando** (`process.cwd()`). O argumento do comando (ex.: `docs-kit index src`) não altera onde o config é procurado: coloque o arquivo na raiz do projeto (não dentro de `src/`). Ele lista documentos Markdown que aparecem na página **Docs** do site, com **nome**, **título** e **categoria**, e navegação na lateral direita.
-
-- **path**: caminho do doc no site (ex.: `docs/examples/example.md`). Pode ter `../` no início; será normalizado (ex.: `../docs/examples/foo.md` vira `docs/examples/foo.md`). O gerador procura o arquivo em: raiz do projeto (cwd), depois `cwd/docs/<path>`, depois `--root/<path>` e `--root/docs/<path>`.
-- **title**: título exibido no índice e na navegação.
-- **name**: nome curto (opcional).
-- **category**: agrupa docs na lista e na sidebar (ex.: `domain`, `api`).
-- **module** (opcional): tag para agrupar vários docs no mesmo módulo; aparece como badge na lista e na seção "By module" da sidebar e do índice.
-- **prev** (opcional): path do doc anterior (para navegação sequencial). Se preenchido, aparece "← Previous" na sidebar e no rodapé da página do doc.
-- **next** (opcional): path do doc seguinte (para navegação sequencial). Se preenchido, aparece "Next →" na sidebar e no rodapé da página do doc.
-- **sourcePath** (opcional): se o arquivo estiver em outro lugar (outro repositório ou path), use `sourcePath`. Se começar com `../`, é resolvido em relação ao diretório onde está o `docs-config.json`; caso contrário, em relação à raiz do projeto (e a `--root`). O conteúdo é copiado para `out/<path>`.
-
-Exemplo (copie para `docs-config.json` e ajuste):
+Lista os documentos Markdown que aparecem na página **Docs** do site. Coloque na raiz do projeto (não dentro de `src/`):
 
 ```json
 {
@@ -345,25 +270,35 @@ Exemplo (copie para `docs-config.json` e ajuste):
       "title": "Arch Guard Rules",
       "name": "arch-guard-rules",
       "category": "domain"
-    },
-    {
-      "path": "docs/domain/other-doc.md",
-      "title": "Outro Doc",
-      "category": "domain",
-      "sourcePath": "../outro-repo/docs/other-doc.md"
     }
   ]
 }
 ```
 
-Os docs referenciados por símbolos (`doc_ref`) continuam aparecendo; entradas do config são mescladas (e podem definir título/categoria para esses paths).
+Campos disponíveis:
+
+| Campo           | Descrição                                               |
+| --------------- | ------------------------------------------------------- |
+| `path`          | Caminho do doc no site (ex: `docs/examples/example.md`) |
+| `title`         | Título exibido no índice e navegação                    |
+| `name`          | Nome curto (opcional)                                   |
+| `category`      | Agrupa docs na lista (ex: `domain`, `api`)              |
+| `module`        | Tag para agrupar vários docs no mesmo módulo            |
+| `prev` / `next` | Navegação sequencial entre docs                         |
+| `sourcePath`    | Se o arquivo estiver em outro caminho ou repositório    |
+
+---
+
+## Contribuindo
+
+1. Abra uma issue descrevendo a proposta
+2. Crie uma branch de feature
+3. Adicione/atualize testes: `npm run test`
+4. Formate: `npm run format`
+5. Submeta um pull request
 
 ---
 
 ## Licença
 
 MIT
-
----
-
-> Para detalhes de implementação e tarefas concluídas, veja `docs/tasks/` (fluxo de trabalho, design e decisões). 💡

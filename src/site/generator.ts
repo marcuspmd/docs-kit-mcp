@@ -17,6 +17,7 @@ import {
   renderGovernancePage,
   renderMarkdownWrapper,
   buildSearchIndex,
+  renderInspectorPage,
   fileSlug,
 } from "./templates.js";
 
@@ -546,6 +547,9 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   // Generate docs index page
   fs.writeFileSync(path.join(outDir, "docs.html"), renderDocsPage(docEntries));
 
+  // Generate inspector page (connects to local API from `docs-kit serve`)
+  fs.writeFileSync(path.join(outDir, "inspector.html"), renderInspectorPage(docEntries));
+
   // Generate search index
   // Historically tests expect search.json to be an array of items.
   // Write the items array for compatibility, but keep generator using buildSearchIndex.
@@ -555,6 +559,6 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   return {
     symbolPages: symbols.length,
     filePages: files.length,
-    totalFiles: symbols.length + files.length + 7 + docEntries.length,
+    totalFiles: symbols.length + files.length + 8 + docEntries.length,
   };
 }

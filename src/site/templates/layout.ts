@@ -22,6 +22,7 @@ export function layout(
     [`${prefix}files.html`, "Files"],
     [`${prefix}relationships.html`, "Relationships"],
     [`${prefix}patterns.html`, "Patterns"],
+    [`${prefix}inspector.html`, "Inspector ✦"],
   ];
 
   const sidebarNav = navLinks

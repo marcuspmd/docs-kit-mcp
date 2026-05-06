@@ -15,6 +15,8 @@ import {
   analyzePatternsUseCase,
   explainSymbolUseCase,
 } from "./cli/usecases/index.js";
+import { serveUseCase } from "./cli/usecases/serve.usecase.js";
+import { inspectUseCase } from "./cli/usecases/inspect.usecase.js";
 
 /* ================== Command Handlers ================== */
 
@@ -134,6 +136,33 @@ async function runExplainSymbol(args: string[]) {
   console.log(result);
 }
 
+async function runServe(args: string[]) {
+  const { flags } = parseArgs(args, {
+    port: "7337",
+    docs: "docs",
+  });
+  const port = parseInt(flags.port || "7337", 10) || 7337;
+  await serveUseCase({ port, docsDir: flags.docs });
+}
+
+async function runInspect(args: string[]) {
+  const { positional, flags } = parseArgs(args, {
+    file: "",
+    db: "",
+    docs: "docs",
+    mode: "full",
+  });
+  const symbolName = positional[0];
+  const verbose = "verbose" in flags;
+  await inspectUseCase({
+    symbolName,
+    filePath: flags.file || undefined,
+    docsDir: flags.docs,
+    mode: flags.mode === "compact" ? "compact" : "full",
+    verbose,
+  });
+}
+
 /* ================== Main ================== */
 
 async function main() {
@@ -162,6 +191,12 @@ async function main() {
         break;
       case "explain-symbol":
         await runExplainSymbol(args.slice(1));
+        break;
+      case "serve":
+        await runServe(args.slice(1));
+        break;
+      case "inspect":
+        await runInspect(args.slice(1));
         break;
       default:
         printHelp();
