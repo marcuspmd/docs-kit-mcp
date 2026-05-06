@@ -74,4 +74,8 @@ export class OpenAiProvider implements LlmProvider {
     const res = await client.embeddings.create({ model, input: texts });
     return res.data.map((d: { embedding: number[] }) => d.embedding);
   }
+
+  estimateTokens(text: string): number {
+    return Math.ceil(text.length / 4);
+  }
 }

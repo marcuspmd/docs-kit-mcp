@@ -6,10 +6,30 @@ export interface ExplainSymbolInput {
   docContent?: string;
   dependencies?: CodeSymbol[];
   dependents?: CodeSymbol[];
+  maxSourceLines?: number;
+  outputLanguage?: string;
+  verbosity?: "brief" | "detailed";
+}
+
+const DEFAULT_MAX_SOURCE_LINES = 80;
+
+function truncateSourceCode(sourceCode: string, maxSourceLines: number): string {
+  const lines = sourceCode.split("\n");
+  if (lines.length <= maxSourceLines) return sourceCode;
+  return `${lines.slice(0, maxSourceLines).join("\n")}\n// ... (+${lines.length - maxSourceLines} lines)`;
 }
 
 export function buildExplainSymbolPrompt(input: ExplainSymbolInput): string {
-  const { symbol, sourceCode, docContent, dependencies, dependents } = input;
+  const {
+    symbol,
+    sourceCode,
+    docContent,
+    dependencies,
+    dependents,
+    maxSourceLines = DEFAULT_MAX_SOURCE_LINES,
+    outputLanguage = "pt-BR",
+    verbosity = "detailed",
+  } = input;
 
   const parts: string[] = [
     `You are a senior software engineer explaining code to a teammate. Provide a clear, thorough explanation.`,
@@ -27,7 +47,7 @@ export function buildExplainSymbolPrompt(input: ExplainSymbolInput): string {
   if (symbol.deprecated) parts.push(`- **DEPRECATED**`);
 
   if (sourceCode) {
-    parts.push(``, `## Source Code`, "```", sourceCode, "```");
+    parts.push(``, `## Source Code`, "```", truncateSourceCode(sourceCode, maxSourceLines), "```");
   }
 
   if (docContent) {
@@ -48,17 +68,20 @@ export function buildExplainSymbolPrompt(input: ExplainSymbolInput): string {
     }
   }
 
-  parts.push(
-    ``,
-    `## Instructions`,
-    `Provide:`,
-    `1. **Purpose**: What this ${symbol.kind} does and why it exists`,
-    `2. **How it works**: Key logic, algorithms, or patterns used`,
-    `3. **Dependencies**: How it relates to the symbols listed above`,
-    `4. **Usage**: How other code should use this symbol`,
-    `5. **Gotchas**: Any non-obvious behavior, edge cases, or caveats`,
-    `**Responda em português brasileiro**`,
-  );
+  parts.push(``, `## Instructions`);
+  if (verbosity === "brief") {
+    parts.push(`Explain purpose, behavior, usage, dependencies, and gotchas concisely.`);
+  } else {
+    parts.push(
+      `Provide:`,
+      `1. **Purpose**: What this ${symbol.kind} does and why it exists`,
+      `2. **How it works**: Key logic, algorithms, or patterns used`,
+      `3. **Dependencies**: How it relates to the symbols listed above`,
+      `4. **Usage**: How other code should use this symbol`,
+      `5. **Gotchas**: Any non-obvious behavior, edge cases, or caveats`,
+    );
+  }
+  parts.push(`**Responda em ${outputLanguage}**`);
 
   return parts.join("\n");
 }

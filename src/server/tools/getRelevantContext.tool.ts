@@ -8,10 +8,14 @@ export const getRelevantContextSchema = {
   symbol: z.string().optional().describe("Symbol name to get context for"),
   file: z.string().optional().describe("File path to get context for"),
   docsDir: z.string().default("docs").describe("Docs directory"),
+  mode: z.enum(["compact", "full"]).default("compact").describe("Context detail level"),
+  maxSourceLines: z.number().default(80).describe("Maximum source lines to include in full mode"),
+  maxDocChars: z.number().optional().describe("Maximum characters to include from each mapped doc"),
+  maxContextChars: z.number().default(20_000).describe("Maximum total context characters"),
 };
 
 export function registerGetRelevantContextTool(server: McpServer, deps: ServerDependencies): void {
-  const { config, registry, symbolRepo, graph } = deps;
+  const { config, registry, symbolRepo, graph, llm } = deps;
 
   server.registerTool(
     "getRelevantContext",
@@ -20,7 +24,15 @@ export function registerGetRelevantContextTool(server: McpServer, deps: ServerDe
         "Get comprehensive context for understanding or modifying a symbol or file — combines index, graph, docs, and source code",
       inputSchema: getRelevantContextSchema,
     },
-    async ({ symbol: symbolName, file: filePath, docsDir }) => {
+    async ({
+      symbol: symbolName,
+      file: filePath,
+      docsDir,
+      mode,
+      maxSourceLines,
+      maxDocChars,
+      maxContextChars,
+    }) => {
       try {
         if (!symbolName && !filePath) {
           return {
@@ -30,13 +42,15 @@ export function registerGetRelevantContextTool(server: McpServer, deps: ServerDe
         }
 
         const result = await buildRelevantContext(
-          { symbolName, filePath },
+          { symbolName, filePath, mode, maxSourceLines, maxDocChars, maxContextChars },
           {
             projectRoot: config.projectRoot,
             docsDir,
             registry,
             symbolRepo,
             graph,
+            estimateTokens:
+              typeof llm.estimateTokens === "function" ? llm.estimateTokens.bind(llm) : undefined,
           },
         );
 

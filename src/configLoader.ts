@@ -129,7 +129,14 @@ export default {
     enabled: false,    // set to true to build a vector index during \`docs-kit index\`
     chunkSize: 500,    // words per chunk
     overlapSize: 50,   // overlapping words between chunks
+    minScore: 0.25,    // minimum relevance score for knowledge-base answers
   },
+
+  /** Language for generated LLM outputs */
+  outputLanguage: "pt-BR",
+
+  /** Prompt detail level: "brief" or "detailed" */
+  promptVerbosity: "detailed",
 
   // ---------------------------------------------------------------------------
   // Parallel Indexing

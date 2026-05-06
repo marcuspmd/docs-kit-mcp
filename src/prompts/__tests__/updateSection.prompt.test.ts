@@ -26,11 +26,12 @@ describe("updateSection.prompt", () => {
     repositoryUrl: "https://github.com/test/repo",
     maxConcurrency: 5,
     dryRun: false,
-  } as any;
+  } as unknown as ResolvedConfig;
 
   const mockLlm: LlmProvider = {
     chat: jest.fn().mockResolvedValue("Updated documentation section"),
     embed: jest.fn().mockResolvedValue([[0.1, 0.2]]),
+    estimateTokens: jest.fn().mockReturnValue(10),
   };
 
   describe("buildUpdateSectionPrompt", () => {
@@ -76,8 +77,9 @@ describe("updateSection.prompt", () => {
     it("should fallback to current section on LLM error", async () => {
       const mockLlmError = {
         chat: jest.fn().mockRejectedValue(new Error("LLM error")),
-        embed: jest.fn(),
-      } as any;
+        embed: jest.fn().mockResolvedValue([]),
+        estimateTokens: jest.fn().mockReturnValue(10),
+      } as LlmProvider;
 
       const input = {
         symbolName: "test",

@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import type { CodeSymbol, SymbolKind, SymbolRelationship } from "../indexer/symbol.types.js";
+import type { CodeSymbol, Layer, SymbolKind, SymbolRelationship } from "../indexer/symbol.types.js";
 
 /* ================== Database ================== */
 
@@ -76,7 +76,8 @@ CREATE TABLE IF NOT EXISTS rag_chunks (
   content         TEXT NOT NULL,
   source          TEXT NOT NULL,
   symbol_id       TEXT,
-  vector          TEXT NOT NULL
+  vector          TEXT NOT NULL,
+  vector_blob     BLOB
 );
 
 CREATE TABLE IF NOT EXISTS file_hashes (
@@ -109,6 +110,9 @@ CREATE TABLE IF NOT EXISTS reaper_findings (
 
 CREATE INDEX IF NOT EXISTS idx_symbols_file ON symbols(file);
 CREATE INDEX IF NOT EXISTS idx_symbols_kind ON symbols(kind);
+CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
+CREATE INDEX IF NOT EXISTS idx_symbols_qualified_name ON symbols(qualified_name);
+CREATE INDEX IF NOT EXISTS idx_symbols_layer ON symbols(layer);
 CREATE INDEX IF NOT EXISTS idx_doc_mappings_path ON doc_mappings(doc_path);
 `;
 
@@ -129,6 +133,15 @@ export function initializeSchema(db: Database.Database): void {
   } catch {
     // Table may not exist yet (fresh DB)
   }
+
+  try {
+    const info = db.prepare("PRAGMA table_info(rag_chunks)").all() as Array<{ name: string }>;
+    if (!info.some((r) => r.name === "vector_blob")) {
+      db.prepare("ALTER TABLE rag_chunks ADD COLUMN vector_blob BLOB").run();
+    }
+  } catch {
+    // Table may not exist yet (fresh DB)
+  }
 }
 
 /* ================== SymbolRepository ================== */
@@ -137,6 +150,7 @@ export interface SymbolRepository {
   upsert(symbol: CodeSymbol): void;
   findById(id: string): CodeSymbol | undefined;
   findByIds(ids: string[]): CodeSymbol[];
+  search(opts: { query?: string; kind?: SymbolKind; layer?: Layer; limit?: number }): CodeSymbol[];
   findByName(name: string): CodeSymbol[];
   findAll(): CodeSymbol[];
   findByFile(file: string): CodeSymbol[];
@@ -309,6 +323,39 @@ export function createSymbolRepository(db: Database.Database): SymbolRepository 
       const placeholders = ids.map(() => "?").join(",");
       const stmt = db.prepare(`SELECT * FROM symbols WHERE id IN (${placeholders})`);
       const rows = stmt.all(...ids) as SymbolRow[];
+      return rows.map(rowToSymbol);
+    },
+
+    search(opts: {
+      query?: string;
+      kind?: SymbolKind;
+      layer?: Layer;
+      limit?: number;
+    }): CodeSymbol[] {
+      const clauses: string[] = [];
+      const params: Record<string, string | number> = {};
+      const query = opts.query?.trim();
+
+      if (query) {
+        clauses.push("(name LIKE @query OR qualified_name LIKE @query)");
+        params.query = `%${query}%`;
+      }
+
+      if (opts.kind) {
+        clauses.push("kind = @kind");
+        params.kind = opts.kind;
+      }
+
+      if (opts.layer) {
+        clauses.push("layer = @layer");
+        params.layer = opts.layer;
+      }
+
+      params.limit = Math.min(Math.max(opts.limit ?? 20, 1), 100);
+      const where = clauses.length > 0 ? `WHERE ${clauses.join(" AND ")}` : "";
+      const rows = db
+        .prepare(`SELECT * FROM symbols ${where} ORDER BY file ASC, start_line ASC LIMIT @limit`)
+        .all(params) as SymbolRow[];
       return rows.map(rowToSymbol);
     },
 

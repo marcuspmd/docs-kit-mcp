@@ -20,7 +20,10 @@ export function buildImpactAnalysisPrompt(input: ImpactAnalysisInput): string {
 
   if (targetSymbol.signature) parts.push(`- **Signature**: \`${targetSymbol.signature}\``);
 
-  parts.push(``, `## Impact Radius (depth ${maxDepth}): ${impactedSymbols.length} symbols affected`);
+  parts.push(
+    ``,
+    `## Impact Radius (depth ${maxDepth}): ${impactedSymbols.length} symbols affected`,
+  );
 
   // Group by layer
   const byLayer = new Map<string, CodeSymbol[]>();
@@ -36,19 +39,6 @@ export function buildImpactAnalysisPrompt(input: ImpactAnalysisInput): string {
     for (const sym of syms) {
       parts.push(`- ${sym.name} (${sym.kind} in ${sym.file})`);
     }
-  }
-
-  // Group by file
-  const byFile = new Map<string, CodeSymbol[]>();
-  for (const sym of impactedSymbols) {
-    const list = byFile.get(sym.file) ?? [];
-    list.push(sym);
-    byFile.set(sym.file, list);
-  }
-
-  parts.push(``, `## Files affected: ${byFile.size}`);
-  for (const [file, syms] of byFile) {
-    parts.push(`- ${file} (${syms.length} symbols)`);
   }
 
   parts.push(

@@ -54,4 +54,8 @@ export class GeminiProvider implements LlmProvider {
     };
     return json.embeddings?.map((e) => e.values ?? []) ?? texts.map(() => []);
   }
+
+  estimateTokens(text: string): number {
+    return Math.ceil(text.length / 4);
+  }
 }

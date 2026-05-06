@@ -4,7 +4,7 @@ import { createHash } from "node:crypto";
 import type { DocRegistry } from "../docs/docRegistry.js";
 import type { KnowledgeGraph } from "../knowledge/graph.js";
 import type { SymbolRepository } from "../storage/db.js";
-import { createStubCodeSymbol } from "../indexer/symbol.types.js";
+import { createStubCodeSymbol, type CodeSymbol } from "../indexer/symbol.types.js";
 import { buildExplainSymbolPrompt } from "../prompts/explainSymbol.prompt.js";
 
 export interface ExplainSymbolDeps {
@@ -20,6 +20,10 @@ export interface ExplainSymbolResult {
   found: boolean;
   cachedExplanation?: string;
   needsUpdate: boolean;
+  symbol?: CodeSymbol;
+  sourceCode?: string;
+  dependencies?: CodeSymbol[];
+  dependents?: CodeSymbol[];
 }
 
 /**
@@ -63,8 +67,8 @@ export async function buildExplainSymbolContext(
   }
 
   let sourceCode: string | undefined;
-  let dependencies: typeof symbols = [];
-  let dependents: typeof symbols = [];
+  let dependencies: CodeSymbol[] = [];
+  let dependents: CodeSymbol[] = [];
   const sym = symbols[0];
 
   if (sym) {
@@ -90,6 +94,10 @@ export async function buildExplainSymbolContext(
         found: true,
         cachedExplanation: sym.explanation,
         needsUpdate: false,
+        symbol: sym,
+        sourceCode,
+        dependencies,
+        dependents,
       };
     }
   }
@@ -103,5 +111,13 @@ export async function buildExplainSymbolContext(
     dependents,
   });
 
-  return { prompt, found: true, needsUpdate: true };
+  return {
+    prompt,
+    found: true,
+    needsUpdate: true,
+    symbol,
+    sourceCode,
+    dependencies,
+    dependents,
+  };
 }

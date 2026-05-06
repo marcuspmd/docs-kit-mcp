@@ -1,4 +1,6 @@
 import "reflect-metadata";
+import { existsSync } from "node:fs";
+import { resolve as resolvePath } from "node:path";
 import { container } from "tsyringe";
 import { setupContainer } from "../di/container.js";
 import type { ServerDependencies } from "./types.js";
@@ -43,10 +45,18 @@ export async function createServerDependencies(
 ): Promise<ServerDependencies> {
   await setupContainer(cwd);
 
+  const config = container.resolve<ResolvedConfig>(CONFIG_TOKEN);
+  const registry = container.resolve<DocRegistry>(DOC_REGISTRY_TOKEN);
+  const docsDir = "docs";
+
+  if (existsSync(resolvePath(cwd, docsDir)) && typeof registry.rebuild === "function") {
+    await registry.rebuild(docsDir, { configDocs: config.docs });
+  }
+
   return {
-    config: container.resolve<ResolvedConfig>(CONFIG_TOKEN),
+    config,
     db: container.resolve<Database.Database>(DATABASE_TOKEN),
-    registry: container.resolve<DocRegistry>(DOC_REGISTRY_TOKEN),
+    registry,
     symbolRepo: container.resolve<SymbolRepository>(SYMBOL_REPO_TOKEN),
     relRepo: container.resolve<RelationshipRepository>(RELATIONSHIP_REPO_TOKEN),
     graph: container.resolve<KnowledgeGraph>(KNOWLEDGE_GRAPH_TOKEN),

@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { jest } from "@jest/globals";
-import Database from "better-sqlite3";
+import type Database from "better-sqlite3";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerDependencies } from "../types.js";
 import { mcpSuccess, mcpError } from "../types.js";
@@ -38,6 +38,14 @@ function createMockConfig(overrides: Partial<ResolvedConfig> = {}): ResolvedConf
     projectRoot: "/tmp/test-project",
     docsDir: "docs",
     dbPath: ":memory:",
+    outputLanguage: "pt-BR",
+    promptVerbosity: "detailed",
+    rag: {
+      enabled: false,
+      chunkSize: 500,
+      overlapSize: 50,
+      minScore: 0.25,
+    },
     llm: {
       provider: "openai",
       apiKey: "test-key",
@@ -74,10 +82,11 @@ function createMockAsyncFn<T = any>(returnValue?: T): jest.Mock<() => Promise<T>
 }
 
 function createMockDependencies(overrides: Partial<ServerDependencies> = {}): ServerDependencies {
-  const mockDb = new Database(":memory:");
+  const mockDb = {} as Database.Database;
 
   const mockSymbolRepo = {
     upsert: jest.fn(),
+    search: createMockFn([]),
     findByName: createMockFn([createMockSymbol()]),
     findByFile: createMockFn([]),
     findAll: createMockFn([createMockSymbol()]),
@@ -124,6 +133,7 @@ function createMockDependencies(overrides: Partial<ServerDependencies> = {}): Se
   const mockLlm = {
     chat: createMockAsyncFn("LLM response"),
     embed: createMockAsyncFn([[0.1, 0.2, 0.3]]),
+    estimateTokens: createMockFn(10),
   };
 
   const mockRagIndex = {
@@ -238,8 +248,7 @@ describe("analyzePatterns tool", () => {
     server = createMockServer();
     deps = createMockDependencies();
 
-    const { registerAnalyzePatternsTool } =
-      await import("../tools/analyzePatterns.tool.js");
+    const { registerAnalyzePatternsTool } = await import("../tools/analyzePatterns.tool.js");
     registerAnalyzePatternsTool(server, deps);
   });
 
@@ -305,8 +314,7 @@ describe("askKnowledgeBase tool", () => {
     server = createMockServer();
     deps = createMockDependencies();
 
-    const { registerAskKnowledgeBaseTool } =
-      await import("../tools/askKnowledgeBase.tool.js");
+    const { registerAskKnowledgeBaseTool } = await import("../tools/askKnowledgeBase.tool.js");
     registerAskKnowledgeBaseTool(server, deps);
   });
 
@@ -332,6 +340,7 @@ describe("askKnowledgeBase tool", () => {
     await handler!({ question: "What is the meaning of life?", docsDir: "docs" });
 
     expect(deps.ragIndex.indexDocs).toHaveBeenCalledWith("docs");
+    expect(deps.ragIndex.search).toHaveBeenCalledWith("What is the meaning of life?", 5, 0.25);
   });
 
   it("skips indexing when chunks exist", async () => {
@@ -340,9 +349,11 @@ describe("askKnowledgeBase tool", () => {
     (deps.llm.chat as jest.Mock).mockResolvedValue("Answer");
 
     const handler = server.registeredTools.get("askKnowledgeBase")?.handler;
-    await handler!({ question: "Test question", docsDir: "docs" });
+    const result = await handler!({ question: "Test question", docsDir: "docs" });
 
     expect(deps.ragIndex.indexDocs).not.toHaveBeenCalled();
+    expect(deps.llm.chat).not.toHaveBeenCalled();
+    expect(result.content[0].text).toContain("Não encontrei informação relevante");
   });
 
   it("returns LLM answer based on search results", async () => {
@@ -453,8 +464,7 @@ describe("createOnboarding tool", () => {
     server = createMockServer();
     deps = createMockDependencies();
 
-    const { registerCreateOnboardingTool } =
-      await import("../tools/createOnboarding.tool.js");
+    const { registerCreateOnboardingTool } = await import("../tools/createOnboarding.tool.js");
     registerCreateOnboardingTool(server, deps);
   });
 
@@ -479,9 +489,14 @@ describe("createOnboarding tool", () => {
     const handler = server.registeredTools.get("createOnboarding")?.handler;
     const result = await handler!({ topic: "getting started", docsDir: "docs" });
 
-    expect(result.content[0].text).toContain("Learning path");
-    expect(result.content[0].text).toContain("docs/intro.md");
-    expect(result.content[0].text).toContain("docs/setup.md");
+    expect(result.content[0].text).toBe("LLM response");
+    expect(deps.ragIndex.search).toHaveBeenCalledWith("getting started", 10, 0.25);
+    expect(deps.llm.chat).toHaveBeenCalledWith([
+      expect.objectContaining({
+        role: "user",
+        content: expect.stringContaining("docs/intro.md"),
+      }),
+    ]);
   });
 
   it("indexes docs when chunk count is zero", async () => {
@@ -489,9 +504,11 @@ describe("createOnboarding tool", () => {
     (deps.ragIndex.search as jest.Mock).mockResolvedValue([]);
 
     const handler = server.registeredTools.get("createOnboarding")?.handler;
-    await handler!({ topic: "test topic", docsDir: "docs" });
+    const result = await handler!({ topic: "test topic", docsDir: "docs" });
 
     expect(deps.ragIndex.indexDocs).toHaveBeenCalledWith("docs");
+    expect(deps.llm.chat).not.toHaveBeenCalled();
+    expect(result.content[0].text).toContain("Nenhum conteúdo relevante");
   });
 
   it("returns error on exception", async () => {
@@ -568,8 +585,7 @@ describe("generateEventFlow tool", () => {
     server = createMockServer();
     deps = createMockDependencies();
 
-    const { registerGenerateEventFlowTool } =
-      await import("../tools/generateEventFlow.tool.js");
+    const { registerGenerateEventFlowTool } = await import("../tools/generateEventFlow.tool.js");
     registerGenerateEventFlowTool(server, deps);
   });
 
@@ -633,8 +649,7 @@ describe("generateMermaid tool", () => {
     server = createMockServer();
     deps = createMockDependencies();
 
-    const { registerGenerateMermaidTool } =
-      await import("../tools/generateMermaid.tool.js");
+    const { registerGenerateMermaidTool } = await import("../tools/generateMermaid.tool.js");
     registerGenerateMermaidTool(server, deps);
   });
 
@@ -700,8 +715,7 @@ describe("getRelevantContext tool", () => {
     server = createMockServer();
     deps = createMockDependencies();
 
-    const { registerGetRelevantContextTool } =
-      await import("../tools/getRelevantContext.tool.js");
+    const { registerGetRelevantContextTool } = await import("../tools/getRelevantContext.tool.js");
     registerGetRelevantContextTool(server, deps);
   });
 
@@ -726,6 +740,90 @@ describe("getRelevantContext tool", () => {
 });
 
 // =============================================================================
+// TEST: searchSymbols.tool.ts
+// =============================================================================
+
+describe("searchSymbols tool", () => {
+  let server: ReturnType<typeof createMockServer>;
+  let deps: ServerDependencies;
+
+  beforeEach(async () => {
+    server = createMockServer();
+    deps = createMockDependencies();
+
+    const { registerSearchSymbolsTool } = await import("../tools/searchSymbols.tool.js");
+    registerSearchSymbolsTool(server, deps);
+  });
+
+  it("returns compact symbol search results", async () => {
+    (deps.symbolRepo.search as jest.Mock).mockReturnValue([
+      createMockSymbol({
+        name: "createOrder",
+        qualifiedName: "OrderService.createOrder",
+        kind: "method",
+        file: "src/order.ts",
+        startLine: 42,
+        summary: "Creates an order",
+      }),
+    ]);
+
+    const handler = server.registeredTools.get("searchSymbols")?.handler;
+    const result = await handler!({
+      query: "order",
+      kind: "method",
+      layer: "application",
+      limit: 5,
+    });
+
+    expect(deps.symbolRepo.search).toHaveBeenCalledWith({
+      query: "order",
+      kind: "method",
+      layer: "application",
+      limit: 5,
+    });
+    expect(result.content[0].text).toContain("OrderService.createOrder (method)");
+    expect(result.content[0].text).toContain("src/order.ts:42");
+  });
+});
+
+// =============================================================================
+// TEST: getFileOutline.tool.ts
+// =============================================================================
+
+describe("getFileOutline tool", () => {
+  let server: ReturnType<typeof createMockServer>;
+  let deps: ServerDependencies;
+
+  beforeEach(async () => {
+    server = createMockServer();
+    deps = createMockDependencies();
+
+    const { registerGetFileOutlineTool } = await import("../tools/getFileOutline.tool.js");
+    registerGetFileOutlineTool(server, deps);
+  });
+
+  it("returns a compact file outline", async () => {
+    (deps.symbolRepo.findByFile as jest.Mock).mockReturnValue([
+      createMockSymbol({
+        name: "createOrder",
+        qualifiedName: "OrderService.createOrder",
+        kind: "method",
+        startLine: 10,
+        endLine: 20,
+        signature: "createOrder(input): Order",
+      }),
+    ]);
+
+    const handler = server.registeredTools.get("getFileOutline")?.handler;
+    const result = await handler!({ file: "src/order.ts" });
+
+    expect(result.content[0].text).toContain("# src/order.ts");
+    expect(result.content[0].text).toContain("L10-20 [method] OrderService.createOrder");
+    expect(result.content[0].text).not.toContain("```");
+  });
+});
+
+// =============================================================================
 // TEST: impactAnalysis.tool.ts
 // =============================================================================
 
@@ -737,8 +835,7 @@ describe("impactAnalysis tool", () => {
     server = createMockServer();
     deps = createMockDependencies();
 
-    const { registerImpactAnalysisTool } =
-      await import("../tools/impactAnalysis.tool.js");
+    const { registerImpactAnalysisTool } = await import("../tools/impactAnalysis.tool.js");
     registerImpactAnalysisTool(server, deps);
   });
 
@@ -803,8 +900,7 @@ describe("projectStatus tool", () => {
     server = createMockServer();
     deps = createMockDependencies();
 
-    const { registerProjectStatusTool } =
-      await import("../tools/projectStatus.tool.js");
+    const { registerProjectStatusTool } = await import("../tools/projectStatus.tool.js");
     registerProjectStatusTool(server, deps);
   });
 
@@ -860,8 +956,7 @@ describe("scanForDeadCode tool", () => {
     server = createMockServer();
     deps = createMockDependencies();
 
-    const { registerScanForDeadCodeTool } =
-      await import("../tools/scanForDeadCode.tool.js");
+    const { registerScanForDeadCodeTool } = await import("../tools/scanForDeadCode.tool.js");
     registerScanForDeadCodeTool(server, deps);
   });
 
@@ -926,8 +1021,7 @@ describe("smartCodeReview tool", () => {
     server = createMockServer();
     deps = createMockDependencies();
 
-    const { registerSmartCodeReviewTool } =
-      await import("../tools/smartCodeReview.tool.js");
+    const { registerSmartCodeReviewTool } = await import("../tools/smartCodeReview.tool.js");
     registerSmartCodeReviewTool(server, deps);
   });
 
@@ -955,8 +1049,7 @@ describe("validateExamples tool", () => {
     server = createMockServer();
     deps = createMockDependencies();
 
-    const { registerValidateExamplesTool } =
-      await import("../tools/validateExamples.tool.js");
+    const { registerValidateExamplesTool } = await import("../tools/validateExamples.tool.js");
     registerValidateExamplesTool(server, deps);
   });
 
@@ -1080,8 +1173,7 @@ describe("generateDocs tool", () => {
     server = createMockServer();
     deps = createMockDependencies();
 
-    const { registerGenerateDocsTool } =
-      await import("../tools/generateDocs.tool.js");
+    const { registerGenerateDocsTool } = await import("../tools/generateDocs.tool.js");
     registerGenerateDocsTool(server, deps);
   });
 
@@ -1118,6 +1210,8 @@ describe("registerAllTools", () => {
       "updateSymbolExplanation",
       "describeInBusinessTerms",
       "getRelevantContext",
+      "searchSymbols",
+      "getFileOutline",
       "impactAnalysis",
       "analyzePatterns",
       "smartCodeReview",

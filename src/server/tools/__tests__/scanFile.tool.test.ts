@@ -2,6 +2,13 @@ import { describe, it, expect, jest, beforeEach } from "@jest/globals";
 import type { McpServer } from "@modelcontextprotocol/sdk/server/mcp.js";
 import type { ServerDependencies } from "../../types.js";
 
+type ToolResult = {
+  content: Array<{ type: string; text: string }>;
+  isError?: boolean;
+};
+
+type ToolHandler = (args: Record<string, unknown>) => Promise<ToolResult>;
+
 // Mocks
 const mockExistsSync = jest.fn();
 const mockMkdirSync = jest.fn();
@@ -48,7 +55,7 @@ describe("scanFile.tool", () => {
   let registerScanFileTool: typeof import("../scanFile.tool.js").registerScanFileTool;
   let mockServer: McpServer;
   let mockDeps: ServerDependencies;
-  let toolCallback: Function;
+  let toolCallback: ToolHandler;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -72,7 +79,11 @@ describe("scanFile.tool", () => {
 
   it("should register scanFile tool", () => {
     registerScanFileTool(mockServer, mockDeps);
-    expect(mockServer.registerTool).toHaveBeenCalledWith("scanFile", expect.any(Object), expect.any(Function));
+    expect(mockServer.registerTool).toHaveBeenCalledWith(
+      "scanFile",
+      expect.any(Object),
+      expect.any(Function),
+    );
   });
 
   it("should create docs for new symbols", async () => {
@@ -86,7 +97,11 @@ describe("scanFile.tool", () => {
       createdSymbols: ["x"],
     });
 
-    const result = await toolCallback({ filePath: "src/test.ts", docsDir: "docs", dbPath: "db/reg.db" });
+    const result = await toolCallback({
+      filePath: "src/test.ts",
+      docsDir: "docs",
+      dbPath: "db/reg.db",
+    });
 
     expect(mockReadFileSync).toHaveBeenCalledWith("/root/src/test.ts", "utf-8");
     expect(mockIndexFile).toHaveBeenCalled();
@@ -106,7 +121,11 @@ describe("scanFile.tool", () => {
       createdSymbols: [],
     });
 
-    const result = await toolCallback({ filePath: "src/test.ts", docsDir: "docs", dbPath: "db/reg.db" });
+    const result = await toolCallback({
+      filePath: "src/test.ts",
+      docsDir: "docs",
+      dbPath: "db/reg.db",
+    });
 
     expect(result.content[0].text).toContain("No new symbols to document");
   });
@@ -126,9 +145,15 @@ describe("scanFile.tool", () => {
 
   it("should handle errors", async () => {
     registerScanFileTool(mockServer, mockDeps);
-    mockReadFileSync.mockImplementation(() => { throw new Error("File error"); });
+    mockReadFileSync.mockImplementation(() => {
+      throw new Error("File error");
+    });
 
-    const result = await toolCallback({ filePath: "src/test.ts", docsDir: "docs", dbPath: "db/reg.db" });
+    const result = await toolCallback({
+      filePath: "src/test.ts",
+      docsDir: "docs",
+      dbPath: "db/reg.db",
+    });
 
     expect(result.isError).toBe(true);
     expect(result.content[0].text).toContain("Error scanning file: File error");

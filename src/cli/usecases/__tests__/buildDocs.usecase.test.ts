@@ -1,5 +1,6 @@
 import { jest } from "@jest/globals";
 import fs from "node:fs";
+import path from "node:path";
 
 // Mock mdGenerator
 const mockGenerateDocs = jest.fn();
@@ -50,11 +51,11 @@ describe("buildDocsUseCase", () => {
 
     await buildDocsUseCase({});
 
-    expect(existsSyncSpy).toHaveBeenCalledWith(".docs-kit/index.db");
+    expect(existsSyncSpy).toHaveBeenCalledWith(path.resolve(".docs-kit/index.db"));
     expect(mockGenerateDocs).toHaveBeenCalledWith(
       expect.objectContaining({
-        outDir: "docs-output",
-        rootDir: ".",
+        outDir: "my-docs",
+        rootDir: "src",
       }),
     );
     expect(processExitSpy).not.toHaveBeenCalled();
@@ -74,7 +75,7 @@ describe("buildDocsUseCase", () => {
       rootDir: "/custom/root",
     });
 
-    expect(existsSyncSpy).toHaveBeenCalledWith("custom/db.db");
+    expect(existsSyncSpy).toHaveBeenCalledWith(path.resolve("custom/db.db"));
     expect(mockGenerateDocs).toHaveBeenCalledWith(
       expect.objectContaining({
         outDir: "custom-docs",
@@ -88,7 +89,9 @@ describe("buildDocsUseCase", () => {
 
     await buildDocsUseCase({ dbPath: "missing.db" });
 
-    expect(consoleErrorSpy).toHaveBeenCalledWith("Error: Database not found at missing.db");
+    expect(consoleErrorSpy).toHaveBeenCalledWith(
+      `Error: Database not found at ${path.resolve("missing.db")}`,
+    );
     expect(consoleErrorSpy).toHaveBeenCalledWith('Run "docs-kit index" first to create the index.');
     expect(processExitSpy).toHaveBeenCalledWith(1);
   });

@@ -9,7 +9,7 @@ export const askKnowledgeBaseSchema = {
 };
 
 export function registerAskKnowledgeBaseTool(server: McpServer, deps: ServerDependencies): void {
-  const { ragIndex, llm } = deps;
+  const { config, ragIndex, llm } = deps;
 
   server.registerTool(
     "askKnowledgeBase",
@@ -22,8 +22,15 @@ export function registerAskKnowledgeBaseTool(server: McpServer, deps: ServerDepe
         if (ragIndex.chunkCount() === 0) {
           await ragIndex.indexDocs(docsDir);
         }
-        const results = await ragIndex.search(question, 5);
-        const context = results.map((r) => `${r.source}:\n${r.content}`).join("\n\n");
+        const minScore = config.rag?.minScore ?? 0.25;
+        const results = await ragIndex.search(question, 5, minScore);
+        if (results.length === 0) {
+          return mcpSuccess("Não encontrei informação relevante sobre isso no codebase indexado.");
+        }
+
+        const context = results
+          .map((r) => `[relevância: ${(r.score * 100).toFixed(0)}%] ${r.source}:\n${r.content}`)
+          .join("\n\n");
 
         const prompt = `Based on the following context, answer the question. If the context doesn't contain enough information, say so.\n\nContext:\n${context}\n\nQuestion: ${question}`;
 

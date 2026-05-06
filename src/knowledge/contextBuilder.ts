@@ -11,16 +11,55 @@ export interface BuildRelevantContextDeps {
   registry: DocRegistry;
   symbolRepo: SymbolRepository;
   graph: KnowledgeGraph;
+  estimateTokens?: (text: string) => number;
 }
 
 export interface BuildRelevantContextInput {
   symbolName?: string;
   filePath?: string;
+  mode?: "compact" | "full";
+  maxSourceLines?: number;
+  maxDocChars?: number;
+  maxContextChars?: number;
 }
 
 export interface BuildRelevantContextResult {
   text: string;
   found: boolean;
+}
+
+const DEFAULT_MAX_SOURCE_LINES = 80;
+const DEFAULT_MAX_CONTEXT_CHARS = 20_000;
+const CONTEXT_TOKEN_WARNING = 8_000;
+const COMPACT_MAX_DOC_CHARS = 500;
+const FULL_MAX_DOC_CHARS = 2_000;
+
+function truncateText(text: string, maxChars: number, suffix: string): string {
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n\n${suffix}`;
+}
+
+function dependencyLabel(symbol: CodeSymbol): string {
+  return `${symbol.name} (${symbol.kind})`;
+}
+
+function trimSourceWindow(
+  lines: string[],
+  startLine: number,
+  endLine: number,
+  maxSourceLines: number,
+) {
+  const minLine = Math.max(0, startLine - 3);
+  const desiredMaxLine = Math.min(lines.length, endLine + 3);
+  const maxLine = Math.min(desiredMaxLine, minLine + maxSourceLines);
+  const omitted = Math.max(0, desiredMaxLine - maxLine);
+
+  return {
+    start: minLine,
+    end: maxLine,
+    omitted,
+    text: lines.slice(minLine, maxLine).join("\n"),
+  };
 }
 
 /**
@@ -32,7 +71,14 @@ export async function buildRelevantContext(
   deps: BuildRelevantContextDeps,
 ): Promise<BuildRelevantContextResult> {
   const { projectRoot, docsDir, registry, symbolRepo, graph } = deps;
-  const { symbolName, filePath } = input;
+  const {
+    symbolName,
+    filePath,
+    mode = "full",
+    maxSourceLines = DEFAULT_MAX_SOURCE_LINES,
+    maxDocChars = mode === "compact" ? COMPACT_MAX_DOC_CHARS : FULL_MAX_DOC_CHARS,
+    maxContextChars = DEFAULT_MAX_CONTEXT_CHARS,
+  } = input;
 
   let targetSymbols: CodeSymbol[] = [];
   const queryLabel = symbolName ?? filePath ?? "";
@@ -77,7 +123,11 @@ export async function buildRelevantContext(
   if (depSymbols.length > 0) {
     parts.push(`## Dependencies (${depSymbols.length})\n`);
     for (const dep of depSymbols) {
-      parts.push(`- ${dep.name} (${dep.kind} in ${dep.file})`);
+      parts.push(
+        mode === "compact"
+          ? `- ${dependencyLabel(dep)}`
+          : `- ${dep.name} (${dep.kind} in ${dep.file})`,
+      );
     }
     parts.push("");
   }
@@ -85,19 +135,24 @@ export async function buildRelevantContext(
   if (dependentSymbols.length > 0) {
     parts.push(`## Dependents (${dependentSymbols.length})\n`);
     for (const dep of dependentSymbols) {
-      parts.push(`- ${dep.name} (${dep.kind} in ${dep.file})`);
+      parts.push(
+        mode === "compact"
+          ? `- ${dependencyLabel(dep)}`
+          : `- ${dep.name} (${dep.kind} in ${dep.file})`,
+      );
     }
     parts.push("");
   }
 
-  await registry.rebuild(docsDir);
   const docParts: string[] = [];
   for (const sym of targetSymbols) {
     const mappings = await registry.findDocBySymbol(sym.name);
     for (const m of mappings) {
       try {
         const content = await readFile(join(docsDir, m.docPath), "utf-8");
-        docParts.push(`### ${m.docPath}\n${content.slice(0, 2000)}`);
+        docParts.push(
+          `### ${m.docPath}\n${truncateText(content, maxDocChars, "_(documentation truncated)_")}`,
+        );
       } catch {
         /* skip */
       }
@@ -109,24 +164,41 @@ export async function buildRelevantContext(
     parts.push("");
   }
 
-  const relevantFiles = new Set(targetSymbols.map((s) => s.file));
-  parts.push(`## Source Code\n`);
-  for (const file of relevantFiles) {
-    try {
-      const absPath = resolve(projectRoot, file);
-      const source = await readFile(absPath, "utf-8");
-      const lines = source.split("\n");
-      const fileSymbols = targetSymbols.filter((s) => s.file === file);
-      const minLine = Math.max(0, Math.min(...fileSymbols.map((s) => s.startLine)) - 3);
-      const maxLine = Math.min(lines.length, Math.max(...fileSymbols.map((s) => s.endLine)) + 3);
-      parts.push(`### ${file}:${minLine + 1}-${maxLine}`);
-      parts.push("```");
-      parts.push(lines.slice(minLine, maxLine).join("\n"));
-      parts.push("```\n");
-    } catch {
-      /* skip */
+  if (mode === "full") {
+    const relevantFiles = new Set(targetSymbols.map((s) => s.file));
+    parts.push(`## Source Code\n`);
+    for (const file of relevantFiles) {
+      try {
+        const absPath = resolve(projectRoot, file);
+        const source = await readFile(absPath, "utf-8");
+        const lines = source.split("\n");
+        const fileSymbols = targetSymbols.filter((s) => s.file === file);
+        const startLine = Math.min(...fileSymbols.map((s) => s.startLine));
+        const endLine = Math.max(...fileSymbols.map((s) => s.endLine));
+        const window = trimSourceWindow(lines, startLine, endLine, maxSourceLines);
+        parts.push(`### ${file}:${window.start + 1}-${window.end}`);
+        parts.push("```");
+        parts.push(window.text);
+        if (window.omitted > 0) {
+          parts.push(`... (${window.omitted} lines omitted)`);
+        }
+        parts.push("```\n");
+      } catch {
+        /* skip */
+      }
     }
   }
 
-  return { text: parts.join("\n"), found: true };
+  const text = parts.join("\n");
+  const estimatedTokens = deps.estimateTokens?.(text) ?? Math.ceil(text.length / 4);
+  if (estimatedTokens > CONTEXT_TOKEN_WARNING) {
+    console.warn(
+      `[doc-kit] Context for "${queryLabel}" is ~${estimatedTokens} tokens. Consider using mode:"compact".`,
+    );
+  }
+
+  return {
+    text: truncateText(text, maxContextChars, "_(context truncated)_"),
+    found: true,
+  };
 }

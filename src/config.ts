@@ -106,8 +106,13 @@ export const ConfigSchema = z.object({
       enabled: z.boolean().default(false),
       chunkSize: z.number().default(500),
       overlapSize: z.number().default(50),
+      minScore: z.number().min(0).max(1).default(0.25),
     })
     .optional(),
+
+  outputLanguage: z.string().default("pt-BR"),
+
+  promptVerbosity: z.enum(["brief", "detailed"]).default("detailed"),
 
   defaultPrompts: z
     .object({

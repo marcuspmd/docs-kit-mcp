@@ -10,6 +10,7 @@ export interface LlmProvider {
     opts?: { maxTokens?: number; temperature?: number },
   ): Promise<string>;
   embed(texts: string[]): Promise<number[][]>;
+  estimateTokens(text: string): number;
 }
 
 /* ── Factory ────────────────────────────────────────── */

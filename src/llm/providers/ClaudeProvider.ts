@@ -73,4 +73,8 @@ export class ClaudeProvider implements LlmProvider {
     };
     return json.data?.map((d) => d.embedding ?? []) ?? texts.map(() => []);
   }
+
+  estimateTokens(text: string): number {
+    return Math.ceil(text.length / 4);
+  }
 }

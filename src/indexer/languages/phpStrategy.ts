@@ -212,6 +212,75 @@ export class PhpStrategy implements LanguageStrategy {
         }
       }
     }
+
+    // ── PHP Dependency Injection ──────────────────────────────────────────────
+    // Covers:
+    //   1. Constructor parameter type hints (Symfony/Laravel/PHP-DI auto-wiring)
+    //      public function __construct(private PaymentRepository $repo) {}
+    //   2. PHP 8 constructor promotion (same syntax as above — already in params)
+    //   3. PHP 8 Attributes on properties: #[Inject] private PaymentRepository $repo;
+    this._extractPhpDiRelationships(node, classSymbol, addRel, file, ctx);
+  }
+
+  /**
+   * Extract DI relationships from a PHP class node.
+   *
+   * PHP DI is unique: type hints on constructor params ARE the injection tokens —
+   * no extra decorator needed (Symfony autowiring reads the type hint directly).
+   */
+  private _extractPhpDiRelationships(
+    classNode: Parser.SyntaxNode,
+    classSymbol: CodeSymbol,
+    addRel: AddRelFn,
+    file: string,
+    ctx?: ResolutionContext,
+  ): void {
+    const body = classNode.children.find((c) => c.type === "declaration_list");
+    if (!body) return;
+
+    for (const member of body.children) {
+      // ── 1. Constructor parameter injection ──────────────────────────────────
+      // method_declaration { name: "__construct", formal_parameters: [...] }
+      if (
+        member.type === "method_declaration" &&
+        member.childForFieldName("name")?.text === "__construct"
+      ) {
+        const params = member.childForFieldName("parameters") ??
+          member.children.find((c) => c.type === "formal_parameters");
+        if (!params) continue;
+
+        for (const param of params.children) {
+          // simple_parameter | promoted_property_parameter | variadic_parameter
+          if (
+            param.type !== "simple_parameter" &&
+            param.type !== "promoted_property_parameter" &&
+            param.type !== "variadic_parameter"
+          ) {
+            continue;
+          }
+
+          const typeName = extractPhpTypeHint(param, ctx);
+          if (typeName) {
+            addRel(classSymbol.id, typeName, "uses", file, param.startPosition.row + 1, ctx);
+          }
+        }
+      }
+
+      // ── 2. Property injection via PHP 8 Attributes (#[Inject]) ──────────────
+      // attribute_list  → attribute { name: "Inject" / "Autowire" / ... }
+      // property_declaration → named_type
+      if (member.type === "property_declaration") {
+        const hasInjectAttr = member.previousNamedSibling?.type === "attribute_list" &&
+          PHP_INJECT_ATTRS.test(member.previousNamedSibling.text);
+
+        if (!hasInjectAttr) continue;
+
+        const typeName = extractPhpTypeHint(member, ctx);
+        if (typeName) {
+          addRel(classSymbol.id, typeName, "uses", file, member.startPosition.row + 1, ctx);
+        }
+      }
+    }
   }
 
   extractInstantiationRelationships(
@@ -459,4 +528,92 @@ function findEnclosingSymbol(line: number, symsInFile: CodeSymbol[]): CodeSymbol
     }
   }
   return best;
+}
+
+// ── PHP DI helpers ────────────────────────────────────────────────────────────
+
+/**
+ * PHP 8 attribute names that signal property injection.
+ * Matches #[Inject], #[Autowire], #[Autowired], #[Required].
+ */
+const PHP_INJECT_ATTRS = /\#\[\s*(Inject|Autowire|Autowired|Required)\s*[(\]]/i;
+
+/**
+ * PHP primitive and built-in types that must NOT generate `uses` edges.
+ * Includes scalar types, compound types, pseudo-types, and SPL/global interfaces
+ * that are never user-defined services.
+ */
+const PHP_PRIMITIVES = new Set([
+  "int", "float", "string", "bool", "array", "callable", "void",
+  "null", "mixed", "never", "self", "static", "parent", "object",
+  "iterable", "resource", "false", "true",
+  // Common SPL types — not user services
+  "Closure", "Generator", "Throwable", "Exception", "Error",
+  "stdClass", "DateTime", "DateTimeImmutable", "DateTimeInterface",
+]);
+
+/**
+ * Extract the concrete user-defined type name from a PHP parameter or property
+ * node, skipping primitives and nullable/union syntax.
+ *
+ * Tree-sitter-php type nodes:
+ *   named_type      → name | qualified_name | self | static | parent
+ *   nullable_type   → "?" named_type
+ *   union_type      → named_type ("|" named_type)+
+ *   intersection_type → named_type ("&" named_type)+
+ *   disjunctive_normal_form_type — complex, skip
+ */
+function extractPhpTypeHint(
+  node: Parser.SyntaxNode,
+  ctx?: ResolutionContext,
+): string | null {
+  // `simple_parameter` / `promoted_property_parameter` expose the type via
+  // field "type"; `property_declaration` has it as a direct child.
+  const typeNode =
+    node.childForFieldName("type") ??
+    node.children.find((c) =>
+      c.type === "named_type" ||
+      c.type === "nullable_type" ||
+      c.type === "union_type" ||
+      c.type === "intersection_type",
+    );
+
+  if (!typeNode) return null;
+
+  let candidate: Parser.SyntaxNode | null = null;
+
+  if (typeNode.type === "named_type") {
+    candidate = typeNode.children.find(
+      (c) => c.type === "name" || c.type === "qualified_name",
+    ) ?? null;
+  } else if (typeNode.type === "nullable_type") {
+    // ?ClassName → descend into the inner named_type
+    const inner = typeNode.children.find((c) => c.type === "named_type");
+    candidate = inner?.children.find(
+      (c) => c.type === "name" || c.type === "qualified_name",
+    ) ?? null;
+  } else if (typeNode.type === "union_type" || typeNode.type === "intersection_type") {
+    // Take the first non-null/non-false/non-true named_type
+    for (const child of typeNode.children) {
+      if (child.type === "named_type") {
+        const nameNode = child.children.find(
+          (c) => c.type === "name" || c.type === "qualified_name",
+        );
+        if (nameNode && !PHP_PRIMITIVES.has(nameNode.text)) {
+          candidate = nameNode;
+          break;
+        }
+      }
+    }
+  }
+
+  if (!candidate) return null;
+
+  const name = candidate.text;
+  if (!name || PHP_PRIMITIVES.has(name)) return null;
+
+  // Resolve short name via use-statement imports in context
+  if (ctx?.imports.has(name)) return ctx.imports.get(name)!;
+
+  return name;
 }

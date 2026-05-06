@@ -8,6 +8,7 @@ export interface RagOptions {
   embeddingModel: string;
   chunkSize?: number;
   overlapSize?: number;
+  maxSymbolChunkChars?: number;
   embedFn: (texts: string[]) => Promise<number[][]>;
   db?: Database.Database;
 }
@@ -27,10 +28,12 @@ interface StoredChunk {
   hash: string;
 }
 
+const DEFAULT_MAX_SYMBOL_CHUNK_CHARS = 12_000;
+
 export interface RagIndex {
   indexSymbols(symbols: CodeSymbol[], sourceCode: Map<string, string>): Promise<void>;
   indexDocs(docsDir: string): Promise<void>;
-  search(query: string, topK?: number): Promise<SearchResult[]>;
+  search(query: string, topK?: number, minScore?: number): Promise<SearchResult[]>;
   chunkCount(): number;
 }
 
@@ -71,13 +74,11 @@ function cosineSimilarity(a: number[], b: number[]): number {
 }
 
 function buildSymbolText(sym: CodeSymbol, sourceCode: Map<string, string>): string {
-  const parts = [
-    `${sym.kind} ${sym.name}`,
-    sym.summary ?? "",
-    sym.signature ?? "",
-    sym.tags?.join(" ") ?? "",
-    sym.domain ?? "",
-  ];
+  const header = `[${sym.kind}] ${sym.qualifiedName ?? sym.name}`;
+  const meta = [sym.summary, sym.signature, sym.layer, sym.domain, sym.tags?.join(" ")]
+    .filter(Boolean)
+    .join(" | ");
+  const parts = [header, meta];
 
   const code = sourceCode.get(sym.file);
   if (code) {
@@ -88,9 +89,29 @@ function buildSymbolText(sym: CodeSymbol, sourceCode: Map<string, string>): stri
   return parts.filter(Boolean).join("\n");
 }
 
+function truncateSymbolText(text: string, maxChars: number): string {
+  if (text.length <= maxChars) return text;
+  return `${text.slice(0, maxChars)}\n\n[chunk truncated]`;
+}
+
+function vectorToBuffer(vector: number[]): Buffer {
+  return Buffer.from(new Float32Array(vector).buffer);
+}
+
+function bufferToVector(buffer: Buffer): number[] {
+  return Array.from(
+    new Float32Array(
+      buffer.buffer,
+      buffer.byteOffset,
+      buffer.byteLength / Float32Array.BYTES_PER_ELEMENT,
+    ),
+  );
+}
+
 export function createRagIndex(options: RagOptions): RagIndex {
   const chunkSize = options.chunkSize ?? 500;
   const overlapSize = options.overlapSize ?? 50;
+  const maxSymbolChunkChars = options.maxSymbolChunkChars ?? DEFAULT_MAX_SYMBOL_CHUNK_CHARS;
   const embedFn = options.embedFn;
   const db = options.db;
 
@@ -102,12 +123,15 @@ export function createRagIndex(options: RagOptions): RagIndex {
     if (loadedFromDb || !db) return;
     loadedFromDb = true;
     try {
-      const rows = db.prepare("SELECT hash, content, source, symbol_id, vector FROM rag_chunks").all() as Array<{
+      const rows = db
+        .prepare("SELECT hash, content, source, symbol_id, vector, vector_blob FROM rag_chunks")
+        .all() as Array<{
         hash: string;
         content: string;
         source: string;
         symbol_id: string | null;
         vector: string;
+        vector_blob: Buffer | null;
       }>;
       for (const row of rows) {
         if (indexedHashes.has(row.hash)) continue;
@@ -117,7 +141,7 @@ export function createRagIndex(options: RagOptions): RagIndex {
           content: row.content,
           source: row.source,
           symbolId: row.symbol_id ?? undefined,
-          vector: JSON.parse(row.vector),
+          vector: row.vector_blob ? bufferToVector(row.vector_blob) : JSON.parse(row.vector),
         });
       }
     } catch {
@@ -129,10 +153,29 @@ export function createRagIndex(options: RagOptions): RagIndex {
     if (!db) return;
     try {
       db.prepare(
-        "INSERT OR REPLACE INTO rag_chunks (hash, content, source, symbol_id, vector) VALUES (?, ?, ?, ?, ?)",
-      ).run(chunk.hash, chunk.content, chunk.source, chunk.symbolId ?? null, JSON.stringify(chunk.vector));
+        "INSERT OR REPLACE INTO rag_chunks (hash, content, source, symbol_id, vector, vector_blob) VALUES (?, ?, ?, ?, ?, ?)",
+      ).run(
+        chunk.hash,
+        chunk.content,
+        chunk.source,
+        chunk.symbolId ?? null,
+        JSON.stringify(chunk.vector),
+        vectorToBuffer(chunk.vector),
+      );
     } catch {
-      // Ignore persistence errors
+      try {
+        db.prepare(
+          "INSERT OR REPLACE INTO rag_chunks (hash, content, source, symbol_id, vector) VALUES (?, ?, ?, ?, ?)",
+        ).run(
+          chunk.hash,
+          chunk.content,
+          chunk.source,
+          chunk.symbolId ?? null,
+          JSON.stringify(chunk.vector),
+        );
+      } catch {
+        // Ignore persistence errors
+      }
     }
   }
 
@@ -167,9 +210,8 @@ export function createRagIndex(options: RagOptions): RagIndex {
   return {
     async indexSymbols(symbols, sourceCode) {
       for (const sym of symbols) {
-        const text = buildSymbolText(sym, sourceCode);
-        const chunks = chunkText(text, chunkSize, overlapSize);
-        await addChunks(chunks, sym.file, sym.id);
+        const text = truncateSymbolText(buildSymbolText(sym, sourceCode), maxSymbolChunkChars);
+        await addChunks([text], sym.file, sym.id);
       }
     },
 
@@ -182,7 +224,7 @@ export function createRagIndex(options: RagOptions): RagIndex {
       }
     },
 
-    async search(query, topK = 5) {
+    async search(query, topK = 5, minScore = 0) {
       loadFromDb();
       if (store.length === 0) return [];
 
@@ -195,7 +237,7 @@ export function createRagIndex(options: RagOptions): RagIndex {
       }));
 
       scored.sort((a, b) => b.score - a.score);
-      return scored.slice(0, topK);
+      return scored.filter((result) => result.score >= minScore).slice(0, topK);
     },
 
     chunkCount() {

@@ -99,6 +99,96 @@ export class TypeScriptStrategy implements LanguageStrategy {
         }
       }
     }
+
+    // ── Dependency Injection: constructor parameter types ───────────────────
+    // Handles tsyringe @injectable/@inject, NestJS @Injectable/@Inject,
+    // InversifyJS @injectable/@inject, and plain TypeScript constructor DI.
+    //
+    // Patterns captured:
+    //   constructor(@inject(TOKEN) private repo: PaymentRepository) {}
+    //   constructor(private email: EmailService) {}
+    //   @inject(TOKEN) private repo: PaymentRepository;  (property injection)
+    this._extractDiRelationships(node, classSymbol, addRel, file);
+  }
+
+  /**
+   * Extract dependency injection relationships from a class node.
+   *
+   * Walks constructor parameters and injected properties, resolving
+   * type annotations to `uses` relationships so the knowledge graph
+   * correctly reflects runtime DI wiring — even when no `new X()` call exists.
+   */
+  private _extractDiRelationships(
+    classNode: Parser.SyntaxNode,
+    classSymbol: CodeSymbol,
+    addRel: AddRelFn,
+    file: string,
+  ): void {
+    const body = classNode.children.find((c) => c.type === "class_body");
+    if (!body) return;
+
+    for (const member of body.children) {
+      // ── 1. Constructor parameter injection ────────────────────────────────
+      // method_definition { name: "constructor", formal_parameters: [...] }
+      if (
+        member.type === "method_definition" &&
+        member.childForFieldName("name")?.text === "constructor"
+      ) {
+        const params = member.childForFieldName("parameters");
+        if (!params) continue;
+
+        for (const param of params.children) {
+          // required_parameter | optional_parameter | assignment_pattern
+          if (
+            param.type !== "required_parameter" &&
+            param.type !== "optional_parameter" &&
+            param.type !== "assignment_pattern"
+          ) {
+            continue;
+          }
+
+          // Extract type from type_annotation node
+          const typeName = extractTypeAnnotation(param);
+          if (typeName) {
+            addRel(classSymbol.id, typeName, "uses", file, param.startPosition.row + 1);
+          }
+
+          // Also capture @inject(TOKEN) / @Inject(TOKEN) decorator arguments.
+          // These may be symbols (constants, enums) — register as `uses` too.
+          for (const decorator of param.children.filter((c) => c.type === "decorator")) {
+            const tokenName = extractDecoratorArgument(decorator);
+            if (tokenName) {
+              addRel(classSymbol.id, tokenName, "uses", file, decorator.startPosition.row + 1);
+            }
+          }
+        }
+      }
+
+      // ── 2. Property injection ──────────────────────────────────────────────
+      // public_field_definition decorated with @inject / @Inject / @Autowired
+      if (
+        member.type === "public_field_definition" ||
+        member.type === "field_definition"
+      ) {
+        const hasInjectDecorator = member.children.some(
+          (c) => c.type === "decorator" && DI_DECORATOR_NAMES.test(c.text),
+        );
+        if (!hasInjectDecorator) continue;
+
+        const typeName = extractTypeAnnotation(member);
+        if (typeName) {
+          addRel(classSymbol.id, typeName, "uses", file, member.startPosition.row + 1);
+        }
+
+        // Capture TOKEN from @inject(TOKEN)
+        for (const decorator of member.children.filter((c) => c.type === "decorator")) {
+          const tokenName = extractDecoratorArgument(decorator);
+          if (tokenName) {
+            addRel(classSymbol.id, tokenName, "uses", file, decorator.startPosition.row + 1);
+          }
+        }
+      }
+    }
   }
 
   extractInstantiationRelationships(
@@ -261,6 +351,112 @@ export class TypeScriptStrategy implements LanguageStrategy {
     return imports;
   }
 }
+
+// ── DI helper constants & functions ──────────────────────────────────────────
+
+/**
+ * Decorator names that signal dependency injection.
+ * Covers tsyringe, NestJS, InversifyJS, Angular, and custom variants.
+ */
+const DI_DECORATOR_NAMES = /^@(inject|Inject|Autowired|InjectRepository|InjectQueue|InjectModel)\b/i;
+
+/**
+ * Primitive TypeScript types that should never be treated as DI dependencies.
+ * Avoids false positives like `constructor(private count: number)`.
+ */
+const PRIMITIVE_TYPES = new Set([
+  "string", "number", "boolean", "bigint", "symbol", "null", "undefined",
+  "any", "unknown", "never", "void", "object", "Function",
+  "String", "Number", "Boolean", "Object", "Array", "Promise",
+  "Map", "Set", "WeakMap", "WeakSet", "Date", "Error", "RegExp",
+]);
+
+/**
+ * Extract the type identifier name from a parameter or field node.
+ *
+ * Handles:
+ *   param: TypeName                    → "TypeName"
+ *   param: TypeName | null             → "TypeName"  (left side of union)
+ *   param?: TypeName                   → "TypeName"
+ *   param: TypeName<GenericArg>        → "TypeName"  (strips generic)
+ */
+function extractTypeAnnotation(node: Parser.SyntaxNode): string | null {
+  const typeAnnotation = node.children.find((c) => c.type === "type_annotation");
+  if (!typeAnnotation) return null;
+
+  // type_annotation has a ":" then the actual type node
+  const typeNode = typeAnnotation.children.find(
+    (c) =>
+      c.type === "type_identifier" ||
+      c.type === "identifier" ||
+      c.type === "generic_type" ||
+      c.type === "union_type" ||
+      c.type === "predefined_type",
+  );
+  if (!typeNode) return null;
+
+  let typeName: string;
+
+  if (typeNode.type === "generic_type") {
+    // SomeService<T> → take only the base name
+    const base = typeNode.childForFieldName("name") ?? typeNode.children[0];
+    typeName = base?.text ?? typeNode.text;
+  } else if (typeNode.type === "union_type") {
+    // ServiceType | null → take the first non-null member
+    const first = typeNode.children.find(
+      (c) => c.type === "type_identifier" || c.type === "identifier",
+    );
+    typeName = first?.text ?? "";
+  } else {
+    typeName = typeNode.text;
+  }
+
+  // Skip primitives and built-ins — they are never DI tokens
+  if (!typeName || PRIMITIVE_TYPES.has(typeName)) return null;
+
+  return typeName;
+}
+
+/**
+ * Extract the argument name from an `@inject(TOKEN)` / `@Inject(TOKEN)` decorator.
+ *
+ * Handles:
+ *   @inject(PAYMENT_REPOSITORY)      → "PAYMENT_REPOSITORY"
+ *   @inject("paymentRepository")     → "paymentRepository"
+ *   @Inject(PaymentRepository)       → "PaymentRepository"
+ *   @Injectable()                    → null  (no argument to extract)
+ */
+function extractDecoratorArgument(decoratorNode: Parser.SyntaxNode): string | null {
+  // Decorator text must match the DI pattern
+  if (!DI_DECORATOR_NAMES.test(decoratorNode.text)) return null;
+
+  const callExpr = decoratorNode.children.find((c) => c.type === "call_expression");
+  if (!callExpr) return null;
+
+  const args = callExpr.childForFieldName("arguments");
+  if (!args) return null;
+
+  const firstArg = args.namedChildren[0];
+  if (!firstArg) return null;
+
+  // String literal: @inject("myService")
+  if (firstArg.type === "string" || firstArg.type === "string_literal") {
+    return firstArg.text.replace(/^["'`]|["'`]$/g, "") || null;
+  }
+
+  // Identifier or member expression: @inject(MY_TOKEN) or @inject(Tokens.Payment)
+  if (
+    firstArg.type === "identifier" ||
+    firstArg.type === "member_expression" ||
+    firstArg.type === "type_identifier"
+  ) {
+    return firstArg.text || null;
+  }
+
+  return null;
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
 
 function findEnclosingSymbol(line: number, symsInFile: CodeSymbol[]): CodeSymbol | undefined {
   let best: CodeSymbol | undefined;

@@ -9,7 +9,7 @@ export const createOnboardingSchema = {
 };
 
 export function registerCreateOnboardingTool(server: McpServer, deps: ServerDependencies): void {
-  const { ragIndex } = deps;
+  const { config, ragIndex, llm } = deps;
 
   server.registerTool(
     "createOnboarding",
@@ -22,16 +22,36 @@ export function registerCreateOnboardingTool(server: McpServer, deps: ServerDepe
         if (ragIndex.chunkCount() === 0) {
           await ragIndex.indexDocs(docsDir);
         }
-        const results = await ragIndex.search(topic, 10);
+        const minScore = config.rag?.minScore ?? 0.2;
+        const results = await ragIndex.search(topic, 10, minScore);
+        if (results.length === 0) {
+          return mcpSuccess(`Nenhum conteúdo relevante encontrado para: ${topic}`);
+        }
 
-        const path = results
-          .map(
-            (r, i) =>
-              `${i + 1}. ${r.source} (score: ${(r.score * 100).toFixed(0)}%)\n   ${r.content.slice(0, 200)}...`,
-          )
+        const context = results
+          .map((r) => `## ${r.source} (relevância: ${(r.score * 100).toFixed(0)}%)\n${r.content}`)
           .join("\n\n");
 
-        return mcpSuccess(`Learning path for "${topic}":\n\n${path}`);
+        const prompt = `Você é um tech lead criando um guia de onboarding para um novo engenheiro.
+
+Tópico: "${topic}"
+
+Contexto disponível:
+${context}
+
+Crie um learning path estruturado com:
+1. Visão geral: o que é e por que importa
+2. Conceitos fundamentais em ordem de aprendizado
+3. Como começar com passos práticos
+4. Armadilhas comuns
+5. Recursos para aprofundamento
+
+Use apenas o contexto disponível. Se houver lacunas, diga quais são. Seja conciso, progressivo e responda em ${config.outputLanguage}.`;
+
+        const answer =
+          (await llm.chat([{ role: "user", content: prompt }])) || "No onboarding generated.";
+
+        return mcpSuccess(answer);
       } catch (err) {
         return mcpError((err as Error).message);
       }

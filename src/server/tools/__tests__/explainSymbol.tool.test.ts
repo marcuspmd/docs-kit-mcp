@@ -5,7 +5,6 @@ import type { CodeSymbol } from "../../../indexer/symbol.types.js";
 
 // Mock dependencies
 const mockRebuild = jest.fn();
-const mockRegister = jest.fn();
 const mockFindByName = jest.fn();
 const mockUpsert = jest.fn();
 const mockFindByIds = jest.fn();
@@ -38,11 +37,11 @@ jest.unstable_mockModule("node:path", () => ({
 describe("explainSymbol.tool", () => {
   let registerExplainSymbolTool: typeof import("../explainSymbol.tool.js").registerExplainSymbolTool;
   let registerUpdateSymbolExplanationTool: typeof import("../explainSymbol.tool.js").registerUpdateSymbolExplanationTool;
-  
+
   let mockServer: McpServer;
   let mockDeps: ServerDependencies;
-  let toolCallback: Function;
-  let updateToolCallback: Function;
+  let toolCallback: (args: Record<string, unknown>) => Promise<unknown>;
+  let updateToolCallback: (args: Record<string, unknown>) => Promise<unknown>;
 
   beforeEach(async () => {
     jest.clearAllMocks();
@@ -58,7 +57,7 @@ describe("explainSymbol.tool", () => {
     } as unknown as McpServer;
 
     mockDeps = {
-      config: { projectRoot: "/root" },
+      config: { projectRoot: "/root", outputLanguage: "pt-BR", promptVerbosity: "detailed" },
       registry: { rebuild: mockRebuild },
       symbolRepo: {
         findByName: mockFindByName,
@@ -75,9 +74,14 @@ describe("explainSymbol.tool", () => {
   describe("explainSymbol", () => {
     it("should return prompt when symbol is found and not cached", async () => {
       registerExplainSymbolTool(mockServer, mockDeps);
-      
+
       const symbol: CodeSymbol = {
-        id: "1", name: "MySymbol", kind: "class", file: "src/file.ts", startLine: 1, endLine: 5
+        id: "1",
+        name: "MySymbol",
+        kind: "class",
+        file: "src/file.ts",
+        startLine: 1,
+        endLine: 5,
       };
 
       mockRebuild.mockResolvedValue(undefined);
@@ -85,19 +89,32 @@ describe("explainSymbol.tool", () => {
         found: true,
         needsUpdate: true,
         cachedExplanation: null,
+        symbol,
+        sourceCode: "line1\nline2\nline3\nline4\nline5",
+        dependencies: [],
+        dependents: [],
       });
-      mockFindByName.mockReturnValue([symbol]);
-      mockGetDependencies.mockReturnValue([]);
-      mockGetDependents.mockReturnValue([]);
-      mockFindByIds.mockReturnValue([]);
-      mockReadFileSync.mockReturnValue("line1\nline2\nline3\nline4\nline5");
       mockBuildPrompt.mockReturnValue("AI Prompt");
 
       const result = await toolCallback({ symbol: "MySymbol", docsDir: "docs" });
 
       expect(mockRebuild).toHaveBeenCalledWith("docs");
       expect(mockBuildExplainSymbolContext).toHaveBeenCalled();
-      expect(mockBuildPrompt).toHaveBeenCalled();
+      expect(mockFindByName).not.toHaveBeenCalled();
+      expect(mockGetDependencies).not.toHaveBeenCalled();
+      expect(mockGetDependents).not.toHaveBeenCalled();
+      expect(mockReadFileSync).not.toHaveBeenCalled();
+      expect(mockBuildPrompt).toHaveBeenCalledWith(
+        expect.objectContaining({
+          symbol,
+          sourceCode: "line1\nline2\nline3\nline4\nline5",
+          dependencies: [],
+          dependents: [],
+          outputLanguage: "pt-BR",
+          verbosity: "detailed",
+        }),
+        null,
+      );
       expect(result).toEqual({
         content: [{ type: "text", text: "AI Prompt" }],
       });
@@ -130,34 +147,44 @@ describe("explainSymbol.tool", () => {
     });
 
     it("should handle errors", async () => {
-        registerExplainSymbolTool(mockServer, mockDeps);
-        mockRebuild.mockRejectedValue(new Error("Registry Error"));
-        
-        const result = await toolCallback({ symbol: "Error", docsDir: "docs" });
-        expect(result.isError).toBe(true);
-        expect(result.content[0].text).toContain("Registry Error");
+      registerExplainSymbolTool(mockServer, mockDeps);
+      mockRebuild.mockRejectedValue(new Error("Registry Error"));
+
+      const result = await toolCallback({ symbol: "Error", docsDir: "docs" });
+      expect(result.isError).toBe(true);
+      expect(result.content[0].text).toContain("Registry Error");
     });
   });
 
   describe("updateSymbolExplanation", () => {
     it("should update explanation for existing symbol", async () => {
       registerUpdateSymbolExplanationTool(mockServer, mockDeps);
-      
+
       const symbol: CodeSymbol = {
-        id: "1", name: "MySymbol", kind: "class", file: "src/file.ts", startLine: 1, endLine: 5
+        id: "1",
+        name: "MySymbol",
+        kind: "class",
+        file: "src/file.ts",
+        startLine: 1,
+        endLine: 5,
       };
 
       mockFindByName.mockReturnValue([symbol]);
       mockReadFileSync.mockReturnValue("code");
       mockGenerateExplanationHash.mockReturnValue("hash123");
 
-      const result = await updateToolCallback({ symbol: "MySymbol", explanation: "New Explanation" });
-
-      expect(mockUpsert).toHaveBeenCalledWith(expect.objectContaining({
-        id: "1",
+      const result = await updateToolCallback({
+        symbol: "MySymbol",
         explanation: "New Explanation",
-        explanationHash: "hash123"
-      }));
+      });
+
+      expect(mockUpsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          id: "1",
+          explanation: "New Explanation",
+          explanationHash: "hash123",
+        }),
+      );
       expect(result.content[0].text).toContain("Explanation cached");
     });
 

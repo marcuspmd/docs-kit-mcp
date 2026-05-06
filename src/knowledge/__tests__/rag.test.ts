@@ -1,4 +1,5 @@
 import { createRagIndex } from "../rag.js";
+import type Database from "better-sqlite3";
 import type { CodeSymbol } from "../../indexer/symbol.types.js";
 import { writeFile, mkdir, rm } from "node:fs/promises";
 import { join } from "node:path";
@@ -127,6 +128,18 @@ describe("RagIndex", () => {
       expect(results).toHaveLength(3);
     });
 
+    it("filters results below minScore", async () => {
+      const rag = createRagIndex({ embeddingModel: "mock", embedFn: mockEmbedFn });
+      await rag.indexSymbols(
+        [sym({ id: "s1", name: "calculatePrice", summary: "pricing calculation for orders" })],
+        new Map(),
+      );
+
+      const results = await rag.search("unrelated", 5, 1.1);
+
+      expect(results).toHaveLength(0);
+    });
+
     it("returns empty when index is empty", async () => {
       const rag = createRagIndex({ embeddingModel: "mock", embedFn: mockEmbedFn });
       const results = await rag.search("anything");
@@ -135,7 +148,7 @@ describe("RagIndex", () => {
   });
 
   describe("chunking", () => {
-    it("splits large text into overlapping chunks", async () => {
+    it("keeps each symbol as a single structural chunk", async () => {
       const rag = createRagIndex({
         embeddingModel: "mock",
         embedFn: mockEmbedFn,
@@ -152,7 +165,81 @@ describe("RagIndex", () => {
       ];
 
       await rag.indexSymbols(symbols, new Map());
+      expect(rag.chunkCount()).toBe(1);
+    });
+
+    it("still splits docs into overlapping chunks", async () => {
+      const tmpDir = join(tmpdir(), `rag-doc-chunk-test-${Date.now()}`);
+      await mkdir(tmpDir, { recursive: true });
+      await writeFile(join(tmpDir, "large.md"), "word1 word2 word3 word4 word5 word6 word7 word8");
+
+      const rag = createRagIndex({
+        embeddingModel: "mock",
+        embedFn: mockEmbedFn,
+        chunkSize: 5,
+        overlapSize: 2,
+      });
+
+      await rag.indexDocs(tmpDir);
       expect(rag.chunkCount()).toBeGreaterThan(1);
+
+      await rm(tmpDir, { recursive: true, force: true });
+    });
+  });
+
+  describe("persistence", () => {
+    it("persists and reloads vectors from binary blobs", async () => {
+      const rows: Array<{
+        hash: string;
+        content: string;
+        source: string;
+        symbol_id: string | null;
+        vector: string;
+        vector_blob: Buffer | null;
+      }> = [];
+
+      const db = {
+        prepare(sql: string) {
+          if (sql.startsWith("SELECT hash")) {
+            return { all: () => rows };
+          }
+
+          if (sql.includes("INSERT OR REPLACE INTO rag_chunks")) {
+            return {
+              run(
+                hash: string,
+                content: string,
+                source: string,
+                symbolId: string | null,
+                vector: string,
+                vectorBlob?: Buffer,
+              ) {
+                rows.push({
+                  hash,
+                  content,
+                  source,
+                  symbol_id: symbolId,
+                  vector,
+                  vector_blob: vectorBlob ?? null,
+                });
+              },
+            };
+          }
+
+          throw new Error(`Unexpected SQL: ${sql}`);
+        },
+      } as unknown as Database.Database;
+
+      const rag = createRagIndex({ embeddingModel: "mock", embedFn: mockEmbedFn, db });
+      await rag.indexSymbols([sym({ id: "s1", name: "foo", summary: "bar baz" })], new Map());
+
+      expect(Buffer.isBuffer(rows[0].vector_blob)).toBe(true);
+
+      const reloaded = createRagIndex({ embeddingModel: "mock", embedFn: mockEmbedFn, db });
+      const results = await reloaded.search("foo", 1);
+
+      expect(results).toHaveLength(1);
+      expect(results[0].symbolId).toBe("s1");
     });
   });
 

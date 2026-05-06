@@ -81,7 +81,7 @@ describe("buildSiteUseCase", () => {
     expect(mockGenerateSite).toHaveBeenCalledWith(
       expect.objectContaining({
         outDir: "docs-site",
-        rootDir: ".",
+        rootDir: "src",
       }),
     );
   });

@@ -46,36 +46,19 @@ export function registerExplainSymbolTool(server: McpServer, deps: ServerDepende
         }
 
         // Build prompt with instruction to call updateSymbolExplanation
-        const symbols = symbolRepo.findByName(symbolName);
-        const sym = symbols[0];
-
-        if (!sym) {
+        if (!result.symbol) {
           return mcpSuccess(result.prompt);
         }
-
-        // Get dependencies for the prompt
-        let sourceCode: string | undefined;
-        try {
-          const filePath = path.resolve(config.projectRoot, sym.file);
-          const fullSource = fs.readFileSync(filePath, "utf-8");
-          const lines = fullSource.split("\n").slice(sym.startLine - 1, sym.endLine);
-          sourceCode = lines.join("\n");
-        } catch {
-          /* skip */
-        }
-
-        const depRels = graph.getDependencies(sym.id);
-        const dependencies = symbolRepo.findByIds(depRels.map((r) => r.targetId));
-        const depByRels = graph.getDependents(sym.id);
-        const dependents = symbolRepo.findByIds(depByRels.map((r) => r.sourceId));
 
         // Build prompt for MCP with update instructions
         const prompt = buildExplainSymbolPromptForMcp(
           {
-            symbol: sym,
-            sourceCode,
-            dependencies,
-            dependents,
+            symbol: result.symbol,
+            sourceCode: result.sourceCode,
+            dependencies: result.dependencies,
+            dependents: result.dependents,
+            outputLanguage: config.outputLanguage,
+            verbosity: config.promptVerbosity,
           },
           result.cachedExplanation,
         );

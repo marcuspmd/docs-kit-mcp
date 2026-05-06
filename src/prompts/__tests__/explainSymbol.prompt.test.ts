@@ -70,6 +70,16 @@ describe("explainSymbol.prompt", () => {
       expect(prompt).toContain(sourceCode);
     });
 
+    it("should truncate source code when it exceeds maxSourceLines", () => {
+      const symbol = createMockSymbol();
+      const sourceCode = Array.from({ length: 5 }, (_, i) => `line ${i + 1}`).join("\n");
+      const prompt = buildExplainSymbolPrompt({ symbol, sourceCode, maxSourceLines: 3 });
+
+      expect(prompt).toContain("line 1\nline 2\nline 3");
+      expect(prompt).not.toContain("line 4");
+      expect(prompt).toContain("// ... (+2 lines)");
+    });
+
     it("should include existing documentation when provided", () => {
       const symbol = createMockSymbol();
       const docContent = "# Test Documentation\nThis is a test";
@@ -82,8 +92,8 @@ describe("explainSymbol.prompt", () => {
     it("should include dependencies when provided", () => {
       const symbol = createMockSymbol();
       const dependencies = [
-        createMockSymbol({ name: "dep1", kind: "class" as any }),
-        createMockSymbol({ name: "dep2", kind: "function" as any }),
+        createMockSymbol({ name: "dep1", kind: "class" }),
+        createMockSymbol({ name: "dep2", kind: "function" }),
       ];
       const prompt = buildExplainSymbolPrompt({ symbol, dependencies });
 
@@ -94,7 +104,7 @@ describe("explainSymbol.prompt", () => {
 
     it("should include dependents when provided", () => {
       const symbol = createMockSymbol();
-      const dependents = [createMockSymbol({ name: "user1", kind: "function" as any })];
+      const dependents = [createMockSymbol({ name: "user1", kind: "function" })];
       const prompt = buildExplainSymbolPrompt({ symbol, dependents });
 
       expect(prompt).toContain("## Dependents (use this symbol):");
@@ -136,6 +146,21 @@ describe("explainSymbol.prompt", () => {
       expect(prompt).toContain("## Dependencies");
       expect(prompt).toContain("## Dependents");
       expect(prompt).toContain("## Instructions");
+    });
+
+    it("should support brief verbosity and configurable output language", () => {
+      const symbol = createMockSymbol();
+      const prompt = buildExplainSymbolPrompt({
+        symbol,
+        verbosity: "brief",
+        outputLanguage: "en-US",
+      });
+
+      expect(prompt).toContain(
+        "Explain purpose, behavior, usage, dependencies, and gotchas concisely.",
+      );
+      expect(prompt).toContain("**Responda em en-US**");
+      expect(prompt).not.toContain("1. **Purpose**");
     });
   });
 

@@ -106,6 +106,8 @@ export async function setupContainer(
   container.register(RAG_INDEX_TOKEN, {
     useValue: createRagIndex({
       embeddingModel: config.llm.embeddingModel ?? "text-embedding-ada-002",
+      chunkSize: config.rag?.chunkSize,
+      overlapSize: config.rag?.overlapSize,
       db,
       embedFn: (texts: string[]) => llm.embed(texts),
     }),
