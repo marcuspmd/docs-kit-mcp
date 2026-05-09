@@ -20,6 +20,7 @@ import {
   renderInspectorPage,
   fileSlug,
 } from "./templates.js";
+import { loadSiteData } from "./dataLoader.js";
 
 // ES module compatibility for __dirname
 const __filename = fileURLToPath(import.meta.url);
@@ -236,60 +237,18 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   const ownsDb = !options.db;
   const db = options.db ?? new Database(options.dbPath!, { readonly: true });
 
-  const symbolRows = db.prepare("SELECT * FROM symbols").all() as SymbolRow[];
-  const symbols = symbolRows.map(rowToSymbol);
+  const {
+    symbols,
+    relationships,
+    patterns,
+    files,
+    archViolations,
+    reaperFindings,
+    docEntries,
+    docsConfigDir,
+  } = loadSiteData(db, rootDir);
 
-  const relationships = db.prepare("SELECT * FROM relationships").all() as RelationshipRow[];
-
-  // Load patterns if table exists
-  let patterns: DetectedPattern[] = [];
-  try {
-    const patternRows = db.prepare("SELECT * FROM patterns").all() as PatternRow[];
-    patterns = patternRows.map((row) => ({
-      kind: row.kind as PatternKind,
-      symbols: JSON.parse(row.symbols) as string[],
-      confidence: row.confidence,
-      violations: row.violations ? (JSON.parse(row.violations) as string[]) : [],
-    }));
-  } catch (e) {
-    patterns = [];
-  }
-
-  // Load arch_violations and reaper_findings if tables exist
-  interface ArchViolationRow {
-    rule: string;
-    file: string;
-    symbol_id: string | null;
-    message: string;
-    severity: string;
-  }
-  interface ReaperFindingRow {
-    type: string;
-    target: string;
-    reason: string;
-    suggested_action: string;
-  }
-  let archViolations: ArchViolationRow[] = [];
-  let reaperFindings: ReaperFindingRow[] = [];
-  try {
-    archViolations = db
-      .prepare("SELECT rule, file, symbol_id, message, severity FROM arch_violations")
-      .all() as ArchViolationRow[];
-  } catch {
-    archViolations = [];
-  }
-  try {
-    reaperFindings = db
-      .prepare("SELECT type, target, reason, suggested_action FROM reaper_findings")
-      .all() as ReaperFindingRow[];
-  } catch {
-    reaperFindings = [];
-  }
-
-  // NOTE: Do NOT close db here - we need it for loadDocsConfig later
-
-  const files = [...new Set(symbols.map((s) => s.file))];
-  const docRefs = new Set<string>();
+  if (ownsDb) db.close();
 
   // Create output directories
   fs.mkdirSync(path.join(outDir, "symbols"), { recursive: true });
@@ -363,31 +322,6 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
     }
     return sourceCache.get(file);
   }
-
-  // Build doc entries: from database and config, then symbol doc_ref (dedupe by path)
-  for (const s of symbols) {
-    if (s.docRef) docRefs.add(s.docRef);
-  }
-  const { entries: configDocs, configDir: docsConfigDir } = loadDocsConfig(db, rootDir);
-
-  // Close the database only if we opened it ourselves
-  if (ownsDb) db.close();
-
-  const docEntriesMap = new Map<string, DocEntry>();
-  for (const entry of configDocs) {
-    docEntriesMap.set(entry.path, entry);
-  }
-  for (const ref of docRefs) {
-    const normalized = normalizeSitePath(ref);
-    if (!docEntriesMap.has(normalized)) {
-      docEntriesMap.set(normalized, { path: normalized });
-    }
-  }
-  const docEntries = Array.from(docEntriesMap.values());
-  console.log(
-    `DEBUG: Total docEntries = ${docEntries.length}`,
-    docEntries.map((d) => `${d.path} (cat: ${d.category || "NONE"})`),
-  );
 
   // Generate index.html with docEntries for menu
   fs.writeFileSync(

@@ -9,7 +9,7 @@ export default {
 
   /** Output directories for generated content */
   output: {
-    site: "docs-site",   // `docs-kit build-site`
+    site: "docs-site", // `docs-kit build-site`
     docs: "docs-output", // `docs-kit build-docs`
   },
 
@@ -40,6 +40,9 @@ export default {
     "**/target/**",
     "**/.git/**",
     "**/coverage/**",
+    "**/docs-site/**",
+    "**/docs-site-v2/**",
+    "**/docs-output/**",
     "**/__tests__/**",
     "**/*.min.js",
     "**/*.bundle.js",
@@ -110,10 +113,10 @@ export default {
   // ---------------------------------------------------------------------------
 
   rag: {
-    enabled: false,    // set to true to build a vector index during `docs-kit index`
-    chunkSize: 500,    // words per chunk
-    overlapSize: 50,   // overlapping words between chunks
-    minScore: 0.25,    // minimum relevance score for knowledge-base answers
+    enabled: false, // set to true to build a vector index during `docs-kit index`
+    chunkSize: 500, // words per chunk
+    overlapSize: 50, // overlapping words between chunks
+    minScore: 0.25, // minimum relevance score for knowledge-base answers
   },
 
   /** Language for generated LLM outputs */
@@ -127,7 +130,7 @@ export default {
   // ---------------------------------------------------------------------------
 
   indexing: {
-    parallel: true,         // use worker threads for faster indexing
+    parallel: true, // use worker threads for faster indexing
     // maxWorkers: 4,        // cap worker count (default: CPU count - 1, max 8)
   },
 
@@ -136,7 +139,7 @@ export default {
   // ---------------------------------------------------------------------------
 
   coverage: {
-    enabled: false,                    // annotate symbols with coverage data
+    enabled: false, // annotate symbols with coverage data
     lcovPath: "./coverage/lcov.info",
   },
 

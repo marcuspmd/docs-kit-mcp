@@ -83,6 +83,8 @@ export type Stability = z.infer<typeof StabilitySchema>;
 export const CodeMetricsSchema = z.object({
   linesOfCode: z.number().int().nonnegative().optional(),
   cyclomaticComplexity: z.number().int().nonnegative().optional(),
+  cognitiveComplexity: z.number().int().nonnegative().optional(),
+  maxNestingDepth: z.number().int().nonnegative().optional(),
   parameterCount: z.number().int().nonnegative().optional(),
   testCoverage: z
     .object({

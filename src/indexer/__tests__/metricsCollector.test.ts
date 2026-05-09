@@ -71,6 +71,21 @@ describe("collectMetrics", () => {
     // Simple methods with no branches should have complexity 1
     const findById = result.find((s) => s.name === "findById");
     expect(findById!.metrics!.cyclomaticComplexity).toBe(1);
+    expect(findById!.metrics!.cognitiveComplexity).toBe(0);
+    expect(findById!.metrics!.maxNestingDepth).toBe(0);
+  });
+
+  it("computes cognitive complexity and max nesting depth", () => {
+    const { symbols, tree } = parseFixtureWithTree("complexity.ts");
+    const trees = new Map([["complexity.ts", tree]]);
+
+    const result = collectMetrics({ symbols, trees });
+
+    const classify = result.find((s) => s.name === "classify");
+    expect(classify).toBeDefined();
+    expect(classify!.metrics!.cyclomaticComplexity).toBe(6);
+    expect(classify!.metrics!.cognitiveComplexity).toBe(8);
+    expect(classify!.metrics!.maxNestingDepth).toBe(3);
   });
 
   it("returns metrics for all symbols", () => {
@@ -83,6 +98,8 @@ describe("collectMetrics", () => {
       expect(s.metrics).toBeDefined();
       expect(s.metrics!.linesOfCode).toBeGreaterThan(0);
       expect(s.metrics!.cyclomaticComplexity).toBeGreaterThanOrEqual(1);
+      expect(s.metrics!.cognitiveComplexity).toBeGreaterThanOrEqual(0);
+      expect(s.metrics!.maxNestingDepth).toBeGreaterThanOrEqual(0);
       expect(s.metrics!.parameterCount).toBeGreaterThanOrEqual(0);
     }
   });
@@ -97,6 +114,8 @@ describe("collectMetrics", () => {
     for (const s of result) {
       expect(s.metrics).toBeDefined();
       expect(s.metrics!.cyclomaticComplexity).toBe(1);
+      expect(s.metrics!.cognitiveComplexity).toBe(0);
+      expect(s.metrics!.maxNestingDepth).toBe(0);
     }
   });
 });

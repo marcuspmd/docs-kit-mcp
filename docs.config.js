@@ -6,8 +6,8 @@ export default {
 
   // Output directories for generated content
   output: {
-    site: "docs-site",   // used by `docs-kit build-site`
-    docs: "my-docs",     // used by `docs-kit build-docs`
+    site: "docs-site", // used by `docs-kit build-site`
+    docs: "my-docs", // used by `docs-kit build-docs`
   },
 
   include: [
@@ -31,6 +31,9 @@ export default {
     "**/target/**",
     "**/.git/**",
     "**/coverage/**",
+    "**/docs-site/**",
+    "**/docs-site-v2/**",
+    "**/docs-output/**",
     "**/*.min.js",
     "**/*.bundle.js",
     "**/*.map",
@@ -38,7 +41,7 @@ export default {
     "**/package-lock.json",
     "**/yarn.lock",
     "**/pnpm-lock.yaml",
-    '**/__tests__/**',
+    "**/__tests__/**",
   ],
   respectGitignore: true,
   maxFileSize: 512_000,
@@ -132,7 +135,7 @@ export default {
       module: "Main",
       symbols: ["createArchGuard", "ArchGuard", "ArchRule", "ArchViolation"],
       next: "docs/domain/projectStatus.md",
-      showOnMenu: true
+      showOnMenu: true,
     },
     {
       path: "./docs/domain/projectStatus.md",
@@ -142,18 +145,17 @@ export default {
       module: "Main",
       symbols: ["generateProjectStatus", "ProjectStatusResult"],
       previous: "docs/domain/arch-guard-rules.md",
-      showOnMenu: true
+      showOnMenu: true,
     },
     {
       path: "./docs/modules/",
       autoDiscovery: true,
-      showOnMenu: true
+      showOnMenu: true,
     },
     {
       path: "./docs/examples/",
       autoDiscovery: true,
-      showOnMenu: true
-    }
+      showOnMenu: true,
+    },
   ],
-
 };

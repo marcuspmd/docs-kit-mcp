@@ -6,6 +6,7 @@ import { setupContainer, resolve } from "../../di/container.js";
 import { DATABASE_TOKEN } from "../../di/tokens.js";
 import type Database from "better-sqlite3";
 import { generateSite } from "../../site/generator.js";
+import { generateSiteV2 } from "../../site/v2Generator.js";
 import { header, step, done, summary } from "../utils/index.js";
 import { resolveConfigPath } from "../utils/index.js";
 
@@ -16,6 +17,7 @@ export interface BuildSiteUseCaseParams {
   outDir?: string;
   dbPath?: string;
   rootDir?: string;
+  version?: string;
 }
 
 export async function buildSiteUseCase(params: BuildSiteUseCaseParams): Promise<void> {
@@ -25,6 +27,7 @@ export async function buildSiteUseCase(params: BuildSiteUseCaseParams): Promise<
   const outDir = params.outDir ?? config.output.site;
   const dbPath = resolveConfigPath(params.dbPath, configDir, config.dbPath);
   const rootDir = params.rootDir ?? config.rootDir;
+  const version = params.version === "v2" ? "v2" : "v1";
 
   if (!fs.existsSync(dbPath)) {
     console.error(`Error: Database not found at ${dbPath}`);
@@ -35,24 +38,34 @@ export async function buildSiteUseCase(params: BuildSiteUseCaseParams): Promise<
 
   await setupContainer({ dbPath });
 
-  header(`Generating site: ${outDir}/`);
+  header(`Generating site: ${outDir}/ (${version})`);
 
   step("Reading index from SQLite");
   done(dbPath);
 
-  step("Generating HTML pages");
+  step(version === "v2" ? "Generating React v2 site" : "Generating HTML pages");
   const db = resolve<Database.Database>(DATABASE_TOKEN);
   try {
-    const result = generateSite({ db, outDir, rootDir });
+    const result =
+      version === "v2"
+        ? await generateSiteV2({ db, outDir, rootDir })
+        : generateSite({ db, outDir, rootDir });
     done();
 
     header("Site Summary");
-    summary([
+    const rows: Array<[string, string | number]> = [
+      ["Version", version],
       ["Symbol pages", result.symbolPages],
       ["File pages", result.filePages],
       ["Total files", result.totalFiles],
       ["Output", path.resolve(outDir)],
-    ]);
+    ];
+    if (version === "v2") {
+      const v2Result = result as Awaited<ReturnType<typeof generateSiteV2>>;
+      rows.splice(3, 0, ["Classes", v2Result.classCount]);
+      rows.splice(4, 0, ["Modules", v2Result.moduleCount]);
+    }
+    summary(rows);
   } finally {
     db.close();
   }

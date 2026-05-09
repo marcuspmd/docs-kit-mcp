@@ -62,6 +62,34 @@ npm run test           # Executa testes
 npm run test:coverage  # Testes com relatório de cobertura
 npm run format         # Formata código com Prettier
 npm run check:deps     # Verifica dependências instaladas
+
+# Site v1 (HTML estático)
+npm run gen:site       # Gera o site v1 em docs-site/
+npm run serve:site     # Serve o site v1 gerado
+
+# Site v2 (React + Vite)
+npm run gen:site:v2    # Gera site-data.json em docs-site-v2/
+npm run serve:site:v2  # Serve o site v2 gerado (produção)
+npm run dev:site:v2    # Inicia Vite dev server do site v2 (hot-reload)
+```
+
+### Site v2 — Dashboard interativo
+
+O site v2 é uma SPA React com explorador de símbolos, métricas de complexidade, violações arquiteturais e cobertura.
+
+```bash
+# 1. Indexar e gerar os dados
+npm run build
+docs-kit index
+npm run gen:site:v2
+
+# 2a. Dev (hot-reload, útil para contribuir no site)
+npm run dev:site:v2
+# Abra http://localhost:5173
+
+# 2b. Produção (serve os arquivos gerados)
+npm run serve:site:v2
+# Abra http://localhost:3000
 ```
 
 ---

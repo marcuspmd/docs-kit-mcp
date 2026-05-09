@@ -45,12 +45,14 @@ async function runBuildSite(args: string[]) {
     out: "docs-site",
     db: ".docs-kit/index.db",
     root: ".",
+    version: "v1",
   });
 
   await buildSiteUseCase({
     outDir: flags.out,
     dbPath: flags.db,
     rootDir: flags.root,
+    version: flags.version,
   });
 }
 

@@ -14,7 +14,7 @@ INDEX
 
 BUILD
   docs-kit build-site  [--out dir] [--db path] Generate navigable HTML site
-                       [--root dir]
+                       [--root dir] [--version v1|v2]
   docs-kit build-docs  [--out dir] [--db path] Generate structured Markdown docs
                        [--root dir]
 
