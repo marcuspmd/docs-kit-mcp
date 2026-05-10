@@ -62,21 +62,6 @@ export interface SiteDataBundle {
   health: SiteHealthSummary;
 }
 
-export interface DataBundleOptions {
-  dbPath?: string;
-  db?: Database.Database;
-  outDir: string;
-  rootDir?: string;
-  generatedAt?: string;
-}
-
-export interface DataBundleResult {
-  dataFile: string;
-  symbolCount: number;
-  classCount: number;
-  moduleCount: number;
-}
-
 function round(value: number): number {
   return Number(value.toFixed(2));
 }
@@ -222,27 +207,4 @@ export function createSiteDataBundle(
     complexity,
     health: buildSiteHealth(data),
   };
-}
-
-export function generateDataBundle(options: DataBundleOptions): DataBundleResult {
-  const ownsDb = !options.db;
-  const db = options.db ?? new Database(options.dbPath!, { readonly: true });
-
-  try {
-    const data = loadSiteData(db, options.rootDir);
-    const bundle = createSiteDataBundle(data, options.generatedAt, options.rootDir);
-    fs.mkdirSync(options.outDir, { recursive: true });
-
-    const dataFile = path.join(options.outDir, "site-data.json");
-    fs.writeFileSync(dataFile, JSON.stringify(bundle, null, 2), "utf-8");
-
-    return {
-      dataFile,
-      symbolCount: bundle.symbols.length,
-      classCount: bundle.complexity.classes.length,
-      moduleCount: bundle.complexity.modules.length,
-    };
-  } finally {
-    if (ownsDb) db.close();
-  }
 }

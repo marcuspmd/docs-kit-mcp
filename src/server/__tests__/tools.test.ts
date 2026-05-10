@@ -6,6 +6,27 @@ import type { ServerDependencies } from "../types.js";
 import { mcpSuccess, mcpError } from "../types.js";
 import type { CodeSymbol, SymbolRelationship } from "../../indexer/symbol.types.js";
 import type { ResolvedConfig } from "../../configLoader.js";
+import type { ReaperFindingRow, ReaperHistoryRow } from "../../storage/reportRepositories.js";
+
+// =============================================================================
+// MODULE MOCKS — storage functions used by governance tools
+// =============================================================================
+
+const mockUpsertReaperFindings = jest.fn();
+const mockGetAllFindings = jest.fn<() => ReaperFindingRow[]>().mockReturnValue([]);
+const mockUpdateFindingStatus = jest.fn<() => boolean>().mockReturnValue(true);
+const mockGetFindingHistory = jest.fn<() => ReaperHistoryRow[]>().mockReturnValue([]);
+
+jest.unstable_mockModule("../../storage/reportRepositories.js", () => ({
+  // Preserved originals (not under test here)
+  replaceAllPatterns: jest.fn(),
+  replaceAllArchViolations: jest.fn(),
+  // New reaper functions
+  upsertReaperFindings: mockUpsertReaperFindings,
+  getAllFindings: mockGetAllFindings,
+  updateFindingStatus: mockUpdateFindingStatus,
+  getFindingHistory: mockGetFindingHistory,
+}));
 
 // =============================================================================
 // MOCK FACTORIES
@@ -953,6 +974,8 @@ describe("scanForDeadCode tool", () => {
   let deps: ServerDependencies;
 
   beforeEach(async () => {
+    jest.clearAllMocks();
+    mockGetAllFindings.mockReturnValue([]);
     server = createMockServer();
     deps = createMockDependencies();
 
@@ -981,21 +1004,36 @@ describe("scanForDeadCode tool", () => {
       },
     ]);
 
+    const mockRow: ReaperFindingRow = {
+      id: "abc123",
+      type: "dead_code",
+      target: "unusedFunction",
+      reason: "No callers found",
+      suggested_action: "Remove",
+      status: "active",
+      notes: null,
+      first_seen_at: "2026-05-10 00:00:00",
+      last_seen_at: "2026-05-10 00:00:00",
+    };
+    mockGetAllFindings.mockReturnValueOnce([mockRow]);
+
     const handler = server.registeredTools.get("scanForDeadCode")?.handler;
-    const result = await handler!({ docsDir: "docs" });
+    const result = await handler!({ docsDir: "docs", status: "active" });
 
     expect(deps.registry.rebuild).toHaveBeenCalledWith("docs");
+    expect(mockUpsertReaperFindings).toHaveBeenCalled();
     expect(result.content[0].text).toContain("DEAD_CODE");
     expect(result.content[0].text).toContain("unusedFunction");
   });
 
   it("returns no findings message when clean", async () => {
     (deps.reaper.scan as jest.Mock).mockReturnValue([]);
+    mockGetAllFindings.mockReturnValueOnce([]);
 
     const handler = server.registeredTools.get("scanForDeadCode")?.handler;
-    const result = await handler!({ docsDir: "docs" });
+    const result = await handler!({ docsDir: "docs", status: "active" });
 
-    expect(result.content[0].text).toBe("No dead code or orphan docs found.");
+    expect(result.content[0].text).toBe("No findings match the requested status.");
   });
 
   it("returns error on exception", async () => {
@@ -1220,6 +1258,8 @@ describe("registerAllTools", () => {
       "createOnboarding",
       "askKnowledgeBase",
       "scanForDeadCode",
+      "updateDeadCodeStatus",
+      "getDeadCodeHistory",
       "buildTraceabilityMatrix",
       "projectStatus",
     ];

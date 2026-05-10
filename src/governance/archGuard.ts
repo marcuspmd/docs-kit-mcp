@@ -140,6 +140,21 @@ function checkForbiddenImport(
 
 const FILE_EXT_REGEX = /\.(php|ts|tsx|js|jsx|go|py|rs|java)$/i;
 
+const EXT_TO_LANGUAGE: Record<string, string> = {
+  ts: "ts",
+  tsx: "ts",
+  js: "js",
+  jsx: "js",
+  php: "php",
+  py: "python",
+  go: "go",
+};
+
+function extToLanguage(file: string): string | undefined {
+  const ext = file.split(".").pop()?.toLowerCase();
+  return ext ? EXT_TO_LANGUAGE[ext] : undefined;
+}
+
 /** Name used for pattern check: short name (last segment) for qualified/path-like names.
  * - PHP \Namespace\Class -> "Class"
  * - ClassName.methodName or ClassName::methodName -> "methodName" (so method-camel-case checks the method only)
@@ -171,7 +186,8 @@ function nameForNamingCheck(symbol: CodeSymbol): string {
 }
 
 function checkNamingConvention(rule: ArchRule, symbols: CodeSymbol[]): ArchViolation[] {
-  const pattern = new RegExp(rule.config.pattern as string);
+  const basePattern = rule.config.pattern as string | undefined;
+  const patternByLanguage = (rule.config.patternByLanguage ?? {}) as Record<string, string>;
   const kind = rule.config.kind as string | undefined;
   const fileGlob = rule.config.file as string | undefined;
   const ignore = (rule.config.ignore as string[] | undefined) ?? [];
@@ -185,6 +201,12 @@ function checkNamingConvention(rule: ArchRule, symbols: CodeSymbol[]): ArchViola
     if (isIgnored(sym.file, ignore)) continue;
     if (kind && sym.kind !== kind) continue;
     if (fileGlob && !matchGlob(fileGlob, sym.file)) continue;
+
+    const lang = sym.language ?? extToLanguage(sym.file);
+    const rawPattern = (lang && patternByLanguage[lang]) ?? basePattern;
+    if (!rawPattern) continue;
+    const pattern = new RegExp(rawPattern);
+
     const nameToCheck = nameForNamingCheck(sym);
     if (allowedSet.has(nameToCheck.toLowerCase()) || allowedSet.has(sym.name.toLowerCase()))
       continue;
@@ -193,7 +215,7 @@ function checkNamingConvention(rule: ArchRule, symbols: CodeSymbol[]): ArchViola
         rule: rule.name,
         file: sym.file,
         symbolId: sym.id,
-        message: `'${sym.name}' does not match naming convention /${rule.config.pattern as string}/`,
+        message: `'${sym.name}' does not match naming convention /${rawPattern}/`,
         severity,
       });
     }

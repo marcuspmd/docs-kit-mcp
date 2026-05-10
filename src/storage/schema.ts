@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-export const CURRENT_SCHEMA_VERSION = 2;
+export const CURRENT_SCHEMA_VERSION = 3;
 
 const CREATE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS symbols (
@@ -87,10 +87,25 @@ CREATE TABLE IF NOT EXISTS arch_violations (
 );
 
 CREATE TABLE IF NOT EXISTS reaper_findings (
-  type            TEXT NOT NULL,
-  target          TEXT NOT NULL,
-  reason          TEXT NOT NULL,
-  suggested_action TEXT NOT NULL
+  id               TEXT PRIMARY KEY,
+  type             TEXT NOT NULL,
+  target           TEXT NOT NULL,
+  reason           TEXT NOT NULL,
+  suggested_action TEXT NOT NULL,
+  status           TEXT NOT NULL DEFAULT 'active',
+  notes            TEXT,
+  first_seen_at    TEXT NOT NULL DEFAULT (datetime('now')),
+  last_seen_at     TEXT NOT NULL DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS reaper_finding_history (
+  id          TEXT PRIMARY KEY,
+  finding_id  TEXT NOT NULL,
+  changed_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  field       TEXT NOT NULL,
+  old_value   TEXT,
+  new_value   TEXT NOT NULL,
+  source      TEXT NOT NULL DEFAULT 'user'
 );
 `;
 
@@ -101,6 +116,8 @@ CREATE INDEX IF NOT EXISTS idx_symbols_name ON symbols(name);
 CREATE INDEX IF NOT EXISTS idx_symbols_qualified_name ON symbols(qualified_name);
 CREATE INDEX IF NOT EXISTS idx_symbols_layer ON symbols(layer);
 CREATE INDEX IF NOT EXISTS idx_doc_mappings_path ON doc_mappings(doc_path);
+CREATE INDEX IF NOT EXISTS idx_reaper_findings_status ON reaper_findings(status);
+CREATE INDEX IF NOT EXISTS idx_reaper_history_finding ON reaper_finding_history(finding_id);
 `;
 
 export const SCHEMA_SQL = `${CREATE_TABLES_SQL}\n${INDEX_SQL}`;
@@ -156,6 +173,43 @@ const MIGRATIONS: SchemaMigration[] = [
         addColumnIfMissing(db, "symbols", column.name, column.type);
       }
       addColumnIfMissing(db, "rag_chunks", "vector_blob", "BLOB");
+    },
+  },
+  {
+    version: 3,
+    up(db) {
+      // Recreate reaper_findings with new schema (data is ephemeral — safe to drop)
+      if (tableExists(db, "reaper_findings") && !columnExists(db, "reaper_findings", "id")) {
+        db.exec("DROP TABLE reaper_findings");
+      }
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS reaper_findings (
+          id               TEXT PRIMARY KEY,
+          type             TEXT NOT NULL,
+          target           TEXT NOT NULL,
+          reason           TEXT NOT NULL,
+          suggested_action TEXT NOT NULL,
+          status           TEXT NOT NULL DEFAULT 'active',
+          notes            TEXT,
+          first_seen_at    TEXT NOT NULL DEFAULT (datetime('now')),
+          last_seen_at     TEXT NOT NULL DEFAULT (datetime('now'))
+        )
+      `);
+      db.exec(`
+        CREATE TABLE IF NOT EXISTS reaper_finding_history (
+          id          TEXT PRIMARY KEY,
+          finding_id  TEXT NOT NULL,
+          changed_at  TEXT NOT NULL DEFAULT (datetime('now')),
+          field       TEXT NOT NULL,
+          old_value   TEXT,
+          new_value   TEXT NOT NULL,
+          source      TEXT NOT NULL DEFAULT 'user'
+        )
+      `);
+      db.exec("CREATE INDEX IF NOT EXISTS idx_reaper_findings_status ON reaper_findings(status)");
+      db.exec(
+        "CREATE INDEX IF NOT EXISTS idx_reaper_history_finding ON reaper_finding_history(finding_id)",
+      );
     },
   },
 ];

@@ -48,17 +48,18 @@ const DEFAULT_ARCH_RULES = [
   },
   {
     name: "MethodNaming",
-    description: "Methods should be camelCase",
+    description: "Methods should be camelCase (leading underscore allowed for private convention)",
     type: "naming_convention" as const,
     severity: "warning" as const,
-    config: { pattern: "^[a-z][a-zA-Z0-9]*$", kind: "method" },
+    config: { pattern: "^_?[a-z][a-zA-Z0-9]*$", kind: "method" },
   },
   {
     name: "FunctionNaming",
-    description: "Functions should be camelCase",
+    description:
+      "Functions should be camelCase (PascalCase allowed in JSX/TSX for React components)",
     type: "naming_convention" as const,
     severity: "warning" as const,
-    config: { pattern: "^[a-z][a-zA-Z0-9]*$", kind: "function" },
+    config: { pattern: "^[a-z][a-zA-Z0-9]*$", kind: "function", ignore: ["**/*.jsx", "**/*.tsx"] },
   },
 ];
 

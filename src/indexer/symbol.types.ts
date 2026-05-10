@@ -58,14 +58,6 @@ export type Visibility = z.infer<typeof VisibilitySchema>;
 export const LanguageSchema = z.enum(["ts", "js", "php", "python", "go"]);
 export type Language = z.infer<typeof LanguageSchema>;
 
-/**
- * Convert legacy language code to canonical name.
- * @internal
- */
-export function normalizeSymbolLanguage(lang: Language): CanonicalLanguage {
-  return LEGACY_LANGUAGE_ALIASES[lang] ?? (lang as CanonicalLanguage);
-}
-
 export const LayerSchema = z.enum([
   "domain",
   "application",

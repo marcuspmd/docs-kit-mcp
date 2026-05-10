@@ -37,25 +37,3 @@ export function renderMarkdown(markdown: string | undefined | null): string {
     return `<p>${escapeHtml(markdown).replace(/\n/g, "<br>")}</p>`;
   }
 }
-
-/**
- * Renders markdown inline (without wrapping in <p> tags for short text).
- * Useful for summaries that should stay on one line.
- *
- * @param markdown - Raw markdown text
- * @returns HTML string safe for embedding in page
- */
-// renderMarkdownInline has been removed (unused helper).
-export function renderMarkdownInline_DEPRECATED(markdown: string | undefined | null): string {
-  if (!markdown || markdown.trim() === "") {
-    return "";
-  }
-
-  try {
-    const html = marked.parseInline(markdown.trim()) as string;
-    return html;
-  } catch (error) {
-    console.warn("Failed to render inline markdown:", error);
-    return escapeHtml(markdown);
-  }
-}

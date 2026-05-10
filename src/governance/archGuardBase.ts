@@ -163,9 +163,9 @@ export function buildArchGuardBaseRules(options: ArchGuardBaseOptions = {}): Arc
     forbiddenImport = true,
     namingConvention = true,
     metricRules = true,
-    maxComplexity = 10,
-    maxParameters = 5,
-    maxLines = 80,
+    maxComplexity = 13,
+    maxParameters = 7,
+    maxLines = 120,
     requireReturnType = false,
   } = options;
 
@@ -217,7 +217,14 @@ export function buildArchGuardBaseRules(options: ArchGuardBaseOptions = {}): Arc
       severity: "warning",
       config: {
         kind: "method",
-        pattern: "^[a-z][a-zA-Z0-9]*$",
+        // Per-language patterns: TS/JS allow _prefix for private methods; PHP/Python use strict camelCase (magic methods covered by allowNames)
+        patternByLanguage: {
+          ts: "^_?[a-z][a-zA-Z0-9]*$",
+          js: "^_?[a-z][a-zA-Z0-9]*$",
+          php: "^[a-z][a-zA-Z0-9]*$",
+          python: "^[a-z_][a-z0-9_]*$",
+          go: "^[a-zA-Z][a-zA-Z0-9]*$",
+        },
         allowNames: reservedNames.length > 0 ? reservedNames : undefined,
       },
     });
@@ -228,7 +235,13 @@ export function buildArchGuardBaseRules(options: ArchGuardBaseOptions = {}): Arc
       severity: "warning",
       config: {
         kind: "function",
-        pattern: "^[a-z][a-zA-Z0-9]*$",
+        patternByLanguage: {
+          ts: "^_?[a-z][a-zA-Z0-9]*$",
+          js: "^_?[a-z][a-zA-Z0-9]*$",
+          php: "^[a-z][a-zA-Z0-9]*$",
+          python: "^[a-z_][a-z0-9_]*$",
+          go: "^[a-zA-Z][a-zA-Z0-9]*$",
+        },
         allowNames: reservedNames,
       },
     });
@@ -268,10 +281,4 @@ export function buildArchGuardBaseRules(options: ArchGuardBaseOptions = {}): Arc
   }
 
   return rules;
-}
-
-/** Default arch-guard configuration rules. */
-export function getDefaultArchGuardJson(options: ArchGuardBaseOptions = {}): string {
-  const rules = buildArchGuardBaseRules(options);
-  return JSON.stringify({ rules }, null, 2);
 }

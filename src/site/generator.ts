@@ -231,6 +231,153 @@ export interface GenerateResult {
   totalFiles: number;
 }
 
+function copyRecursive(src: string, dest: string): void {
+  if (!fs.existsSync(src)) return;
+  if (fs.statSync(src).isDirectory()) {
+    fs.mkdirSync(dest, { recursive: true });
+    for (const entry of fs.readdirSync(src)) {
+      copyRecursive(path.join(src, entry), path.join(dest, entry));
+    }
+  } else {
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.copyFileSync(src, dest);
+  }
+}
+
+function buildSourceResolver(
+  rootDir: string | undefined,
+): (file: string) => string | undefined {
+  const cache = new Map<string, string | undefined>();
+  const cwd = process.cwd();
+
+  return function getSource(file: string): string | undefined {
+    if (cache.has(file)) return cache.get(file);
+
+    let content = readSource(rootDir, file);
+
+    if (!content && rootDir) {
+      content = readSource(rootDir, path.join("src", file))
+        ?? readSource(rootDir, file.replace(/^src[\\/]/, ""));
+    }
+
+    if (!content) {
+      try {
+        const p = path.join(cwd, file);
+        if (fs.existsSync(p) && fs.statSync(p).isFile()) content = fs.readFileSync(p, "utf-8");
+      } catch { /* ignore */ }
+    }
+
+    if (!content) {
+      try {
+        const p2 = path.join(cwd, "src", file);
+        if (fs.existsSync(p2) && fs.statSync(p2).isFile()) content = fs.readFileSync(p2, "utf-8");
+      } catch { /* ignore */ }
+    }
+
+    cache.set(file, content);
+    return content;
+  };
+}
+
+function buildDocCandidates(
+  entry: DocEntry,
+  docsConfigDir: string | null,
+  resolvedRoot: string | null,
+): string[] {
+  const cwd = process.cwd();
+  const sourceRef = entry.sourcePath ?? entry.path;
+  const sourceRefNormalized = normalizeSitePath(sourceRef);
+  const candidates: string[] = [];
+
+  if (docsConfigDir) {
+    if (sourceRef.startsWith("../") || sourceRef.startsWith("..\\")) {
+      candidates.push(path.resolve(docsConfigDir, sourceRef));
+    } else if (!path.isAbsolute(sourceRef)) {
+      candidates.push(path.join(docsConfigDir, sourceRef));
+    }
+  }
+  candidates.push(path.join(cwd, sourceRefNormalized));
+  candidates.push(path.join(cwd, "docs", sourceRefNormalized));
+  if (resolvedRoot) {
+    candidates.push(path.join(resolvedRoot, sourceRefNormalized));
+    candidates.push(path.join(resolvedRoot, "docs", sourceRefNormalized));
+  }
+  candidates.push(path.join(cwd, "docs-output", sourceRefNormalized));
+  return candidates;
+}
+
+function readDocEntryContent(candidates: string[]): string | undefined {
+  for (const c of candidates) {
+    try {
+      if (fs.existsSync(c) && fs.statSync(c).isFile()) return fs.readFileSync(c, "utf-8");
+    } catch { /* ignore */ }
+  }
+  return undefined;
+}
+
+function buildPlaceholderContent(docRef: string, linked: CodeSymbol[]): string {
+  const title = path.basename(docRef, path.extname(docRef));
+  const lines: string[] = [
+    "---",
+    `title: ${title}`,
+    "symbols:",
+    ...linked.map((s) => `  - ${s.name}`),
+    `lastUpdated: ${new Date().toISOString().slice(0, 10)}`,
+    "---\n",
+    `# ${title}\n`,
+    `This page was generated automatically by docs-kit as a placeholder for ${linked.length} symbol(s).`,
+    "",
+    ...linked.map((s) => `- [${s.name}](../symbols/${s.id}.html) - ${s.signature ?? ""}`),
+  ];
+  return lines.join("\n");
+}
+
+function writeDocEntryFiles(
+  outDir: string,
+  entry: DocEntry,
+  content: string,
+  docEntries: DocEntry[],
+  context: string,
+): void {
+  const docRef = entry.path;
+  const outPath = path.join(outDir, docRef);
+  fs.mkdirSync(path.dirname(outPath), { recursive: true });
+  fs.writeFileSync(outPath, content, "utf-8");
+  const mdName = path.basename(docRef);
+  const outHtmlPath = outPath.replace(/\.md$/i, ".html");
+  try {
+    const wrapper = renderMarkdownWrapper(mdName, mdName, docRef, docEntries, content);
+    fs.writeFileSync(outHtmlPath, wrapper, "utf-8");
+  } catch (e) {
+    console.error(`Error generating HTML for ${context}:`, e);
+    throw e;
+  }
+}
+
+function renderDocEntries(
+  outDir: string,
+  docEntries: DocEntry[],
+  docsConfigDir: string | null,
+  resolvedRoot: string | null,
+  symbols: CodeSymbol[],
+): void {
+  for (const entry of docEntries) {
+    const docRef = entry.path;
+    const candidates = buildDocCandidates(entry, docsConfigDir, resolvedRoot);
+    const content = readDocEntryContent(candidates);
+
+    if (content !== undefined) {
+      writeDocEntryFiles(outDir, entry, content, docEntries, docRef);
+    } else {
+      const linked = symbols.filter((s) => s.docRef === docRef);
+      if (linked.length > 0) {
+        const generatedContent = buildPlaceholderContent(docRef, linked);
+        writeDocEntryFiles(outDir, entry, generatedContent, docEntries, `placeholder ${docRef}`);
+      }
+    }
+  }
+}
+
 export function generateSite(options: GeneratorOptions): GenerateResult {
   const { outDir, rootDir } = options;
 
@@ -254,76 +401,14 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
   fs.mkdirSync(path.join(outDir, "symbols"), { recursive: true });
   fs.mkdirSync(path.join(outDir, "files"), { recursive: true });
 
-  // Helper function to copy directories recursively
-  const copyRecursive = (src: string, dest: string) => {
-    if (!fs.existsSync(src)) return;
-
-    if (fs.statSync(src).isDirectory()) {
-      fs.mkdirSync(dest, { recursive: true });
-      for (const entry of fs.readdirSync(src)) {
-        copyRecursive(path.join(src, entry), path.join(dest, entry));
-      }
-    } else {
-      fs.mkdirSync(path.dirname(dest), { recursive: true });
-      fs.copyFileSync(src, dest);
-    }
-  };
-
-  // Copy assets directory if it exists from target project
-  const assetsSource = path.join(rootDir || ".", "assets");
+  // Copy assets
   const assetsTarget = path.join(outDir, "assets");
-  if (fs.existsSync(assetsSource)) {
-    copyRecursive(assetsSource, assetsTarget);
-  }
+  copyRecursive(path.join(rootDir || ".", "assets"), assetsTarget);
+  copyRecursive(path.join(__dirname, "..", "..", "assets"), assetsTarget);
 
-  // Always copy docs-kit assets (logo, etc.) for branding
-  // This ensures the logo appears even when generating sites for other projects
-  const docsKitAssetsSource = path.join(__dirname, "..", "..", "assets");
-  if (fs.existsSync(docsKitAssetsSource)) {
-    copyRecursive(docsKitAssetsSource, assetsTarget);
-  }
+  const getSource = buildSourceResolver(rootDir);
 
-  // Cache source files
-  const sourceCache = new Map<string, string | undefined>();
-  function getSource(file: string): string | undefined {
-    if (!sourceCache.has(file)) {
-      // Try a few candidate locations to be resilient to stored file paths
-      let content: string | undefined = undefined;
-
-      // direct from configured root
-      content = readSource(rootDir, file);
-
-      // try with src/ prefix or without it
-      if (!content && rootDir) {
-        content = readSource(rootDir, path.join("src", file));
-        if (!content) content = readSource(rootDir, file.replace(/^src[\\/]/, ""));
-      }
-
-      // try absolute paths relative to cwd
-      if (!content) {
-        try {
-          const p = path.join(process.cwd(), file);
-          if (fs.existsSync(p) && fs.statSync(p).isFile()) content = fs.readFileSync(p, "utf-8");
-        } catch {
-          /* ignore */
-        }
-      }
-
-      if (!content) {
-        try {
-          const p2 = path.join(process.cwd(), "src", file);
-          if (fs.existsSync(p2) && fs.statSync(p2).isFile()) content = fs.readFileSync(p2, "utf-8");
-        } catch {
-          /* ignore */
-        }
-      }
-
-      sourceCache.set(file, content);
-    }
-    return sourceCache.get(file);
-  }
-
-  // Generate index.html with docEntries for menu
+  // Generate index
   fs.writeFileSync(
     path.join(outDir, "index.html"),
     renderDashboard({
@@ -338,100 +423,8 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
     }),
   );
 
-  const cwd = process.cwd();
   const resolvedRoot = rootDir ? path.resolve(rootDir) : null;
-
-  for (const entry of docEntries) {
-    const docRef = entry.path;
-    const sourceRef = entry.sourcePath ?? docRef;
-    const sourceRefNormalized = normalizeSitePath(sourceRef);
-    const candidates = [] as string[];
-    if (docsConfigDir) {
-      if (sourceRef.startsWith("../") || sourceRef.startsWith("..\\")) {
-        candidates.push(path.resolve(docsConfigDir, sourceRef));
-      } else if (!path.isAbsolute(sourceRef)) {
-        candidates.push(path.join(docsConfigDir, sourceRef));
-      }
-    }
-    candidates.push(path.join(cwd, sourceRefNormalized));
-    candidates.push(path.join(cwd, "docs", sourceRefNormalized));
-    if (resolvedRoot) {
-      candidates.push(path.join(resolvedRoot, sourceRefNormalized));
-      candidates.push(path.join(resolvedRoot, "docs", sourceRefNormalized));
-    }
-    candidates.push(path.join(cwd, "docs-output", sourceRefNormalized));
-
-    let content: string | undefined = undefined;
-    for (const c of candidates) {
-      try {
-        if (fs.existsSync(c) && fs.statSync(c).isFile()) {
-          content = fs.readFileSync(c, "utf-8");
-          break;
-        }
-      } catch {
-        // ignore
-      }
-    }
-
-    if (content !== undefined) {
-      const outPath = path.join(outDir, docRef);
-      const outDirPath = path.dirname(outPath);
-      fs.mkdirSync(outDirPath, { recursive: true });
-      fs.writeFileSync(outPath, content, "utf-8");
-      try {
-        const mdName = path.basename(docRef);
-        const outHtmlPath = outPath.replace(/\.md$/i, ".html");
-        const wrapper = renderMarkdownWrapper(mdName, mdName, docRef, docEntries, content);
-
-        fs.writeFileSync(outHtmlPath, wrapper, "utf-8");
-      } catch (e) {
-        console.error(`Error generating HTML for ${docRef}:`, e);
-        throw e;
-      }
-    } else {
-      const linked = symbols.filter((s) => s.docRef === docRef);
-      if (linked.length > 0) {
-        const title = path.basename(docRef, path.extname(docRef));
-        const lines = [] as string[];
-        lines.push("---");
-        lines.push(`title: ${title}`);
-        lines.push("symbols:");
-        for (const s of linked) lines.push(`  - ${s.name}`);
-        lines.push(`lastUpdated: ${new Date().toISOString().slice(0, 10)}`);
-        lines.push("---\n");
-        lines.push(`# ${title}\n`);
-        lines.push(
-          `This page was generated automatically by docs-kit as a placeholder for ${linked.length} symbol(s).`,
-        );
-        lines.push("");
-        for (const s of linked) {
-          lines.push(`- [${s.name}](../symbols/${s.id}.html) - ${s.signature ?? ""}`);
-        }
-
-        const generatedContent = lines.join("\n");
-        const outPath = path.join(outDir, docRef);
-        const outDirPath = path.dirname(outPath);
-        fs.mkdirSync(outDirPath, { recursive: true });
-        fs.writeFileSync(outPath, generatedContent, "utf-8");
-        try {
-          const mdName = path.basename(docRef);
-          const outHtmlPath = outPath.replace(/\.md$/i, ".html");
-          const wrapper = renderMarkdownWrapper(
-            mdName,
-            mdName,
-            docRef,
-            docEntries,
-            generatedContent,
-          );
-
-          fs.writeFileSync(outHtmlPath, wrapper, "utf-8");
-        } catch (e) {
-          console.error(`Error generating placeholder HTML for ${docRef}:`, e);
-          throw e;
-        }
-      }
-    }
-  }
+  renderDocEntries(outDir, docEntries, docsConfigDir, resolvedRoot, symbols);
 
   // Generate symbol pages
   for (const symbol of symbols) {
@@ -454,39 +447,23 @@ export function generateSite(options: GeneratorOptions): GenerateResult {
     );
   }
 
-  // Generate files directory page
   fs.writeFileSync(path.join(outDir, "files.html"), renderFilesPage(files, symbols, docEntries));
-
-  // Generate relationships page
   fs.writeFileSync(
     path.join(outDir, "relationships.html"),
     renderRelationshipsPage(relationships, symbols, docEntries),
   );
-
-  // Generate patterns page
   fs.writeFileSync(
     path.join(outDir, "patterns.html"),
     renderPatternsPage(patterns, symbols, docEntries),
   );
-
-  // Generate governance page
   fs.writeFileSync(
     path.join(outDir, "governance.html"),
     renderGovernancePage(archViolations, reaperFindings, symbols, docEntries),
   );
-
-  // Generate deprecated page
   fs.writeFileSync(path.join(outDir, "deprecated.html"), renderDeprecatedPage(symbols, docEntries));
-
-  // Generate docs index page
   fs.writeFileSync(path.join(outDir, "docs.html"), renderDocsPage(docEntries));
-
-  // Generate inspector page (connects to local API from `docs-kit serve`)
   fs.writeFileSync(path.join(outDir, "inspector.html"), renderInspectorPage(docEntries));
 
-  // Generate search index
-  // Historically tests expect search.json to be an array of items.
-  // Write the items array for compatibility, but keep generator using buildSearchIndex.
   const indexObj = buildSearchIndex(symbols);
   fs.writeFileSync(path.join(outDir, "search.json"), JSON.stringify(indexObj.items));
 

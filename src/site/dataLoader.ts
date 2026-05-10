@@ -51,7 +51,7 @@ export interface LoadedSiteData extends SiteData {
 }
 
 /** Path inside the site (no leading ../ or ./). Used for output and URLs. */
-export function normalizeSitePath(p: string): string {
+function normalizeSitePath(p: string): string {
   return (
     p
       .replace(/^\.\.\/+/, "")

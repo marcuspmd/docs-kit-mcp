@@ -16,8 +16,14 @@ export {
 export {
   replaceAllArchViolations,
   replaceAllPatterns,
-  replaceAllReaperFindings,
+  upsertReaperFindings,
+  getAllFindings,
+  updateFindingStatus,
+  getFindingHistory,
   type ArchViolationRow,
   type PatternRowForInsert,
+  type ReaperFindingInput,
   type ReaperFindingRow,
+  type ReaperHistoryRow,
+  type FindingStatus,
 } from "./reportRepositories.js";

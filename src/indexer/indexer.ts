@@ -226,6 +226,100 @@ function detectLayer(file: string, name: string): Layer | undefined {
   return undefined;
 }
 
+/* ================== AST Walker helpers ================== */
+
+const RESERVED_DECLARATION_KEYWORDS = new Set([
+  "class",
+  "interface",
+  "enum",
+  "trait",
+  "function",
+  "abstract",
+  "type",
+  "struct",
+]);
+
+function getNodeName(n: Parser.SyntaxNode): string {
+  const byField = n.childForFieldName("name") ?? n.childForFieldName("identifier");
+  if (byField) return byField.text;
+
+  const idChild = n.children.find((c) =>
+    /identifier|name|type_identifier|field_identifier/.test(c.type),
+  );
+  if (idChild) return idChild.text;
+
+  const t = n.text?.trim();
+  if (t && t.length > 0) {
+    const tokens = t.split(/\s|\(|\{/).filter(Boolean);
+    if (tokens.length >= 2 && RESERVED_DECLARATION_KEYWORDS.has(tokens[0])) return tokens[1];
+    if (tokens.length >= 1 && !RESERVED_DECLARATION_KEYWORDS.has(tokens[0])) return tokens[0];
+    if (tokens.length >= 1 && RESERVED_DECLARATION_KEYWORDS.has(tokens[0])) return "anonymous";
+  }
+  return "anonymous";
+}
+
+function getParametersText(n: Parser.SyntaxNode): string | undefined {
+  const params = n.childForFieldName("parameters") ?? n.childForFieldName("parameter_list");
+  if (params) return params.text;
+  const p = n.children.find((c) => /parameter|argument_list|formal_parameters/.test(c.type));
+  if (p) return p.text;
+  return undefined;
+}
+
+function buildNodeSignature(
+  node: Parser.SyntaxNode,
+  kind: SymbolKind,
+  name: string,
+): string | undefined {
+  if (kind === "function" || kind === "method") {
+    const paramsText = getParametersText(node) ?? "()";
+    const returnType = node.childForFieldName("return_type") ?? node.childForFieldName("type");
+    const returnText = returnType ? `: ${returnType.text}` : "";
+    return `${name}${paramsText}${returnText}`;
+  }
+  if (kind === "interface" || kind === "class" || kind === "abstract_class") return `${kind} ${name}`;
+  if (kind === "enum") return `enum ${name}`;
+  if (kind === "type") return `type ${name}`;
+  return undefined;
+}
+
+function extractDocCommentForNode(
+  node: Parser.SyntaxNode,
+  file: string,
+): { summary?: string; tags?: string[]; docComment?: string } {
+  const lang = detectLanguage(file);
+  if (lang === "python") {
+    const pyDoc = extractPythonDocstring(node);
+    return { summary: pyDoc.summary, docComment: pyDoc.docComment };
+  }
+  if (lang === "go") {
+    const goDoc = extractGoDocComment(node);
+    return { summary: goDoc.summary, docComment: goDoc.docComment };
+  }
+  return extractJsDoc(node);
+}
+
+function extractClassMetadata(
+  node: Parser.SyntaxNode,
+  kind: SymbolKind,
+  language: CodeSymbol["language"],
+  strategy: ReturnType<typeof getStrategy>,
+): { extendsName?: string; implementsNames?: string[]; usesTraits?: string[] } {
+  if (kind === "class" || kind === "abstract_class") {
+    return {
+      extendsName: strategy.extractExtends(node),
+      implementsNames: strategy.extractImplements(node),
+      usesTraits: strategy.extractTraits(node),
+    };
+  }
+  if (kind === "interface") {
+    return {
+      extendsName: language === "php" ? strategy.extractExtends(node) : extractInterfaceExtends(node),
+    };
+  }
+  return {};
+}
+
 /* ================== AST Walker ================== */
 
 function walkNode(
@@ -239,50 +333,6 @@ function walkNode(
   if (!node) return symbols;
   const kind = NODE_KIND_MAP[node.type];
 
-  const RESERVED_DECLARATION_KEYWORDS = new Set([
-    "class",
-    "interface",
-    "enum",
-    "trait",
-    "function",
-    "abstract",
-    "type",
-    "struct",
-  ]);
-
-  function getNodeName(n: Parser.SyntaxNode): string {
-    const byField = n.childForFieldName("name") ?? n.childForFieldName("identifier");
-    if (byField) return byField.text;
-
-    const idChild = n.children.find((c) =>
-      /identifier|name|type_identifier|field_identifier/.test(c.type),
-    );
-    if (idChild) return idChild.text;
-
-    const t = n.text?.trim();
-    if (t && t.length > 0) {
-      const tokens = t.split(/\s|\(|\{/).filter(Boolean);
-      if (tokens.length >= 2 && RESERVED_DECLARATION_KEYWORDS.has(tokens[0])) {
-        return tokens[1];
-      }
-      if (tokens.length >= 1 && !RESERVED_DECLARATION_KEYWORDS.has(tokens[0])) {
-        return tokens[0];
-      }
-      if (tokens.length >= 1 && RESERVED_DECLARATION_KEYWORDS.has(tokens[0])) {
-        return "anonymous";
-      }
-    }
-    return "anonymous";
-  }
-
-  function getParametersText(n: Parser.SyntaxNode): string | undefined {
-    const params = n.childForFieldName("parameters") ?? n.childForFieldName("parameter_list");
-    if (params) return params.text;
-    const p = n.children.find((c) => /parameter|argument_list|formal_parameters/.test(c.type));
-    if (p) return p.text;
-    return undefined;
-  }
-
   if (kind) {
     const name = getNodeName(node) ?? "anonymous";
     if (name === "anonymous" || RESERVED_DECLARATION_KEYWORDS.has(name)) {
@@ -295,63 +345,25 @@ function walkNode(
     const strategy = getStrategy(language);
 
     // Signature
-    let signature: string | undefined;
-    if (kind === "function" || kind === "method") {
-      const paramsText = getParametersText(node) ?? "()";
-      const returnType = node.childForFieldName("return_type") ?? node.childForFieldName("type");
-      const returnText = returnType ? `: ${returnType.text}` : "";
-      signature = `${name}${paramsText}${returnText}`;
-    } else if (kind === "interface" || kind === "class" || kind === "abstract_class") {
-      signature = `${kind} ${name}`;
-    } else if (kind === "enum") {
-      signature = `enum ${name}`;
-    } else if (kind === "type") {
-      signature = `type ${name}`;
-    }
+    const signature = buildNodeSignature(node, kind, name);
 
-    // Visibility
+    // Visibility & exported
     const visibility = strategy.extractVisibility(node);
-
-    // Exported
     const exported = isExported(node);
 
     // Extends / Implements / Traits
-    let extendsName: string | undefined;
-    let implementsNames: string[] | undefined;
-    let usesTraits: string[] | undefined;
-    if (kind === "class" || kind === "abstract_class") {
-      extendsName = strategy.extractExtends(node);
-      implementsNames = strategy.extractImplements(node);
-      usesTraits = strategy.extractTraits(node);
-    } else if (kind === "interface") {
-      // Interface extends uses different AST nodes in TS vs PHP
-      extendsName =
-        language === "php" ? strategy.extractExtends(node) : extractInterfaceExtends(node);
-    }
+    const { extendsName, implementsNames, usesTraits } = extractClassMetadata(
+      node,
+      kind,
+      language,
+      strategy,
+    );
 
     // Refine kind
     const finalKind = strategy.refineKind(kind, name, extendsName, implementsNames);
 
-    // Doc comments: JSDoc for TS/JS, docstrings for Python, doc comments for Go
-    let summary: string | undefined;
-    let tags: string[] | undefined;
-    let docComment: string | undefined;
-    const lang = detectLanguage(file);
-
-    if (lang === "python") {
-      const pyDoc = extractPythonDocstring(node);
-      summary = pyDoc.summary;
-      docComment = pyDoc.docComment;
-    } else if (lang === "go") {
-      const goDoc = extractGoDocComment(node);
-      summary = goDoc.summary;
-      docComment = goDoc.docComment;
-    } else {
-      const jsDoc = extractJsDoc(node);
-      summary = jsDoc.summary;
-      tags = jsDoc.tags;
-      docComment = jsDoc.docComment;
-    }
+    // Doc comments
+    const { summary, tags, docComment } = extractDocCommentForNode(node, file);
 
     // Layer
     const layer = detectLayer(file, name);
