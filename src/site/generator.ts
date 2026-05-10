@@ -244,9 +244,7 @@ function copyRecursive(src: string, dest: string): void {
   }
 }
 
-function buildSourceResolver(
-  rootDir: string | undefined,
-): (file: string) => string | undefined {
+function buildSourceResolver(rootDir: string | undefined): (file: string) => string | undefined {
   const cache = new Map<string, string | undefined>();
   const cwd = process.cwd();
 
@@ -256,22 +254,27 @@ function buildSourceResolver(
     let content = readSource(rootDir, file);
 
     if (!content && rootDir) {
-      content = readSource(rootDir, path.join("src", file))
-        ?? readSource(rootDir, file.replace(/^src[\\/]/, ""));
+      content =
+        readSource(rootDir, path.join("src", file)) ??
+        readSource(rootDir, file.replace(/^src[\\/]/, ""));
     }
 
     if (!content) {
       try {
         const p = path.join(cwd, file);
         if (fs.existsSync(p) && fs.statSync(p).isFile()) content = fs.readFileSync(p, "utf-8");
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
 
     if (!content) {
       try {
         const p2 = path.join(cwd, "src", file);
         if (fs.existsSync(p2) && fs.statSync(p2).isFile()) content = fs.readFileSync(p2, "utf-8");
-      } catch { /* ignore */ }
+      } catch {
+        /* ignore */
+      }
     }
 
     cache.set(file, content);
@@ -310,7 +313,9 @@ function readDocEntryContent(candidates: string[]): string | undefined {
   for (const c of candidates) {
     try {
       if (fs.existsSync(c) && fs.statSync(c).isFile()) return fs.readFileSync(c, "utf-8");
-    } catch { /* ignore */ }
+    } catch {
+      /* ignore */
+    }
   }
   return undefined;
 }

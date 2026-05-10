@@ -7,6 +7,8 @@ import {
   getAllPHPRuleCodes,
   filterPHPRulesByCodes,
   getPHPRuleByCode,
+  getPHPAvailableRules,
+  getPHPAvailableCodes,
   hasPHPRule,
   toArchRule,
   toArchRules,
@@ -203,6 +205,24 @@ describe("PHP Guards", () => {
       expect(rule).toBeDefined();
       expect(rule?.defaultConfig.allowNames).toContain("__construct");
       expect(rule?.defaultConfig.allowNames).toContain("__destruct");
+    });
+  });
+
+  describe("getPHPAvailableRules", () => {
+    it("returns the same result as getAllPHPRules", () => {
+      const available = getPHPAvailableRules();
+      const all = getAllPHPRules();
+      expect(available).toHaveLength(all.length);
+      expect(available.map((r) => r.code)).toEqual(all.map((r) => r.code));
+    });
+  });
+
+  describe("getPHPAvailableCodes", () => {
+    it("returns the same result as getAllPHPRuleCodes", () => {
+      const available = getPHPAvailableCodes();
+      const all = getAllPHPRuleCodes();
+      expect(available).toEqual(all);
+      expect(available.length).toBeGreaterThan(0);
     });
   });
 });

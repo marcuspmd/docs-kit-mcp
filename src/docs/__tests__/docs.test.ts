@@ -343,6 +343,17 @@ symbols:
     expect(docs).toHaveLength(1);
     expect(docs[0].docPath).toBe("docs/api.md");
   });
+
+  test("findAllMappings returns all registered mappings", async () => {
+    const registry = createDocRegistry(db);
+    await registry.rebuild(tmpDir);
+
+    const mappings = await registry.findAllMappings();
+    expect(mappings.length).toBeGreaterThan(0);
+    const symbolNames = mappings.map((m) => m.symbolName);
+    expect(symbolNames).toContain("OrderService");
+    expect(symbolNames).toContain("UserService");
+  });
 });
 
 /* ====================== parseSections ====================== */

@@ -37,6 +37,23 @@ function classifyChange(oldSym: CodeSymbol, newSym: CodeSymbol): AstChangeType |
   return null;
 }
 
+function getChangeDetails(newSym: CodeSymbol, oldSym: CodeSymbol, change: AstChangeType): string {
+  switch (change) {
+    case "signature_changed":
+      return `signature changed for ${newSym.kind} "${newSym.name}"`;
+    case "body_changed": {
+      const oldSize = oldSym.endLine - oldSym.startLine + 1;
+      const newSize = newSym.endLine - newSym.startLine + 1;
+      return `body size changed (${oldSize} → ${newSize} lines)`;
+    }
+    case "moved":
+      return `moved from line ${oldSym.startLine} to ${newSym.startLine}`;
+    /* istanbul ignore next */
+    default:
+      return `${change}`;
+  }
+}
+
 export function diffSymbols(oldSymbols: CodeSymbol[], newSymbols: CodeSymbol[]): AstChange[] {
   const oldMap = new Map(oldSymbols.map((s) => [makeKey(s), s]));
   const newMap = new Map(newSymbols.map((s) => [makeKey(s), s]));
@@ -73,26 +90,12 @@ export function diffSymbols(oldSymbols: CodeSymbol[], newSymbols: CodeSymbol[]):
     const change = classifyChange(oldSym, newSym);
     if (!change) continue;
 
-    let details: string;
-    switch (change) {
-      case "signature_changed":
-        details = `signature changed for ${newSym.kind} "${newSym.name}"`;
-        break;
-      case "body_changed": {
-        const oldSize = oldSym.endLine - oldSym.startLine + 1;
-        const newSize = newSym.endLine - newSym.startLine + 1;
-        details = `body size changed (${oldSize} → ${newSize} lines)`;
-        break;
-      }
-      case "moved":
-        details = `moved from line ${oldSym.startLine} to ${newSym.startLine}`;
-        break;
-      /* istanbul ignore next */
-      default:
-        details = `${change}`;
-    }
-
-    changes.push({ symbol: newSym, changeType: change, details, oldSymbol: oldSym });
+    changes.push({
+      symbol: newSym,
+      changeType: change,
+      details: getChangeDetails(newSym, oldSym, change),
+      oldSymbol: oldSym,
+    });
   }
 
   return changes;

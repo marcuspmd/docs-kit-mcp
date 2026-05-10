@@ -34,6 +34,9 @@ INSPECT
                        [--verbose]
 
 SERVER
+  docs-kit open-site   [--port 3000]           Generate + serve the v2 site locally
+                       [--out docs-site-v2]    (builds site data then opens browser)
+                       [--db path] [--root dir]
   docs-kit serve       [--port 7337]           Start local HTTP API for the site
                        [--db path] [--docs dir] inspector (inspector.html)
 

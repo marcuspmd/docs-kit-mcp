@@ -9,3 +9,4 @@ export * from "./buildDocs.usecase.js";
 export * from "./impactAnalysis.usecase.js";
 export * from "./analyzePatterns.usecase.js";
 export * from "./explainSymbol.usecase.js";
+export * from "./openSite.usecase.js";

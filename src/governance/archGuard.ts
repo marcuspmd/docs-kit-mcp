@@ -47,19 +47,23 @@ function matchAnyGlob(patterns: string[], value: string): boolean {
 }
 
 /** Ignore patterns: globs or regex (string in /slashes/). Returns true if filePath should be ignored. */
+function matchesIgnorePattern(pattern: string, filePath: string): boolean {
+  const s = pattern?.trim();
+  if (!s) return false;
+  if (s.length >= 2 && s.startsWith("/") && s.endsWith("/")) {
+    try {
+      if (new RegExp(s.slice(1, -1)).test(filePath)) return true;
+    } catch {
+      /* treat as literal glob below */
+    }
+  }
+  return matchGlob(s, filePath);
+}
+
 function isIgnored(filePath: string, ignore: string[] | undefined): boolean {
   if (!ignore?.length || !filePath) return false;
   for (const p of ignore) {
-    const s = p?.trim();
-    if (!s) continue;
-    if (s.length >= 2 && s.startsWith("/") && s.endsWith("/")) {
-      try {
-        if (new RegExp(s.slice(1, -1)).test(filePath)) return true;
-      } catch {
-        /* treat as literal glob below */
-      }
-    }
-    if (matchGlob(s, filePath)) return true;
+    if (matchesIgnorePattern(p, filePath)) return true;
   }
   return false;
 }
@@ -345,6 +349,29 @@ function checkMissingReturnType(rule: ArchRule, symbols: CodeSymbol[]): ArchViol
   return violations;
 }
 
+/**
+ * Deduplicate violations where a strict variant (-strict suffix) and its regular counterpart
+ * both fire for the same symbol. The strict (error) violation supersedes the regular (warning).
+ */
+function deduplicateViolations(violations: ArchViolation[]): ArchViolation[] {
+  const map = new Map<string, ArchViolation>();
+
+  for (const v of violations) {
+    const baseRule = v.rule.endsWith("-strict") ? v.rule.slice(0, -"-strict".length) : v.rule;
+    const key = `${v.symbolId ?? v.file}::${baseRule}`;
+
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, v);
+    } else if (v.severity === "error" && existing.severity === "warning") {
+      // Strict (error) takes precedence over the regular (warning) for same symbol
+      map.set(key, v);
+    }
+  }
+
+  return Array.from(map.values());
+}
+
 export function createArchGuard(): ArchGuard {
   let rules: ArchRule[] = [];
 
@@ -383,7 +410,7 @@ export function createArchGuard(): ArchGuard {
         }
       }
 
-      return violations;
+      return deduplicateViolations(violations);
     },
   };
 }

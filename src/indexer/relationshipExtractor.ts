@@ -65,6 +65,22 @@ function buildSymbolIndex(symbols: CodeSymbol[]): SymbolIndex {
  * A function named "count" should NOT match all "count()" calls globally.
  * Relationships are only created when we have high confidence about the target.
  */
+function resolveViaImportPath(targetName: string, index: SymbolIndex): CodeSymbol | undefined {
+  const [sourcePath, symbolName] = targetName.split("::");
+  const candidates = index.byShortName.get(symbolName) ?? [];
+  for (const candidate of candidates) {
+    const normalizedSource = sourcePath.replace(/^\.\//, "").replace(/\.(js|ts|tsx|jsx)$/, "");
+    const normalizedFile = candidate.file.replace(/\.(js|ts|tsx|jsx)$/, "");
+    if (
+      normalizedFile.endsWith(normalizedSource) ||
+      normalizedFile.endsWith(`/${normalizedSource}`)
+    ) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
 export function resolveSymbol(
   targetName: string,
   index: SymbolIndex,
@@ -93,21 +109,7 @@ export function resolveSymbol(
 
   // 4. TypeScript import path resolution (e.g., "./utils::count" → find symbol in that file)
   if (targetName.includes("::")) {
-    const [sourcePath, symbolName] = targetName.split("::");
-    // Find symbols that match the name and are in a file that matches the source path
-    const candidates = index.byShortName.get(symbolName) ?? [];
-    for (const candidate of candidates) {
-      // Check if the candidate's file matches the import source path
-      // Handle relative paths: "./utils" should match "src/utils.ts" etc.
-      const normalizedSource = sourcePath.replace(/^\.\//, "").replace(/\.(js|ts|tsx|jsx)$/, "");
-      const normalizedFile = candidate.file.replace(/\.(js|ts|tsx|jsx)$/, "");
-      if (
-        normalizedFile.endsWith(normalizedSource) ||
-        normalizedFile.endsWith(`/${normalizedSource}`)
-      ) {
-        return candidate;
-      }
-    }
+    return resolveViaImportPath(targetName, index);
   }
 
   // NO short name fallback - this was causing false positives

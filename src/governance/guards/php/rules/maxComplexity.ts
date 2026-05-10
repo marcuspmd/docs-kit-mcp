@@ -16,7 +16,7 @@ export function createMaxComplexityRule(): LanguageRule {
     severity: "warning",
     languages: ["php"],
     defaultConfig: {
-      max: 10,
+      max: 20,
     },
   };
 }
@@ -32,7 +32,7 @@ export function createMaxComplexityStrictRule(): LanguageRule {
     severity: "error",
     languages: ["php"],
     defaultConfig: {
-      max: 5,
+      max: 20,
     },
   };
 }

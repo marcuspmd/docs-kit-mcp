@@ -18,5 +18,7 @@ export function isLlmConfigured(config: {
     config.llm.provider === "gemini" && !!(config.llm.apiKey || process.env.GEMINI_API_KEY);
   const hasClaudeConfigured = config.llm.provider === "claude" && !!process.env.VOYAGE_API_KEY;
 
-  return hasOllamaConfigured || hasOpenAiConfigured || hasGeminiConfigured || hasClaudeConfigured;
+  return [hasOllamaConfigured, hasOpenAiConfigured, hasGeminiConfigured, hasClaudeConfigured].some(
+    Boolean,
+  );
 }

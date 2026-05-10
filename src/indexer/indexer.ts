@@ -266,6 +266,11 @@ function getParametersText(n: Parser.SyntaxNode): string | undefined {
   return undefined;
 }
 
+function buildReturnText(node: Parser.SyntaxNode): string {
+  const returnType = node.childForFieldName("return_type") ?? node.childForFieldName("type");
+  return returnType ? `: ${returnType.text}` : "";
+}
+
 function buildNodeSignature(
   node: Parser.SyntaxNode,
   kind: SymbolKind,
@@ -273,11 +278,10 @@ function buildNodeSignature(
 ): string | undefined {
   if (kind === "function" || kind === "method") {
     const paramsText = getParametersText(node) ?? "()";
-    const returnType = node.childForFieldName("return_type") ?? node.childForFieldName("type");
-    const returnText = returnType ? `: ${returnType.text}` : "";
-    return `${name}${paramsText}${returnText}`;
+    return `${name}${paramsText}${buildReturnText(node)}`;
   }
-  if (kind === "interface" || kind === "class" || kind === "abstract_class") return `${kind} ${name}`;
+  if (kind === "interface" || kind === "class" || kind === "abstract_class")
+    return `${kind} ${name}`;
   if (kind === "enum") return `enum ${name}`;
   if (kind === "type") return `type ${name}`;
   return undefined;
@@ -314,7 +318,8 @@ function extractClassMetadata(
   }
   if (kind === "interface") {
     return {
-      extendsName: language === "php" ? strategy.extractExtends(node) : extractInterfaceExtends(node),
+      extendsName:
+        language === "php" ? strategy.extractExtends(node) : extractInterfaceExtends(node),
     };
   }
   return {};

@@ -203,4 +203,13 @@ describe("OpenAiProvider", () => {
 
     expect(result).toBe("");
   });
+
+  it("should estimate tokens as ceil(length / 4)", async () => {
+    const { OpenAiProvider } = await import("../OpenAiProvider.js");
+    const config = createTestConfig({ provider: "openai", model: "gpt-4o", apiKey: "key" });
+    const provider = new OpenAiProvider(config, mockOpenAIClient);
+    expect(provider.estimateTokens("")).toBe(0);
+    expect(provider.estimateTokens("1234")).toBe(1);
+    expect(provider.estimateTokens("12345")).toBe(2);
+  });
 });

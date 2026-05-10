@@ -47,6 +47,18 @@ export function createReaper(): Reaper {
   };
 }
 
+function isExecutableCandidate(sym: CodeSymbol, executableKinds: Set<string>): boolean {
+  if (sym.parent) return false;
+  if (sym.exported === false) return false;
+  if (ENTRY_KINDS.has(sym.kind)) return false;
+  if (!executableKinds.has(sym.kind)) return false;
+  return (
+    !sym.file.includes("tests/") &&
+    !sym.file.includes("/fixtures/") &&
+    !sym.file.includes("site/shared")
+  );
+}
+
 function findDeadCode(symbols: CodeSymbol[], graph: KnowledgeGraph): ReaperFinding[] {
   const findings: ReaperFinding[] = [];
   const childIds = new Set(symbols.filter((s) => s.parent).map((s) => s.parent!));
@@ -68,14 +80,7 @@ function findDeadCode(symbols: CodeSymbol[], graph: KnowledgeGraph): ReaperFindi
   ]);
 
   for (const sym of symbols) {
-    if (sym.parent) continue;
-    if (sym.exported === false) continue;
-    if (ENTRY_KINDS.has(sym.kind)) continue;
-    if (!executableKinds.has(sym.kind)) continue; // Skip non-executable symbols
-    // Skip test fixtures and test helpers (they are referenced by tests, not by app code)
-    if (sym.file.includes("tests/") || sym.file.includes("/fixtures/")) continue;
-    // Skip site shared helpers (used by templates.ts; call relationships may not resolve across files)
-    if (sym.file.includes("site/shared")) continue;
+    if (!isExecutableCandidate(sym, executableKinds)) continue;
 
     const dependents = graph.getDependents(sym.id);
     if (dependents.length > 0) continue;

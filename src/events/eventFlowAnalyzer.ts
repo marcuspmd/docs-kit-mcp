@@ -79,7 +79,7 @@ function findListeners(
   for (const listener of listeners) {
     if (matched.has(listener.id)) continue;
     const listenerBase = listener.name.replace(/Listener$|Handler$|Subscriber$/, "").toLowerCase();
-    if (listenerBase && eventBaseName && listenerBase === eventBaseName) {
+    if (listenerBase && listenerBase === eventBaseName) {
       matched.set(listener.id, listener);
     }
   }

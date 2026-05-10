@@ -27,7 +27,9 @@
     "serve:site": "npx serve docs-site",
     "serve:site:v2": "npx serve docs-site-v2",
     "dev:site:v2": "npx vite site-v2",
-    "start:site:v2": "npm run gen:site:v2 && npm run dev:site:v2"
+    "start:site:v2": "npm run gen:site:v2 && npm run dev:site:v2",
+    "start": "npx docs-kit index && npm run start:site:v2",
+    "open-site": "node dist/cli.js open-site"
   },
   "engines": {
     "node": ">=18"

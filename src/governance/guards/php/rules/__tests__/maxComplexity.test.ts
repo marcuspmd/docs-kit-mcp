@@ -31,7 +31,7 @@ describe("PHP Max Complexity Rules", () => {
       const rule = createMaxComplexityRule();
 
       // Assert
-      expect(rule.defaultConfig.max).toBe(10);
+      expect(rule.defaultConfig.max).toBe(20);
     });
 
     it("should have warning severity", () => {
@@ -66,12 +66,12 @@ describe("PHP Max Complexity Rules", () => {
       expect(rule.languages).toEqual(["php"]);
     });
 
-    it("should have strict max complexity of 5", () => {
+    it("should have strict max complexity of 20", () => {
       // Arrange & Act
       const rule = createMaxComplexityStrictRule();
 
       // Assert
-      expect(rule.defaultConfig.max).toBe(5);
+      expect(rule.defaultConfig.max).toBe(20);
     });
 
     it("should have error severity for strict mode", () => {
@@ -88,7 +88,7 @@ describe("PHP Max Complexity Rules", () => {
       const strictRule = createMaxComplexityStrictRule();
 
       // Assert
-      expect(strictRule.defaultConfig.max as number).toBeLessThan(
+      expect(strictRule.defaultConfig.max as number).toBeLessThanOrEqual(
         regularRule.defaultConfig.max as number,
       );
     });

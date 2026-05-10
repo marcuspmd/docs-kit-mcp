@@ -3,6 +3,7 @@ import {
   initializeSchema,
   createSymbolRepository,
   createRelationshipRepository,
+  createFileHashRepository,
   CURRENT_SCHEMA_VERSION,
 } from "../db.js";
 import type { CodeSymbol } from "../../indexer/symbol.types.js";
@@ -302,6 +303,148 @@ describe("Storage Layer", () => {
 
       expect(repo.findBySource("a")).toHaveLength(0);
       expect(repo.findBySource("x")).toHaveLength(1);
+    });
+
+    it("findAll returns all relationships", () => {
+      const repo = createRelationshipRepository(db);
+      repo.upsert("a", "b", "calls");
+      repo.upsert("x", "y", "uses");
+
+      const all = repo.findAll();
+      expect(all).toHaveLength(2);
+    });
+  });
+
+  describe("SymbolRepository advanced methods", () => {
+    const makeSymbol = (overrides?: Partial<CodeSymbol>): CodeSymbol =>
+      ({
+        id: "sym1",
+        name: "MyClass",
+        qualifiedName: "pkg.MyClass",
+        kind: "class",
+        file: "src/my.ts",
+        startLine: 1,
+        endLine: 10,
+        language: "ts",
+        ...overrides,
+      }) as CodeSymbol;
+
+    it("findByIds returns symbols for given ids", () => {
+      const repo = createSymbolRepository(db);
+      repo.upsert(makeSymbol({ id: "id1", name: "Alpha" }));
+      repo.upsert(makeSymbol({ id: "id2", name: "Beta" }));
+      repo.upsert(makeSymbol({ id: "id3", name: "Gamma" }));
+
+      const results = repo.findByIds(["id1", "id3"]);
+      expect(results).toHaveLength(2);
+      const names = results.map((s) => s.name).sort();
+      expect(names).toEqual(["Alpha", "Gamma"]);
+    });
+
+    it("findByIds returns empty array for empty input", () => {
+      const repo = createSymbolRepository(db);
+      expect(repo.findByIds([])).toEqual([]);
+    });
+
+    it("search filters by query", () => {
+      const repo = createSymbolRepository(db);
+      repo.upsert(makeSymbol({ id: "s1", name: "OrderService" }));
+      repo.upsert(makeSymbol({ id: "s2", name: "UserController" }));
+
+      const results = repo.search({ query: "Order" });
+      expect(results).toHaveLength(1);
+      expect(results[0].name).toBe("OrderService");
+    });
+
+    it("search filters by kind", () => {
+      const repo = createSymbolRepository(db);
+      repo.upsert(makeSymbol({ id: "s1", name: "MyClass", kind: "class" }));
+      repo.upsert(makeSymbol({ id: "s2", name: "myFunc", kind: "function" }));
+
+      const results = repo.search({ kind: "function" });
+      expect(results).toHaveLength(1);
+      expect(results[0].name).toBe("myFunc");
+    });
+
+    it("findByName returns symbols matching name or qualifiedName", () => {
+      const repo = createSymbolRepository(db);
+      repo.upsert(
+        makeSymbol({ id: "s1", name: "createOrder", qualifiedName: "orders.createOrder" }),
+      );
+      repo.upsert(
+        makeSymbol({ id: "s2", name: "deleteOrder", qualifiedName: "orders.deleteOrder" }),
+      );
+
+      const results = repo.findByName("createOrder");
+      expect(results).toHaveLength(1);
+      expect(results[0].name).toBe("createOrder");
+    });
+
+    it("findAll returns all symbols", () => {
+      const repo = createSymbolRepository(db);
+      repo.upsert(makeSymbol({ id: "s1", name: "Alpha" }));
+      repo.upsert(makeSymbol({ id: "s2", name: "Beta" }));
+
+      const all = repo.findAll();
+      expect(all.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe("FileHashRepository", () => {
+    it("upserts and gets a file hash", () => {
+      const repo = createFileHashRepository(db);
+      repo.upsert("src/foo.ts", "abc123");
+
+      const result = repo.get("src/foo.ts");
+      expect(result).toBeDefined();
+      expect(result!.contentHash).toBe("abc123");
+      expect(result!.lastIndexedAt).toBeDefined();
+    });
+
+    it("get returns undefined for missing file", () => {
+      const repo = createFileHashRepository(db);
+      expect(repo.get("nonexistent.ts")).toBeUndefined();
+    });
+
+    it("getAll returns all hashes", () => {
+      const repo = createFileHashRepository(db);
+      repo.upsert("src/a.ts", "hash1");
+      repo.upsert("src/b.ts", "hash2");
+
+      const all = repo.getAll();
+      expect(all.length).toBeGreaterThanOrEqual(2);
+      const files = all.map((r) => r.filePath);
+      expect(files).toContain("src/a.ts");
+    });
+
+    it("delete removes a specific file hash", () => {
+      const repo = createFileHashRepository(db);
+      repo.upsert("src/a.ts", "hash1");
+      repo.upsert("src/b.ts", "hash2");
+
+      repo.delete("src/a.ts");
+
+      expect(repo.get("src/a.ts")).toBeUndefined();
+      expect(repo.get("src/b.ts")).toBeDefined();
+    });
+
+    it("clear removes all hashes", () => {
+      const repo = createFileHashRepository(db);
+      repo.upsert("src/a.ts", "hash1");
+      repo.upsert("src/b.ts", "hash2");
+
+      repo.clear();
+
+      expect(repo.getAll()).toHaveLength(0);
+    });
+
+    it("upsert overwrites existing hash", () => {
+      const repo = createFileHashRepository(db);
+      repo.upsert("src/a.ts", "old-hash");
+      repo.upsert("src/a.ts", "new-hash");
+
+      const result = repo.get("src/a.ts");
+      expect(result!.contentHash).toBe("new-hash");
     });
   });
 });

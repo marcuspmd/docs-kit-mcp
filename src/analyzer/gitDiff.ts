@@ -22,6 +22,68 @@ const DIFF_HEADER = /^diff --git a\/(.+) b\/(.+)$/;
 const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 const BINARY_MARKER = /^Binary files/;
 
+function parseFileStatus(
+  lines: string[],
+  startIdx: number,
+): { status: FileDiff["status"]; isBinary: boolean; nextIdx: number } {
+  let i = startIdx;
+  let status: FileDiff["status"] = "modified";
+  let isBinary = false;
+
+  while (
+    i < lines.length &&
+    !lines[i].startsWith("---") &&
+    !lines[i].startsWith("diff --git") &&
+    !BINARY_MARKER.test(lines[i])
+  ) {
+    if (lines[i].startsWith("new file")) status = "added";
+    else if (lines[i].startsWith("deleted file")) status = "deleted";
+    else if (lines[i].startsWith("similarity index") || lines[i].startsWith("rename from"))
+      status = "renamed";
+    i++;
+  }
+
+  if (i < lines.length && BINARY_MARKER.test(lines[i])) {
+    isBinary = true;
+    i++;
+  }
+
+  return { status, isBinary, nextIdx: i };
+}
+
+function parseHunks(lines: string[], startIdx: number): { hunks: DiffHunk[]; nextIdx: number } {
+  let i = startIdx;
+  const hunks: DiffHunk[] = [];
+
+  while (i < lines.length && !lines[i].startsWith("diff --git")) {
+    const hunkMatch = lines[i].match(HUNK_HEADER);
+    if (!hunkMatch) {
+      i++;
+      continue;
+    }
+
+    const oldStart = parseInt(hunkMatch[1], 10);
+    const oldLines = hunkMatch[2] !== undefined ? parseInt(hunkMatch[2], 10) : 1;
+    const newStart = parseInt(hunkMatch[3], 10);
+    const newLines = hunkMatch[4] !== undefined ? parseInt(hunkMatch[4], 10) : 1;
+    i++;
+
+    const contentLines: string[] = [];
+    while (
+      i < lines.length &&
+      !lines[i].startsWith("diff --git") &&
+      !HUNK_HEADER.test(lines[i])
+    ) {
+      contentLines.push(lines[i]);
+      i++;
+    }
+
+    hunks.push({ oldStart, oldLines, newStart, newLines, content: contentLines.join("\n") });
+  }
+
+  return { hunks, nextIdx: i };
+}
+
 export function parseGitDiff(rawDiff: string): FileDiff[] {
   if (!rawDiff.trim()) return [];
 
@@ -40,27 +102,8 @@ export function parseGitDiff(rawDiff: string): FileDiff[] {
     const newPath = headerMatch[2];
     i++;
 
-    // Skip index line, mode lines, etc.
-    let status: FileDiff["status"] = "modified";
-    let isBinary = false;
-
-    while (
-      i < lines.length &&
-      !lines[i].startsWith("---") &&
-      !lines[i].startsWith("diff --git") &&
-      !BINARY_MARKER.test(lines[i])
-    ) {
-      if (lines[i].startsWith("new file")) status = "added";
-      else if (lines[i].startsWith("deleted file")) status = "deleted";
-      else if (lines[i].startsWith("similarity index") || lines[i].startsWith("rename from"))
-        status = "renamed";
-      i++;
-    }
-
-    if (i < lines.length && BINARY_MARKER.test(lines[i])) {
-      isBinary = true;
-      i++;
-    }
+    const { status, isBinary, nextIdx } = parseFileStatus(lines, i);
+    i = nextIdx;
 
     if (isBinary) continue;
 
@@ -68,39 +111,8 @@ export function parseGitDiff(rawDiff: string): FileDiff[] {
     if (i < lines.length && lines[i].startsWith("---")) i++;
     if (i < lines.length && lines[i].startsWith("+++")) i++;
 
-    const hunks: DiffHunk[] = [];
-
-    while (i < lines.length && !lines[i].startsWith("diff --git")) {
-      const hunkMatch = lines[i].match(HUNK_HEADER);
-      if (!hunkMatch) {
-        i++;
-        continue;
-      }
-
-      const oldStart = parseInt(hunkMatch[1], 10);
-      const oldLines = hunkMatch[2] !== undefined ? parseInt(hunkMatch[2], 10) : 1;
-      const newStart = parseInt(hunkMatch[3], 10);
-      const newLines = hunkMatch[4] !== undefined ? parseInt(hunkMatch[4], 10) : 1;
-      i++;
-
-      const contentLines: string[] = [];
-      while (
-        i < lines.length &&
-        !lines[i].startsWith("diff --git") &&
-        !HUNK_HEADER.test(lines[i])
-      ) {
-        contentLines.push(lines[i]);
-        i++;
-      }
-
-      hunks.push({
-        oldStart,
-        oldLines,
-        newStart,
-        newLines,
-        content: contentLines.join("\n"),
-      });
-    }
+    const { hunks, nextIdx: afterHunks } = parseHunks(lines, i);
+    i = afterHunks;
 
     files.push({ oldPath, newPath, status, hunks });
   }

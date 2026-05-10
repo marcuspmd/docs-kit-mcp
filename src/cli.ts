@@ -14,6 +14,7 @@ import {
   impactAnalysisUseCase,
   analyzePatternsUseCase,
   explainSymbolUseCase,
+  openSiteUseCase,
 } from "./cli/usecases/index.js";
 import { serveUseCase } from "./cli/usecases/serve.usecase.js";
 import { inspectUseCase } from "./cli/usecases/inspect.usecase.js";
@@ -138,6 +139,17 @@ async function runExplainSymbol(args: string[]) {
   console.log(result);
 }
 
+async function runOpenSite(args: string[]) {
+  const { flags } = parseArgs(args, {
+    port: "3000",
+    out: "docs-site-v2",
+    db: ".docs-kit/index.db",
+    root: ".",
+  });
+  const port = parseInt(flags.port || "3000", 10) || 3000;
+  await openSiteUseCase({ port, outDir: flags.out, dbPath: flags.db, rootDir: flags.root });
+}
+
 async function runServe(args: string[]) {
   const { flags } = parseArgs(args, {
     port: "7337",
@@ -193,6 +205,9 @@ async function main() {
         break;
       case "explain-symbol":
         await runExplainSymbol(args.slice(1));
+        break;
+      case "open-site":
+        await runOpenSite(args.slice(1));
         break;
       case "serve":
         await runServe(args.slice(1));
