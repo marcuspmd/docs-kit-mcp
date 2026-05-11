@@ -580,6 +580,135 @@ pre code {
 
 .source-code {
   max-height: 620px;
+  padding: 8px 0;
+}
+
+/* Source line with gutter numbers */
+.source-line {
+  display: flex;
+  min-width: 100%;
+}
+
+.source-line:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.source-gutter-num {
+  flex: 0 0 auto;
+  min-width: 52px;
+  padding: 0 10px;
+  color: #4a6078;
+  text-align: right;
+  user-select: none;
+  border-right: 1px solid #1e3a50;
+  background: #0d1420;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.source-line-text {
+  flex: 1;
+  padding: 0 16px;
+  white-space: pre;
+  min-width: 0;
+}
+
+/* Source block header with coverage indicator */
+.source-head-right {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+/* Coverage indicator square */
+.cov-indicator {
+  font-size: 16px;
+  line-height: 1;
+  cursor: default;
+}
+
+.cov-indicator.cov-good {
+  color: #17a854;
+}
+
+.cov-indicator.cov-warning {
+  color: #e09200;
+}
+
+.cov-indicator.cov-danger {
+  color: #c53030;
+}
+
+.cov-indicator.cov-none {
+  color: #c0cad6;
+}
+
+/* Violations section inside detail pages */
+.violations-detail-section {
+  background: #fffafa;
+  border-color: #f2b8b4;
+}
+
+.violations-detail-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.violations-detail-row {
+  display: grid;
+  grid-template-columns: 70px minmax(140px, auto) minmax(0, 1fr);
+  gap: 8px 12px;
+  align-items: baseline;
+  padding: 7px 10px;
+  border-radius: 6px;
+  font-size: 13px;
+  border: 1px solid transparent;
+}
+
+.violations-detail-row.severity-error {
+  background: #fff0f0;
+  border-color: #f5c6c4;
+}
+
+.violations-detail-row.severity-warning {
+  background: #fffbf0;
+  border-color: #f1d58f;
+}
+
+.violations-detail-row.severity-info {
+  background: #f0f5ff;
+  border-color: #bfcfee;
+}
+
+/* Pattern inline violations */
+.pattern-violations-list {
+  margin-top: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.pattern-violation-row {
+  display: grid;
+  grid-template-columns: 68px minmax(120px, auto) minmax(0, 1fr);
+  gap: 6px 10px;
+  align-items: baseline;
+  padding: 5px 8px;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.pattern-violation-row.severity-error {
+  background: #fff0f0;
+}
+
+.pattern-violation-row.severity-warning {
+  background: #fffbf0;
+}
+
+.pattern-violation-row.severity-info {
+  background: #f0f5ff;
 }
 
 .prompt-code {

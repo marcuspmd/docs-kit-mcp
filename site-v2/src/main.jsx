@@ -364,19 +364,66 @@ function Badge({ children, tone }) {
   return <span className={`badge ${tone || ""}`}>{children}</span>;
 }
 
-function SourceBlock({ title, source, language }) {
+function coverageIndicatorClass(pct) {
+  if (pct === null || pct === undefined) return "cov-none";
+  if (pct >= 80) return "cov-good";
+  if (pct >= 50) return "cov-warning";
+  return "cov-danger";
+}
+
+function SourceBlock({ title, source, language, coveragePct }) {
   if (!source?.text) return null;
+  const lines = source.text.split("\n");
+  // Remove trailing empty line if file ends with \n
+  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
+  const hasCoverage = coveragePct !== null && coveragePct !== undefined;
+  const covClass = coverageIndicatorClass(coveragePct);
+  const covTitle = hasCoverage ? `Coverage: ${metric(coveragePct)}%` : "No coverage data";
   return (
     <section className="detail-section source-section">
       <div className="section-head">
         <h3>{title}</h3>
-        <span>
-          {source.startLine}-{source.endLine}
-        </span>
+        <div className="source-head-right">
+          <span className={`cov-indicator ${covClass}`} title={covTitle}>
+            &#9632;
+          </span>
+          <span>
+            {source.startLine}–{source.endLine}
+          </span>
+        </div>
       </div>
       <pre className="source-code" data-language={language || "text"}>
-        <code>{source.text}</code>
+        {lines.map((line, i) => {
+          const lineNum = source.startLine + i;
+          return (
+            <span key={lineNum} className="source-line">
+              <span className="source-gutter-num">{lineNum}</span>
+              <span className="source-line-text">{line}</span>
+            </span>
+          );
+        })}
       </pre>
+    </section>
+  );
+}
+
+function ViolationsSection({ violations }) {
+  if (!violations?.length) return null;
+  return (
+    <section className="detail-section violations-detail-section">
+      <div className="section-head">
+        <h3>Violations</h3>
+        <span>{violations.length}</span>
+      </div>
+      <div className="violations-detail-list">
+        {violations.map((v, i) => (
+          <div key={i} className={`violations-detail-row severity-${v.severity}`}>
+            <span className="violation-severity">{v.severity}</span>
+            <span className="violation-rule">{v.rule}</span>
+            <span className="violation-msg">{v.message}</span>
+          </div>
+        ))}
+      </div>
     </section>
   );
 }
@@ -715,6 +762,10 @@ function SymbolDetail({ data, symbol, symbolsById, childrenByParent, complexityB
   const symbolEntry = complexityById.get(symbol.id);
   const source = getSymbolSource(data, symbol, symbolsById);
   const { dependencies, dependents } = getDirectRelations(data, displaySymbol, symbolsById);
+  const symbolViolations = (data.archViolations ?? []).filter(
+    (v) => v.symbol_id === symbol.id || v.symbol_id === displaySymbol.id,
+  );
+  const coveragePct = symbol.metrics?.testCoverage?.coveragePercent ?? null;
   const prompt = buildPromptPreview({
     data,
     symbol,
@@ -804,6 +855,8 @@ function SymbolDetail({ data, symbol, symbolsById, childrenByParent, complexityB
         </section>
       ) : null}
 
+      <ViolationsSection violations={symbolViolations} />
+
       {classSymbol ? (
         <ClassMembers
           classSymbol={classSymbol}
@@ -817,6 +870,7 @@ function SymbolDetail({ data, symbol, symbolsById, childrenByParent, complexityB
         title={classSymbol ? "Full Class Source" : "Source"}
         source={source}
         language={data.sourceFiles?.[displaySymbol.file]?.language}
+        coveragePct={coveragePct}
       />
 
       <div className="detail-two-col">
@@ -870,6 +924,7 @@ function FileDetail({ data, filePath, symbolsById, complexityById, onSelect }) {
     : null;
   const fileStats = buildFileStats(rawSymbols, complexityById);
   const fileCoverage = buildFileCoverage(rawSymbols);
+  const fileViolations = (data.archViolations ?? []).filter((v) => v.file === filePath);
   const thresholds = data.complexity.thresholds;
   const [sort, toggleSort] = useSort("risk");
 
@@ -996,7 +1051,14 @@ function FileDetail({ data, filePath, symbolsById, complexityById, onSelect }) {
         </div>
       </section>
 
-      <SourceBlock title="File Source" source={source} language={sourceFile?.language} />
+      <SourceBlock
+        title="File Source"
+        source={source}
+        language={sourceFile?.language}
+        coveragePct={fileCoverage}
+      />
+
+      <ViolationsSection violations={fileViolations} />
     </article>
   );
 }
@@ -1721,6 +1783,17 @@ function PatternsPanel({ data, symbolsById, onClose, onSelect }) {
                     </span>
                   ) : null}
                 </div>
+                {pattern.violations?.length > 0 ? (
+                  <div className="pattern-violations-list">
+                    {pattern.violations.map((v, vi) => (
+                      <div key={vi} className={`pattern-violation-row severity-${v.severity}`}>
+                        <span className="violation-severity">{v.severity}</span>
+                        <span className="violation-rule">{v.rule}</span>
+                        <span className="violation-msg">{v.message}</span>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
               </div>
             );
           })
