@@ -1,25 +1,17 @@
 import { jest } from "@jest/globals";
 import fs from "node:fs";
 
-// Mock generateSite BEFORE importing the use case
-const mockGenerateSite = jest.fn();
 const mockGenerateSiteV2 = jest.fn();
-
-jest.unstable_mockModule("../../../site/generator.js", () => ({
-  generateSite: mockGenerateSite,
-}));
 
 jest.unstable_mockModule("../../../site/v2Generator.js", () => ({
   generateSiteV2: mockGenerateSiteV2,
 }));
 
-// Mock the DI container to avoid loadConfig side effects
 jest.unstable_mockModule("../../../di/container.js", () => ({
   setupContainer: jest.fn(),
   resolve: jest.fn().mockReturnValue({ close: jest.fn() }),
 }));
 
-// Now import the use case after mocks are set up
 const { buildSiteUseCase } = await import("../buildSite.usecase.js");
 
 describe("buildSiteUseCase", () => {
@@ -40,7 +32,7 @@ describe("buildSiteUseCase", () => {
 
     await buildSiteUseCase({
       dbPath: "/test/index.db",
-      outDir: "docs-site",
+      outDir: "docs-site-v2",
       rootDir: ".",
     });
 
@@ -48,35 +40,11 @@ describe("buildSiteUseCase", () => {
     expect(console.error).toHaveBeenCalledWith("Error: Database not found at /test/index.db");
     expect(console.error).toHaveBeenCalledWith('Run "docs-kit index" first to create the index.');
     expect(process.exit).toHaveBeenCalledWith(1);
-    expect(mockGenerateSite).not.toHaveBeenCalled();
     expect(mockGenerateSiteV2).not.toHaveBeenCalled();
   });
 
-  it("should generate site if database exists", async () => {
-    mockGenerateSite.mockReturnValue({
-      symbolPages: 10,
-      filePages: 5,
-      totalFiles: 15,
-    });
-
-    await buildSiteUseCase({
-      dbPath: "/test/index.db",
-      outDir: "docs-site",
-      rootDir: ".",
-    });
-
-    expect(fs.existsSync).toHaveBeenCalledWith("/test/index.db");
-    expect(mockGenerateSite).toHaveBeenCalledWith(
-      expect.objectContaining({
-        outDir: "docs-site",
-        rootDir: ".",
-      }),
-    );
-    expect(console.log).toHaveBeenCalledWith(expect.stringContaining("Open docs-site/index.html"));
-  });
-
-  it("should generate v2 site when requested", async () => {
-    mockGenerateSiteV2.mockReturnValue({
+  it("should generate the v2 site when database exists", async () => {
+    mockGenerateSiteV2.mockResolvedValue({
       symbolPages: 10,
       filePages: 5,
       totalFiles: 4,
@@ -89,10 +57,8 @@ describe("buildSiteUseCase", () => {
       dbPath: "/test/index.db",
       outDir: "docs-site-v2",
       rootDir: ".",
-      version: "v2",
     });
 
-    expect(mockGenerateSite).not.toHaveBeenCalled();
     expect(mockGenerateSiteV2).toHaveBeenCalledWith(
       expect.objectContaining({
         outDir: "docs-site-v2",
@@ -105,17 +71,20 @@ describe("buildSiteUseCase", () => {
   });
 
   it("should use default parameters", async () => {
-    mockGenerateSite.mockReturnValue({
+    mockGenerateSiteV2.mockResolvedValue({
       symbolPages: 0,
       filePages: 0,
       totalFiles: 0,
+      classCount: 0,
+      moduleCount: 0,
+      dataFile: "docs-site-v2/site-data.json",
     });
 
     await buildSiteUseCase({});
 
-    expect(mockGenerateSite).toHaveBeenCalledWith(
+    expect(mockGenerateSiteV2).toHaveBeenCalledWith(
       expect.objectContaining({
-        outDir: "docs-site",
+        outDir: "docs-site-v2",
         rootDir: "src",
       }),
     );

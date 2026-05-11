@@ -9,7 +9,7 @@ export default {
 
   /** Output directories for generated content */
   output: {
-    site: "docs-site", // `docs-kit build-site`
+    site: "docs-site-v2", // `docs-kit build-site`
     docs: "docs-output", // `docs-kit build-docs`
   },
 

@@ -14,6 +14,7 @@ export interface GenerateSiteV2Options {
   outDir: string;
   rootDir?: string;
   generatedAt?: string;
+  lcovPath?: string;
 }
 
 export interface GenerateSiteV2Result {
@@ -76,8 +77,9 @@ export async function generateSiteV2(
 
   try {
     const data = options.data ?? loadSiteData(db!, options.rootDir);
-    const bundle = createSiteDataBundle(data, options.generatedAt, options.rootDir, {
+    const bundle = await createSiteDataBundle(data, options.generatedAt, options.rootDir, {
       diff: options.diff,
+      lcovPath: options.lcovPath,
     });
 
     await buildReactApp(options.outDir);

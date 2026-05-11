@@ -42,8 +42,8 @@ export const ConfigSchema = z.object({
   /** Output directories for generated content */
   output: z
     .object({
-      /** Output directory for `docs-kit build-site` (default: "docs-site") */
-      site: z.string().default("docs-site"),
+      /** Output directory for `docs-kit build-site` (default: "docs-site-v2") */
+      site: z.string().default("docs-site-v2"),
       /** Output directory for `docs-kit build-docs` (default: "docs-output") */
       docs: z.string().default("docs-output"),
     })

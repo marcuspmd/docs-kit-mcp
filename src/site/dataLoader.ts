@@ -10,7 +10,7 @@ import {
   type RelationshipRow,
   type SymbolRow,
 } from "../storage/db.js";
-import type { DocEntry, SiteData } from "./templates/types.js";
+import type { DocEntry, SiteData } from "./types.js";
 
 interface DocsConfig {
   docs: DocEntry[];

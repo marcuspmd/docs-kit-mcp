@@ -1,1292 +1,401 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { createRoot } from "react-dom/client";
 import "./styles.css";
 
-const CLASS_KINDS = new Set(["class", "abstract_class"]);
+/* ============================================================
+   docs-kit · v2 site (improved design port)
+   Loads /site-data.json at runtime and renders the SPA.
+   ============================================================ */
 
-function metric(value) {
-  if (value === null || value === undefined) return "-";
-  return Number.isInteger(value) ? String(value) : Number(value).toFixed(1);
+// ─── Helpers ────────────────────────────────────────────────
+const fmt = (v) => (v == null ? "—" : Number.isInteger(v) ? String(v) : Number(v).toFixed(1));
+
+const riskCls = (r) => (r == null ? "" : r > 50 ? "r-high" : r > 25 ? "r-warn" : "r-ok");
+const toneOfScore = (s) => (s == null ? "" : s >= 80 ? "good" : s >= 50 ? "warn" : "danger");
+
+const KIND_LABEL = {
+  class: "C",
+  method: "M",
+  function: "ƒ",
+  interface: "I",
+  type: "T",
+  abstract_class: "A",
+  constructor: "K",
+  enum: "E",
+  lambda: "λ",
+};
+
+function SymIcon({ kind }) {
+  return <span className={`sym-icon ${kind}`}>{KIND_LABEL[kind] || "?"}</span>;
 }
 
-function scoreClass(entry) {
-  if (!entry?.aboveThresholds?.length) return "score-ok";
-  if (entry.aboveThresholds.includes("cognitiveComplexity")) return "score-high";
-  return "score-warn";
+function isPathInScope(filePath, scopePath) {
+  const normalized = (scopePath || "").replace(/\/+$/, "");
+  if (!normalized) return true;
+  return filePath === normalized || filePath.startsWith(`${normalized}/`);
 }
 
-function riskMetric(value) {
-  return `Risk ${metric(value)}`;
+function getScopedFiles(data, scopePath) {
+  return data.files.filter((file) => isPathInScope(file, scopePath));
 }
 
-function normalize(value) {
-  return String(value ?? "").toLowerCase();
+function getScopedSymbols(data, scopePath) {
+  return data.symbols.filter((symbol) => isPathInScope(symbol.file, scopePath));
 }
 
-function queryTokens(query) {
-  return normalize(query).split(/\s+/).filter(Boolean);
+function averageCoverage(symbols) {
+  const values = symbols
+    .map((symbol) => symbol.metrics?.testCoverage?.coveragePercent)
+    .filter((value) => value != null);
+  if (values.length === 0) return null;
+  return values.reduce((sum, value) => sum + value, 0) / values.length;
 }
 
-function symbolHaystack(symbol) {
-  return [
-    symbol.id,
-    symbol.name,
-    symbol.qualifiedName,
-    symbol.file,
-    symbol.kind,
-    symbol.layer,
-    symbol.docRef,
-    symbol.signature,
-    symbol.summary,
-    symbol.docComment,
-    symbol.tags?.join(" "),
-  ]
-    .filter(Boolean)
-    .join(" ")
-    .toLowerCase();
+function getScopedArchViolations(data, scopePath) {
+  return (data.archViolations || []).filter((violation) =>
+    isPathInScope(violation.file, scopePath),
+  );
 }
 
-function matchesSymbol(symbol, tokens) {
-  if (tokens.length === 0) return true;
-  const haystack = symbolHaystack(symbol);
-  return tokens.every((token) => haystack.includes(token));
+function getScopedReaperFindings(
+  data,
+  scopePath,
+  scopedSymbols = getScopedSymbols(data, scopePath),
+) {
+  const scopedSymbolIds = new Set(scopedSymbols.map((symbol) => symbol.id));
+  const scopedFiles = new Set(getScopedFiles(data, scopePath));
+  return (data.reaperFindings || []).filter((finding) => {
+    if (scopedSymbolIds.has(finding.target) || scopedFiles.has(finding.target)) return true;
+    if (isPathInScope(finding.target, scopePath)) return true;
+    const symbol = data.symbolsById?.get?.(finding.target);
+    return symbol ? isPathInScope(symbol.file, scopePath) : false;
+  });
 }
 
-function matchesPath(filePath, tokens) {
-  if (tokens.length === 0) return true;
-  const haystack = normalize(filePath);
-  return tokens.every((token) => haystack.includes(token));
-}
-
-function byLocation(left, right) {
-  if (left.file !== right.file) return left.file.localeCompare(right.file);
-  if (left.startLine !== right.startLine) return left.startLine - right.startLine;
-  return left.name.localeCompare(right.name);
-}
-
-function symbolByIdMap(symbols) {
-  return new Map(symbols.map((symbol) => [symbol.id, symbol]));
-}
-
-function complexityByIdMap(entries) {
-  return new Map(entries.map((entry) => [entry.id, entry]));
-}
-
-function childrenByParentMap(symbols) {
-  const map = new Map();
-  for (const symbol of symbols) {
-    if (!symbol.parent) continue;
-    const children = map.get(symbol.parent) ?? [];
-    children.push(symbol);
-    map.set(symbol.parent, children);
-  }
-  for (const children of map.values()) {
-    children.sort(byLocation);
-  }
-  return map;
-}
-
-function getModuleName(filePath) {
-  if (!filePath.includes("/")) return "root";
-  return filePath.split("/").slice(0, -1).join("/");
-}
-
-function getLineWindow(sourceFile, startLine, endLine) {
-  if (!sourceFile?.text) return null;
-  const lines = sourceFile.text.split("\n");
-  const startIndex = Math.max(0, startLine - 1);
-  const endIndex = Math.min(lines.length, endLine);
+function getFileOverview(data, filePath) {
+  const symbols = data.symbols.filter((symbol) => symbol.file === filePath);
+  const entries = symbols.map((symbol) => data.complexityById[symbol.id]).filter(Boolean);
+  const totalLoc = entries.reduce((sum, entry) => sum + (entry.linesOfCode || 0), 0);
+  const maxRisk = entries.length ? Math.max(...entries.map((entry) => entry.riskScore || 0)) : 0;
+  const archViolations = (data.archViolations || []).filter(
+    (violation) => violation.file === filePath,
+  );
+  const reaperFindings = getScopedReaperFindings(data, filePath, symbols);
   return {
-    startLine: startIndex + 1,
-    endLine: endIndex,
-    text: lines.slice(startIndex, endIndex).join("\n"),
+    filePath,
+    symbols,
+    totalLoc,
+    maxRisk,
+    avgCoverage: averageCoverage(symbols),
+    archViolations,
+    reaperFindings,
+    violationCount: archViolations.length + reaperFindings.length,
   };
 }
 
-function truncateLines(text, maxLines) {
-  const lines = text.split("\n");
-  if (lines.length <= maxLines) return text;
-  return `${lines.slice(0, maxLines).join("\n")}\n// ... (+${lines.length - maxLines} lines)`;
-}
-
-function getEnclosingClass(symbol, symbolsById) {
-  if (!symbol) return null;
-  if (CLASS_KINDS.has(symbol.kind)) return symbol;
-
-  let current = symbol.parent ? symbolsById.get(symbol.parent) : null;
-  while (current) {
-    if (CLASS_KINDS.has(current.kind)) return current;
-    current = current.parent ? symbolsById.get(current.parent) : null;
-  }
-  return null;
-}
-
-function getSymbolSource(data, symbol, symbolsById) {
-  const classSymbol = getEnclosingClass(symbol, symbolsById);
-  const target = classSymbol ?? symbol;
-  const sourceFile = data.sourceFiles?.[target.file];
-  return getLineWindow(sourceFile, target.startLine, target.endLine);
-}
-
-function getDirectRelations(data, symbol, symbolsById) {
-  if (!symbol) return { dependencies: [], dependents: [] };
-
-  const dependencies = data.relationships
-    .filter((relation) => relation.source_id === symbol.id)
-    .map((relation) => ({ relation, symbol: symbolsById.get(relation.target_id) }))
-    .filter((entry) => entry.symbol);
-  const dependents = data.relationships
-    .filter((relation) => relation.target_id === symbol.id)
-    .map((relation) => ({ relation, symbol: symbolsById.get(relation.source_id) }))
-    .filter((entry) => entry.symbol);
-
-  return { dependencies, dependents };
-}
-
-function buildPromptPreview({ data, symbol, symbolsById, sourceText, dependencies, dependents }) {
-  if (!symbol) return "";
-
-  const promptSymbol = getEnclosingClass(symbol, symbolsById) ?? symbol;
-  const parts = [
-    "You are a senior software engineer explaining code to a teammate. Provide a clear, thorough explanation.",
-    "",
-    `## Symbol: ${promptSymbol.qualifiedName || promptSymbol.name}`,
-    `- **Kind**: ${promptSymbol.kind}`,
-    `- **File**: ${promptSymbol.file}:${promptSymbol.startLine}-${promptSymbol.endLine}`,
-  ];
-
-  if (promptSymbol.signature) parts.push(`- **Signature**: \`${promptSymbol.signature}\``);
-  if (promptSymbol.layer) parts.push(`- **Layer**: ${promptSymbol.layer}`);
-  if (promptSymbol.pattern) parts.push(`- **Pattern**: ${promptSymbol.pattern}`);
-  if (promptSymbol.extends) parts.push(`- **Extends**: ${promptSymbol.extends}`);
-  if (promptSymbol.implements?.length) {
-    parts.push(`- **Implements**: ${promptSymbol.implements.join(", ")}`);
-  }
-  if (promptSymbol.deprecated) parts.push("- **DEPRECATED**");
-
-  if (sourceText) {
-    const language = data.sourceFiles?.[promptSymbol.file]?.language ?? "";
-    parts.push("", "## Source Code", `\`\`\`${language}`, truncateLines(sourceText, 80), "```");
-  }
-
-  if (dependencies.length > 0) {
-    parts.push("", "## Dependencies (this symbol uses):");
-    for (const { symbol: dependency, relation } of dependencies.slice(0, 12)) {
-      parts.push(
-        `- ${dependency.name} (${dependency.kind} in ${dependency.file}, ${relation.type})`,
-      );
+function buildPathChildren(data, scopePath, files, symbols, archViolations) {
+  const groups = new Map();
+  const ensureGroup = (childPath, label, isFile) => {
+    if (!groups.has(childPath)) {
+      groups.set(childPath, {
+        path: childPath,
+        label,
+        isFile,
+        files: new Set(),
+        symbolIds: new Set(),
+        totalLoc: 0,
+        maxRisk: 0,
+        archViolationCount: 0,
+      });
     }
+    return groups.get(childPath);
+  };
+  const childForFile = (filePath) => {
+    const rest =
+      filePath === scopePath ? filePath.split("/").pop() : filePath.slice(scopePath.length + 1);
+    const label = rest.split("/")[0] || filePath.split("/").pop();
+    const childPath = filePath === scopePath ? filePath : `${scopePath}/${label}`;
+    return { childPath, label, isFile: data.files.includes(childPath) };
+  };
+
+  for (const file of files) {
+    const child = childForFile(file);
+    ensureGroup(child.childPath, child.label, child.isFile).files.add(file);
+  }
+  for (const symbol of symbols) {
+    const child = childForFile(symbol.file);
+    const group = ensureGroup(child.childPath, child.label, child.isFile);
+    const entry = data.complexityById[symbol.id];
+    group.symbolIds.add(symbol.id);
+    group.totalLoc += entry?.linesOfCode || 0;
+    group.maxRisk = Math.max(group.maxRisk, entry?.riskScore || 0);
+  }
+  for (const violation of archViolations) {
+    const child = childForFile(violation.file);
+    ensureGroup(child.childPath, child.label, child.isFile).archViolationCount += 1;
   }
 
-  if (dependents.length > 0) {
-    parts.push("", "## Dependents (use this symbol):");
-    for (const { symbol: dependent, relation } of dependents.slice(0, 12)) {
-      parts.push(`- ${dependent.name} (${dependent.kind} in ${dependent.file}, ${relation.type})`);
-    }
-  }
-
-  if (promptSymbol.docRef) {
-    parts.push("", "## Existing Documentation", `Linked doc: ${promptSymbol.docRef}`);
-  }
-
-  parts.push(
-    "",
-    "## Instructions",
-    "Provide:",
-    `1. **Purpose**: What this ${promptSymbol.kind} does and why it exists`,
-    "2. **How it works**: Key logic, algorithms, or patterns used",
-    "3. **Dependencies**: How it relates to the symbols listed above",
-    "4. **Usage**: How other code should use this symbol",
-    "5. **Gotchas**: Any non-obvious behavior, edge cases, or caveats",
-    "**Responda em pt-BR**",
-    "",
-    "---",
-    "**Important**: After providing your explanation, you MUST call the docs-kit 'updateSymbolExplanation' tool to cache your response for future use. Pass the symbol name and your explanation to that tool.",
-  );
-
-  return parts.join("\n");
+  return Array.from(groups.values()).sort((a, b) => {
+    if (a.isFile !== b.isFile) return a.isFile ? 1 : -1;
+    return a.label.localeCompare(b.label);
+  });
 }
 
-function buildTree(data, symbolsById, tokens) {
-  const root = { name: "root", path: "", children: new Map(), files: new Map() };
-  const symbolsByFile = new Map();
-
-  for (const symbol of data.symbols) {
-    const symbols = symbolsByFile.get(symbol.file) ?? [];
-    symbols.push(symbol);
-    symbolsByFile.set(symbol.file, symbols);
-  }
-
-  for (const symbols of symbolsByFile.values()) {
-    symbols.sort(byLocation);
-  }
-
-  for (const filePath of data.files.slice().sort()) {
-    const fileSymbols = symbolsByFile.get(filePath) ?? [];
-    const pathMatched = matchesPath(filePath, tokens);
-    const matchedSymbols = fileSymbols.filter((symbol) => matchesSymbol(symbol, tokens));
-    if (tokens.length > 0 && !pathMatched && matchedSymbols.length === 0) continue;
-
-    const segments = filePath.split("/").filter(Boolean);
-    const fileName = segments.pop() ?? filePath;
+// ─── Tree builder ───────────────────────────────────────────
+function buildTree(files, symbols) {
+  const root = { name: "", path: "", dirs: new Map(), files: new Map() };
+  for (const f of files) {
+    const parts = f.split("/");
+    const file = parts.pop();
     let node = root;
-    let currentPath = "";
-    for (const segment of segments) {
-      currentPath = currentPath ? `${currentPath}/${segment}` : segment;
-      if (!node.children.has(segment)) {
-        node.children.set(segment, {
-          name: segment,
-          path: currentPath,
-          children: new Map(),
+    let pathSoFar = "";
+    for (const p of parts) {
+      pathSoFar = pathSoFar ? `${pathSoFar}/${p}` : p;
+      if (!node.dirs.has(p)) {
+        node.dirs.set(p, {
+          name: p,
+          path: pathSoFar,
+          dirs: new Map(),
           files: new Map(),
         });
       }
-      node = node.children.get(segment);
+      node = node.dirs.get(p);
     }
-
-    const visibleSymbols = pathMatched ? fileSymbols : matchedSymbols;
-    const topLevelSymbolMap = new Map();
-    for (const symbol of visibleSymbols) {
-      let topLevelSymbol = symbol;
-      let parent = symbol.parent ? symbolsById.get(symbol.parent) : null;
-      while (parent && parent.file === symbol.file) {
-        topLevelSymbol = parent;
-        parent = parent.parent ? symbolsById.get(parent.parent) : null;
-      }
-      topLevelSymbolMap.set(topLevelSymbol.id, topLevelSymbol);
-    }
-    const topLevelSymbols = Array.from(topLevelSymbolMap.values()).sort(byLocation);
-
-    node.files.set(fileName, {
-      name: fileName,
-      path: filePath,
-      symbols: topLevelSymbols,
-      allSymbols: fileSymbols,
-    });
+    const filSyms = symbols.filter((s) => s.file === f && !s.parent);
+    node.files.set(file, { name: file, path: f, symbols: filSyms });
   }
-
   return root;
 }
 
-function coverageTone(pct) {
-  if (pct === null || pct === undefined) return "";
-  if (pct >= 80) return "good";
-  if (pct >= 50) return "warning";
-  return "danger";
+function countLeafFiles(node) {
+  let n = node.files.size;
+  for (const d of node.dirs.values()) n += countLeafFiles(d);
+  return n;
 }
 
-function coverageLabel(pct) {
-  if (pct === null || pct === undefined) return "-";
-  return `${metric(pct)}%`;
-}
-
-function complexityTone(value, threshold) {
-  if (!value) return "";
-  return value > threshold ? "danger" : value > threshold * 0.7 ? "warning" : "";
-}
-
-function buildFileStats(fileSymbols, complexityById) {
-  const entries = fileSymbols.map((s) => complexityById.get(s.id)).filter(Boolean);
-  if (entries.length === 0) return null;
-  const loc = entries.reduce((sum, e) => sum + (e.linesOfCode ?? 0), 0);
-  const cycloValues = entries.map((e) => e.cyclomaticComplexity ?? 0).filter((v) => v > 0);
-  const cogValues = entries.map((e) => e.cognitiveComplexity ?? 0).filter((v) => v > 0);
-  const avgCyclo = cycloValues.length
-    ? cycloValues.reduce((s, v) => s + v, 0) / cycloValues.length
-    : 0;
-  const avgCog = cogValues.length ? cogValues.reduce((s, v) => s + v, 0) / cogValues.length : 0;
-  const maxCyclo = cycloValues.length ? Math.max(...cycloValues) : 0;
-  const maxCog = cogValues.length ? Math.max(...cogValues) : 0;
-  const riskScore = Math.max(...entries.map((e) => e.riskScore ?? 0));
-  return { loc, avgCyclo, avgCog, maxCyclo, maxCog, riskScore };
-}
-
-function buildFileCoverage(fileSymbols) {
-  const withCov = fileSymbols.filter((s) => s.metrics?.testCoverage);
-  if (withCov.length === 0) return null;
-  const vals = withCov.map((s) => s.metrics.testCoverage.coveragePercent);
-  return Number((vals.reduce((a, b) => a + b, 0) / vals.length).toFixed(1));
-}
-
-function ModuleStats({ mod, thresholds }) {
-  if (!mod) return null;
-  return (
-    <div className="detail-metrics">
-      <Stat label="LOC" value={metric(mod.totalLinesOfCode)} />
-      <Stat
-        label="Avg Cyclomatic"
-        value={metric(mod.avgCyclomaticComplexity)}
-        tone={complexityTone(mod.avgCyclomaticComplexity, thresholds.cyclomaticComplexity)}
-      />
-      <Stat
-        label="Max Cyclomatic"
-        value={metric(mod.maxCyclomaticComplexity)}
-        tone={complexityTone(mod.maxCyclomaticComplexity, thresholds.cyclomaticComplexity)}
-      />
-      <Stat
-        label="Avg Cognitive"
-        value={metric(mod.avgCognitiveComplexity)}
-        tone={complexityTone(mod.avgCognitiveComplexity, thresholds.cognitiveComplexity)}
-      />
-      <Stat
-        label="Max Cognitive"
-        value={metric(mod.maxCognitiveComplexity)}
-        tone={complexityTone(mod.maxCognitiveComplexity, thresholds.cognitiveComplexity)}
-      />
-      <Stat
-        label="Max Nesting"
-        value={metric(mod.maxNestingDepth)}
-        tone={complexityTone(mod.maxNestingDepth, thresholds.maxNestingDepth)}
-      />
-      <Stat
-        label="Risk Score"
-        value={metric(mod.riskScore)}
-        tone={mod.riskScore > 50 ? "danger" : mod.riskScore > 20 ? "warning" : ""}
-      />
-    </div>
-  );
-}
-
-function Stat({ label, value, tone, onClick }) {
-  const inner = (
-    <>
-      <div className="stat-label">{label}</div>
-      <div className={`stat-value ${tone || ""}`}>{value}</div>
-    </>
-  );
-  if (onClick) {
-    return (
-      <button type="button" className="stat stat-clickable" onClick={onClick}>
-        {inner}
-      </button>
-    );
+function hasDescendantMatch(node, tokens, allSymbols) {
+  const match = (s) => tokens.every((t) => s.toLowerCase().includes(t));
+  for (const f of node.files.values()) {
+    if (match(f.path)) return true;
+    for (const s of f.symbols) if (match(s.name)) return true;
+    for (const s of allSymbols.filter((s) => s.file === f.path)) if (match(s.name)) return true;
   }
-  return <div className="stat">{inner}</div>;
+  for (const d of node.dirs.values()) if (hasDescendantMatch(d, tokens, allSymbols)) return true;
+  return false;
 }
 
-function Badge({ children, tone }) {
-  return <span className={`badge ${tone || ""}`}>{children}</span>;
-}
+function TreeNode({ node, level, expanded, toggle, selection, onSelect, query, data }) {
+  const dirs = useMemo(
+    () => [...node.dirs.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    [node.dirs],
+  );
+  const files = useMemo(
+    () => [...node.files.values()].sort((a, b) => a.name.localeCompare(b.name)),
+    [node.files],
+  );
+  const tokens = useMemo(() => (query || "").toLowerCase().split(/\s+/).filter(Boolean), [query]);
+  const match = useCallback(
+    (s) => tokens.length === 0 || tokens.every((t) => s.toLowerCase().includes(t)),
+    [tokens],
+  );
 
-function coverageIndicatorClass(pct) {
-  if (pct === null || pct === undefined) return "cov-none";
-  if (pct >= 80) return "cov-good";
-  if (pct >= 50) return "cov-warning";
-  return "cov-danger";
-}
-
-function SourceBlock({ title, source, language, coveragePct }) {
-  if (!source?.text) return null;
-  const lines = source.text.split("\n");
-  // Remove trailing empty line if file ends with \n
-  if (lines.length > 1 && lines[lines.length - 1] === "") lines.pop();
-  const hasCoverage = coveragePct !== null && coveragePct !== undefined;
-  const covClass = coverageIndicatorClass(coveragePct);
-  const covTitle = hasCoverage ? `Coverage: ${metric(coveragePct)}%` : "No coverage data";
   return (
-    <section className="detail-section source-section">
-      <div className="section-head">
-        <h3>{title}</h3>
-        <div className="source-head-right">
-          <span className={`cov-indicator ${covClass}`} title={covTitle}>
-            &#9632;
-          </span>
-          <span>
-            {source.startLine}–{source.endLine}
-          </span>
-        </div>
-      </div>
-      <pre className="source-code" data-language={language || "text"}>
-        {lines.map((line, i) => {
-          const lineNum = source.startLine + i;
-          return (
-            <span key={lineNum} className="source-line">
-              <span className="source-gutter-num">{lineNum}</span>
-              <span className="source-line-text">{line}</span>
-            </span>
-          );
-        })}
-      </pre>
-    </section>
+    <ul>
+      {dirs.map((d) => {
+        const open = expanded.has(d.path) || tokens.length > 0;
+        const childMatch = tokens.length === 0 || hasDescendantMatch(d, tokens, data.symbols);
+        if (!childMatch && tokens.length > 0) return null;
+        return (
+          <li key={d.path}>
+            <div
+              className={`tree-item dir ${selection.type === "path" && selection.path === d.path ? "selected" : ""}`}
+              style={{ "--lvl": level }}
+              onClick={(e) => {
+                if (e.shiftKey) toggle(d.path);
+                else onSelect({ type: "path", path: d.path });
+              }}
+              onDoubleClick={() => toggle(d.path)}
+            >
+              <span
+                className="caret"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggle(d.path);
+                }}
+              >
+                {open ? "▾" : "▸"}
+              </span>
+              <span className="sym-icon" style={{ background: "#d4a72c", color: "white" }}>
+                D
+              </span>
+              <span className="name">{d.name}</span>
+              <span className="badge-num">{countLeafFiles(d)}</span>
+            </div>
+            {open ? (
+              <TreeNode
+                node={d}
+                level={level + 1}
+                expanded={expanded}
+                toggle={toggle}
+                selection={selection}
+                onSelect={onSelect}
+                query={query}
+                data={data}
+              />
+            ) : null}
+          </li>
+        );
+      })}
+      {files.map((f) => {
+        if (tokens.length > 0 && !match(f.path) && !f.symbols.some((s) => match(s.name)))
+          return null;
+        const open = expanded.has("file:" + f.path) || tokens.length > 0;
+        return (
+          <li key={f.path}>
+            <div
+              className={`tree-item file ${selection.type === "file" && selection.path === f.path ? "selected" : ""}`}
+              style={{ "--lvl": level }}
+              onClick={() => onSelect({ type: "file", path: f.path })}
+              onDoubleClick={() => toggle("file:" + f.path)}
+            >
+              <span
+                className="caret"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggle("file:" + f.path);
+                }}
+              >
+                {open ? "▾" : "▸"}
+              </span>
+              <span className="sym-icon" style={{ background: "#1f6feb" }}>
+                F
+              </span>
+              <span className="name">{f.name}</span>
+              <span className="badge-num">{data.symbolCountByFile.get(f.path) ?? 0}</span>
+            </div>
+            {open && f.symbols.length > 0 ? (
+              <ul>
+                {f.symbols
+                  .filter((s) => tokens.length === 0 || match(s.name))
+                  .map((s) => (
+                    <TreeSymbolRow
+                      key={s.id}
+                      sym={s}
+                      level={level + 1}
+                      selection={selection}
+                      onSelect={onSelect}
+                      expanded={expanded}
+                      toggle={toggle}
+                      query={query}
+                      match={match}
+                      data={data}
+                    />
+                  ))}
+              </ul>
+            ) : null}
+          </li>
+        );
+      })}
+    </ul>
   );
 }
 
-function ViolationsSection({ violations }) {
-  if (!violations?.length) return null;
+function TreeSymbolRow({ sym, level, selection, onSelect, expanded, toggle, query, match, data }) {
+  const kids = data.childrenByParent.get(sym.id) ?? [];
+  const open = expanded.has("sym:" + sym.id) || (query && kids.some((k) => match(k.name)));
+  const entry = data.complexityById[sym.id];
   return (
-    <section className="detail-section violations-detail-section">
-      <div className="section-head">
-        <h3>Violations</h3>
-        <span>{violations.length}</span>
-      </div>
-      <div className="violations-detail-list">
-        {violations.map((v, i) => (
-          <div key={i} className={`violations-detail-row severity-${v.severity}`}>
-            <span className="violation-severity">{v.severity}</span>
-            <span className="violation-rule">{v.rule}</span>
-            <span className="violation-msg">{v.message}</span>
-          </div>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function SummaryStrip({ data, onStatClick }) {
-  const project = data.complexity.project;
-  const coverage = data.health.coverage;
-  const coveragePct = coverage?.averageCoveragePercent;
-  const coverageTone =
-    coveragePct === null || coveragePct === undefined
-      ? ""
-      : coveragePct >= 80
-        ? "good"
-        : coveragePct >= 50
-          ? "warning"
-          : "danger";
-  return (
-    <section className="summary-strip">
-      <Stat label="Symbols" value={metric(project.symbolCount)} />
-      <Stat label="Files" value={metric(data.files.length)} />
-      <Stat label="Classes" value={metric(project.classCount)} />
-      <Stat
-        label="High Complexity"
-        value={metric(project.highComplexitySymbolCount)}
-        tone={project.highComplexitySymbolCount > 0 ? "danger" : "good"}
-        onClick={onStatClick ? () => onStatClick("complexity", "cyclomatic") : undefined}
-      />
-      <Stat
-        label="Max Cognitive"
-        value={metric(project.maxCognitiveComplexity)}
-        tone={
-          project.maxCognitiveComplexity > data.complexity.thresholds.cognitiveComplexity
-            ? "warning"
-            : ""
-        }
-        onClick={onStatClick ? () => onStatClick("complexity", "cognitive") : undefined}
-      />
-      <Stat
-        label="Max Nesting"
-        value={metric(project.maxNestingDepth)}
-        tone={project.maxNestingDepth > data.complexity.thresholds.maxNestingDepth ? "warning" : ""}
-        onClick={onStatClick ? () => onStatClick("complexity", "nesting") : undefined}
-      />
-      <Stat
-        label="Coverage"
-        value={coveragePct !== null && coveragePct !== undefined ? `${metric(coveragePct)}%` : "-"}
-        tone={coverageTone}
-      />
-    </section>
-  );
-}
-
-function SearchResults({ data, query, complexityById, onSelect }) {
-  const tokens = queryTokens(query);
-  const tokenKey = tokens.join(" ");
-  const results = useMemo(() => {
-    if (tokens.length === 0) return { symbols: [], files: [] };
-
-    const symbols = data.symbols
-      .filter((symbol) => matchesSymbol(symbol, tokens))
-      .map((symbol) => ({ symbol, complexity: complexityById.get(symbol.id) }))
-      .sort((left, right) => {
-        const leftRisk = left.complexity?.riskScore ?? 0;
-        const rightRisk = right.complexity?.riskScore ?? 0;
-        if (leftRisk !== rightRisk) return rightRisk - leftRisk;
-        return byLocation(left.symbol, right.symbol);
-      })
-      .slice(0, 10);
-
-    const files = data.files.filter((file) => matchesPath(file, tokens)).slice(0, 8);
-    return { symbols, files };
-  }, [complexityById, data.files, data.symbols, tokenKey]);
-
-  if (tokens.length === 0) return null;
-
-  return (
-    <div className="search-results">
-      <div className="result-group">
-        <span>Symbols</span>
-        {results.symbols.length === 0 ? <p>No symbol matches</p> : null}
-        {results.symbols.map(({ symbol, complexity }) => (
-          <button
-            key={symbol.id}
-            type="button"
-            onClick={() => onSelect({ type: "symbol", id: symbol.id })}
-          >
-            <strong>{symbol.name}</strong>
-            <small>
-              {symbol.kind} · {symbol.file}
-            </small>
-            <span className={scoreClass(complexity)}>{riskMetric(complexity?.riskScore)}</span>
-          </button>
-        ))}
-      </div>
-      <div className="result-group">
-        <span>Paths</span>
-        {results.files.length === 0 ? <p>No path matches</p> : null}
-        {results.files.map((file) => (
-          <button key={file} type="button" onClick={() => onSelect({ type: "file", path: file })}>
-            <strong>{file.split("/").pop()}</strong>
-            <small>{file}</small>
-            <span>{data.symbols.filter((symbol) => symbol.file === file).length}</span>
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function TreeSymbol({ symbol, childrenByParent, complexityById, selected, onSelect, level = 0 }) {
-  const children = childrenByParent.get(symbol.id) ?? [];
-  const complexity = complexityById.get(symbol.id);
-  const isSelected = selected.type === "symbol" && selected.id === symbol.id;
-
-  return (
-    <li className="tree-symbol" style={{ "--level": level }}>
-      <button
-        type="button"
-        className={isSelected ? "selected" : ""}
-        onClick={() => onSelect({ type: "symbol", id: symbol.id })}
+    <li>
+      <div
+        className={`tree-item symbol ${selection.type === "symbol" && selection.id === sym.id ? "selected" : ""}`}
+        style={{ "--lvl": level }}
+        onClick={() => onSelect({ type: "symbol", id: sym.id })}
       >
-        <span className={`symbol-dot ${symbol.kind}`} />
-        <span>{symbol.name}</span>
-        <small>{symbol.kind}</small>
-        {complexity ? (
-          <em className={scoreClass(complexity)}>{riskMetric(complexity.riskScore)}</em>
-        ) : null}
-      </button>
-      {children.length > 0 ? (
+        <span
+          className="caret"
+          onClick={(e) => {
+            if (kids.length) {
+              e.stopPropagation();
+              toggle("sym:" + sym.id);
+            }
+          }}
+        >
+          {kids.length ? (open ? "▾" : "▸") : ""}
+        </span>
+        <SymIcon kind={sym.kind} />
+        <span className="name trunc">{sym.name}</span>
+        {entry ? (
+          <span className={`risk-pill ${riskCls(entry.riskScore)}`}>{entry.riskScore}</span>
+        ) : (
+          <span />
+        )}
+      </div>
+      {open && kids.length > 0 ? (
         <ul>
-          {children.map((child) => (
-            <TreeSymbol
-              key={child.id}
-              symbol={child}
-              childrenByParent={childrenByParent}
-              complexityById={complexityById}
-              selected={selected}
-              onSelect={onSelect}
-              level={level + 1}
-            />
-          ))}
+          {kids
+            .filter((k) => !query || match(k.name))
+            .map((k) => (
+              <TreeSymbolRow
+                key={k.id}
+                sym={k}
+                level={level + 1}
+                selection={selection}
+                onSelect={onSelect}
+                expanded={expanded}
+                toggle={toggle}
+                query={query}
+                match={match}
+                data={data}
+              />
+            ))}
         </ul>
       ) : null}
     </li>
   );
 }
 
-function TreeDirectory({ node, query, selected, onSelect, childrenByParent, complexityById }) {
-  const directories = Array.from(node.children.values()).sort((left, right) =>
-    left.name.localeCompare(right.name),
+function TreeView({ data, selection, onSelect, query }) {
+  const [expanded, setExpanded] = useState(() => new Set(["src"]));
+  const toggle = useCallback(
+    (k) =>
+      setExpanded((prev) => {
+        const next = new Set(prev);
+        if (next.has(k)) next.delete(k);
+        else next.add(k);
+        return next;
+      }),
+    [],
   );
-  const files = Array.from(node.files.values()).sort((left, right) =>
-    left.name.localeCompare(right.name),
-  );
-  const isQuerying = queryTokens(query).length > 0;
-
   return (
-    <ul className="tree-list">
-      {directories.map((child) => (
-        <li key={child.path} className="tree-directory">
-          <details open={isQuerying || child.path.split("/").length <= 2}>
-            <summary>
-              <button type="button" onClick={() => onSelect({ type: "path", path: child.path })}>
-                <span className="folder-icon" />
-                <span>{child.name}</span>
-              </button>
-            </summary>
-            <TreeDirectory
-              node={child}
-              query={query}
-              selected={selected}
-              onSelect={onSelect}
-              childrenByParent={childrenByParent}
-              complexityById={complexityById}
-            />
-          </details>
-        </li>
-      ))}
-      {files.map((file) => (
-        <li key={file.path} className="tree-file">
-          <details open={isQuerying || file.symbols.length <= 8}>
-            <summary>
-              <button
-                type="button"
-                className={
-                  selected.type === "file" && selected.path === file.path ? "selected" : ""
-                }
-                onClick={() => onSelect({ type: "file", path: file.path })}
-              >
-                <span className="file-icon" />
-                <span>{file.name}</span>
-                <small>{file.allSymbols.length}</small>
-              </button>
-            </summary>
-            {file.symbols.length > 0 ? (
-              <ul>
-                {file.symbols.map((symbol) => (
-                  <TreeSymbol
-                    key={symbol.id}
-                    symbol={symbol}
-                    childrenByParent={childrenByParent}
-                    complexityById={complexityById}
-                    selected={selected}
-                    onSelect={onSelect}
-                  />
-                ))}
-              </ul>
-            ) : null}
-          </details>
-        </li>
-      ))}
-    </ul>
-  );
-}
-
-function ExplorerTree({
-  data,
-  query,
-  selected,
-  onSelect,
-  symbolsById,
-  childrenByParent,
-  complexityById,
-}) {
-  const tree = useMemo(
-    () => buildTree(data, symbolsById, queryTokens(query)),
-    [data, query, symbolsById],
-  );
-
-  return (
-    <aside className="explorer-panel">
-      <div className="panel-head">
-        <h2>Tree</h2>
-        <span>{data.files.length} files</span>
-      </div>
-      <div className="tree-scroll">
-        <TreeDirectory
-          node={tree}
-          query={query}
-          selected={selected}
-          onSelect={onSelect}
-          childrenByParent={childrenByParent}
-          complexityById={complexityById}
-        />
-      </div>
-    </aside>
-  );
-}
-
-function SymbolMetrics({ entry }) {
-  return (
-    <div className="detail-metrics">
-      <Stat label="LOC" value={metric(entry?.linesOfCode)} />
-      <Stat label="Cyclomatic" value={metric(entry?.cyclomaticComplexity)} />
-      <Stat label="Cognitive" value={metric(entry?.cognitiveComplexity)} />
-      <Stat label="Nesting" value={metric(entry?.maxNestingDepth)} />
+    <div className="tree">
+      <TreeNode
+        node={data.tree}
+        level={0}
+        expanded={expanded}
+        toggle={toggle}
+        selection={selection}
+        onSelect={onSelect}
+        query={query}
+        data={data}
+      />
     </div>
   );
 }
 
-function RelationshipList({ title, entries, onSelect }) {
-  return (
-    <section className="detail-section relation-section">
-      <div className="section-head">
-        <h3>{title}</h3>
-        <span>{entries.length}</span>
-      </div>
-      {entries.length === 0 ? <p>None</p> : null}
-      <div className="relation-list">
-        {entries.slice(0, 24).map(({ relation, symbol }) => (
-          <button
-            key={`${relation.source_id}:${relation.target_id}:${relation.type}`}
-            type="button"
-            onClick={() => onSelect({ type: "symbol", id: symbol.id })}
-          >
-            <strong>{symbol.name}</strong>
-            <small>
-              {symbol.kind} · {relation.type}
-            </small>
-            <span>{symbol.file}</span>
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function ClassMembers({ classSymbol, childrenByParent, complexityById, onSelect }) {
-  const members = childrenByParent.get(classSymbol.id) ?? [];
-  if (members.length === 0) return null;
-
-  return (
-    <section className="detail-section">
-      <div className="section-head">
-        <h3>Members</h3>
-        <span>{members.length}</span>
-      </div>
-      <div className="member-grid">
-        {members.map((member) => {
-          const entry = complexityById.get(member.id);
-          return (
-            <button
-              key={member.id}
-              type="button"
-              onClick={() => onSelect({ type: "symbol", id: member.id })}
-            >
-              <strong>{member.name}</strong>
-              <small>{member.kind}</small>
-              <span className={scoreClass(entry)}>{riskMetric(entry?.riskScore)}</span>
-            </button>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-function PromptPreview({ prompt }) {
-  return (
-    <section className="detail-section prompt-section">
-      <div className="section-head">
-        <h3>MCP LLM Preview</h3>
-        <span>{Math.ceil(prompt.length / 4)} tokens</span>
-      </div>
-      <pre className="prompt-code">
-        <code>{prompt}</code>
-      </pre>
-    </section>
-  );
-}
-
-function SymbolDetail({ data, symbol, symbolsById, childrenByParent, complexityById, onSelect }) {
-  const classSymbol = getEnclosingClass(symbol, symbolsById);
-  const displaySymbol = classSymbol ?? symbol;
-  const entry = complexityById.get(displaySymbol.id) ?? complexityById.get(symbol.id);
-  const symbolEntry = complexityById.get(symbol.id);
-  const source = getSymbolSource(data, symbol, symbolsById);
-  const { dependencies, dependents } = getDirectRelations(data, displaySymbol, symbolsById);
-  const symbolViolations = (data.archViolations ?? []).filter(
-    (v) => v.symbol_id === symbol.id || v.symbol_id === displaySymbol.id,
-  );
-  const coveragePct = symbol.metrics?.testCoverage?.coveragePercent ?? null;
-  const prompt = buildPromptPreview({
-    data,
-    symbol,
-    symbolsById,
-    sourceText: source?.text,
-    dependencies,
-    dependents,
-  });
-
-  return (
-    <article className="detail-page">
-      <header className="detail-hero">
-        <div>
-          <div className="crumbs">{displaySymbol.file}</div>
-          <h2>{displaySymbol.qualifiedName || displaySymbol.name}</h2>
-          <p>
-            {displaySymbol.kind} · lines {displaySymbol.startLine}-{displaySymbol.endLine}
-          </p>
-        </div>
-        <div className="badge-row">
-          <Badge tone="accent">{displaySymbol.kind}</Badge>
-          {displaySymbol.docRef ? (
-            <Badge tone="good">documented</Badge>
-          ) : (
-            <Badge tone="warning">missing docs</Badge>
-          )}
-          {displaySymbol.deprecated ? <Badge tone="danger">deprecated</Badge> : null}
-        </div>
-      </header>
-
-      {symbol.id !== displaySymbol.id ? (
-        <section className="detail-section selected-symbol-strip">
-          <div>
-            <h3>Selected Symbol</h3>
-            <strong>{symbol.name}</strong>
-            <span>
-              {symbol.kind} · lines {symbol.startLine}-{symbol.endLine}
-            </span>
-          </div>
-          {symbolEntry ? (
-            <span className={scoreClass(symbolEntry)}>{riskMetric(symbolEntry.riskScore)}</span>
-          ) : null}
-        </section>
-      ) : null}
-
-      <SymbolMetrics entry={entry} />
-
-      <section className="detail-section">
-        <div className="section-head">
-          <h3>Metadata</h3>
-          <span>{displaySymbol.id}</span>
-        </div>
-        <div className="metadata-grid">
-          <div>
-            <span>Path</span>
-            <strong>{displaySymbol.file}</strong>
-          </div>
-          <div>
-            <span>Name</span>
-            <strong>{displaySymbol.name}</strong>
-          </div>
-          <div>
-            <span>Qualified</span>
-            <strong>{displaySymbol.qualifiedName || "-"}</strong>
-          </div>
-          <div>
-            <span>Layer</span>
-            <strong>{displaySymbol.layer || "-"}</strong>
-          </div>
-          <div>
-            <span>Signature</span>
-            <strong>{displaySymbol.signature || "-"}</strong>
-          </div>
-          <div>
-            <span>Doc</span>
-            <strong>{displaySymbol.docRef || "-"}</strong>
-          </div>
-        </div>
-      </section>
-
-      {displaySymbol.summary || displaySymbol.explanation || displaySymbol.docComment ? (
-        <section className="detail-section prose-section">
-          <h3>Notes</h3>
-          {displaySymbol.summary ? <p>{displaySymbol.summary}</p> : null}
-          {displaySymbol.explanation ? <p>{displaySymbol.explanation}</p> : null}
-          {displaySymbol.docComment ? <pre>{displaySymbol.docComment}</pre> : null}
-        </section>
-      ) : null}
-
-      <ViolationsSection violations={symbolViolations} />
-
-      {classSymbol ? (
-        <ClassMembers
-          classSymbol={classSymbol}
-          childrenByParent={childrenByParent}
-          complexityById={complexityById}
-          onSelect={onSelect}
-        />
-      ) : null}
-
-      <SourceBlock
-        title={classSymbol ? "Full Class Source" : "Source"}
-        source={source}
-        language={data.sourceFiles?.[displaySymbol.file]?.language}
-        coveragePct={coveragePct}
-      />
-
-      <div className="detail-two-col">
-        <RelationshipList title="Dependencies" entries={dependencies} onSelect={onSelect} />
-        <RelationshipList title="Dependents" entries={dependents} onSelect={onSelect} />
-      </div>
-
-      <PromptPreview prompt={prompt} />
-    </article>
-  );
-}
-
-function useSort(defaultCol) {
-  const [sort, setSort] = useState({ col: defaultCol, dir: "desc" });
-  function toggle(col) {
-    setSort((prev) =>
-      prev.col === col ? { col, dir: prev.dir === "asc" ? "desc" : "asc" } : { col, dir: "desc" },
-    );
-  }
-  return [sort, toggle];
-}
-
-function SortableHeader({ col, label, sort, onSort }) {
-  const active = sort.col === col;
-  return (
-    <button
-      type="button"
-      className={`sort-header ${active ? "sort-active" : ""}`}
-      onClick={() => onSort(col)}
-    >
-      {label}
-      <span className="sort-arrow">{active ? (sort.dir === "asc" ? " ▲" : " ▼") : " ⇅"}</span>
-    </button>
-  );
-}
-
-function sortRows(rows, sort, getVal) {
-  return [...rows].sort((a, b) => {
-    const av = getVal(a) ?? -Infinity;
-    const bv = getVal(b) ?? -Infinity;
-    const cmp = typeof av === "string" ? av.localeCompare(bv) : av - bv;
-    return sort.dir === "asc" ? cmp : -cmp;
-  });
-}
-
-function FileDetail({ data, filePath, symbolsById, complexityById, onSelect }) {
-  const sourceFile = data.sourceFiles?.[filePath];
-  const rawSymbols = data.symbols.filter((symbol) => symbol.file === filePath).sort(byLocation);
-  const source = sourceFile
-    ? { startLine: 1, endLine: sourceFile.lineCount, text: sourceFile.text }
-    : null;
-  const fileStats = buildFileStats(rawSymbols, complexityById);
-  const fileCoverage = buildFileCoverage(rawSymbols);
-  const fileViolations = (data.archViolations ?? []).filter((v) => v.file === filePath);
-  const thresholds = data.complexity.thresholds;
-  const [sort, toggleSort] = useSort("risk");
-
-  const FILE_COLS = {
-    name: (s) => s.name,
-    kind: (s) => s.kind,
-    lines: (s) => s.startLine,
-    loc: (s) => complexityById.get(s.id)?.linesOfCode ?? -1,
-    cyclo: (s) => complexityById.get(s.id)?.cyclomaticComplexity ?? -1,
-    cogn: (s) => complexityById.get(s.id)?.cognitiveComplexity ?? -1,
-    coverage: (s) => s.metrics?.testCoverage?.coveragePercent ?? -1,
-    risk: (s) => complexityById.get(s.id)?.riskScore ?? -1,
-  };
-  const symbols = sortRows(rawSymbols, sort, FILE_COLS[sort.col] ?? FILE_COLS.risk);
-
-  return (
-    <article className="detail-page">
-      <header className="detail-hero">
-        <div>
-          <div className="crumbs">{getModuleName(filePath)}</div>
-          <h2>{filePath.split("/").pop()}</h2>
-          <p>
-            {filePath} · {symbols.length} symbols
-          </p>
-        </div>
-        <div className="badge-row">
-          <Badge tone="accent">file</Badge>
-          {fileCoverage !== null ? (
-            <Badge tone={coverageTone(fileCoverage)}>{coverageLabel(fileCoverage)} coverage</Badge>
-          ) : null}
-        </div>
-      </header>
-
-      {fileStats ? (
-        <div className="detail-metrics">
-          <Stat label="LOC" value={metric(fileStats.loc)} />
-          <Stat
-            label="Avg Cyclomatic"
-            value={metric(fileStats.avgCyclo)}
-            tone={complexityTone(fileStats.avgCyclo, thresholds.cyclomaticComplexity)}
-          />
-          <Stat
-            label="Max Cyclomatic"
-            value={metric(fileStats.maxCyclo)}
-            tone={complexityTone(fileStats.maxCyclo, thresholds.cyclomaticComplexity)}
-          />
-          <Stat
-            label="Avg Cognitive"
-            value={metric(fileStats.avgCog)}
-            tone={complexityTone(fileStats.avgCog, thresholds.cognitiveComplexity)}
-          />
-          <Stat
-            label="Max Cognitive"
-            value={metric(fileStats.maxCog)}
-            tone={complexityTone(fileStats.maxCog, thresholds.cognitiveComplexity)}
-          />
-          <Stat
-            label="Coverage"
-            value={coverageLabel(fileCoverage)}
-            tone={coverageTone(fileCoverage)}
-          />
-          <Stat
-            label="Risk Score"
-            value={metric(fileStats.riskScore)}
-            tone={fileStats.riskScore > 50 ? "danger" : fileStats.riskScore > 20 ? "warning" : ""}
-          />
-        </div>
-      ) : null}
-
-      <section className="detail-section">
-        <div className="section-head">
-          <h3>Symbols</h3>
-          <span>{symbols.length}</span>
-        </div>
-        <div className="file-symbol-table">
-          <div className="symbol-table-header">
-            <SortableHeader col="name" label="Name" sort={sort} onSort={toggleSort} />
-            <SortableHeader col="kind" label="Kind" sort={sort} onSort={toggleSort} />
-            <SortableHeader col="lines" label="Lines" sort={sort} onSort={toggleSort} />
-            <SortableHeader col="loc" label="LOC" sort={sort} onSort={toggleSort} />
-            <SortableHeader col="cyclo" label="Cyclo" sort={sort} onSort={toggleSort} />
-            <SortableHeader col="cogn" label="Cogn" sort={sort} onSort={toggleSort} />
-            <SortableHeader col="coverage" label="Coverage" sort={sort} onSort={toggleSort} />
-            <SortableHeader col="risk" label="Risk" sort={sort} onSort={toggleSort} />
-          </div>
-          {symbols.map((symbol) => {
-            const entry = complexityById.get(symbol.id);
-            const parent = symbol.parent ? symbolsById.get(symbol.parent) : null;
-            const isNested = parent?.file === symbol.file;
-            const symCov = symbol.metrics?.testCoverage?.coveragePercent ?? null;
-            return (
-              <button
-                key={symbol.id}
-                type="button"
-                onClick={() => onSelect({ type: "symbol", id: symbol.id })}
-              >
-                <strong>{isNested ? `↳ ${symbol.name}` : symbol.name}</strong>
-                <span>{symbol.kind}</span>
-                <small>
-                  {symbol.startLine}-{symbol.endLine}
-                </small>
-                <span>{metric(entry?.linesOfCode)}</span>
-                <span
-                  className={complexityTone(
-                    entry?.cyclomaticComplexity,
-                    thresholds.cyclomaticComplexity,
-                  )}
-                >
-                  {metric(entry?.cyclomaticComplexity)}
-                </span>
-                <span
-                  className={complexityTone(
-                    entry?.cognitiveComplexity,
-                    thresholds.cognitiveComplexity,
-                  )}
-                >
-                  {metric(entry?.cognitiveComplexity)}
-                </span>
-                <span className={coverageTone(symCov)}>{coverageLabel(symCov)}</span>
-                <em className={scoreClass(entry)}>{metric(entry?.riskScore)}</em>
-              </button>
-            );
-          })}
-        </div>
-      </section>
-
-      <SourceBlock
-        title="File Source"
-        source={source}
-        language={sourceFile?.language}
-        coveragePct={fileCoverage}
-      />
-
-      <ViolationsSection violations={fileViolations} />
-    </article>
-  );
-}
-
-function PathDetail({ data, pathValue, complexityById, onSelect }) {
-  const files = data.files
-    .filter((file) => file === pathValue || file.startsWith(`${pathValue}/`))
-    .sort();
-  const symbols = data.symbols.filter((symbol) => files.includes(symbol.file));
-  const classCount = symbols.filter((symbol) => CLASS_KINDS.has(symbol.kind)).length;
-  const thresholds = data.complexity.thresholds;
-  const [sort, toggleSort] = useSort("risk");
-
-  // Find pre-computed module aggregate
-  const mod = data.complexity.modules?.find((m) => m.path === pathValue);
-
-  // Per-file stats
-  const rawFileRows = files.map((file) => {
-    const fileSymbols = data.symbols.filter((s) => s.file === file);
-    const stats = buildFileStats(fileSymbols, complexityById);
-    const coverage = buildFileCoverage(fileSymbols);
-    return { file, fileSymbols, stats, coverage };
-  });
-
-  const PATH_COLS = {
-    file: (r) => r.file,
-    symbols: (r) => r.fileSymbols.length,
-    loc: (r) => r.stats?.loc ?? -1,
-    avgCyclo: (r) => r.stats?.avgCyclo ?? -1,
-    maxCyclo: (r) => r.stats?.maxCyclo ?? -1,
-    avgCog: (r) => r.stats?.avgCog ?? -1,
-    coverage: (r) => r.coverage ?? -1,
-    risk: (r) => r.stats?.riskScore ?? -1,
-  };
-  const fileRows = sortRows(rawFileRows, sort, PATH_COLS[sort.col] ?? PATH_COLS.risk);
-
-  // Module-level coverage (average of files that have coverage)
-  const covFiles = rawFileRows.filter((r) => r.coverage !== null);
-  const moduleCoverage = covFiles.length
-    ? Number((covFiles.reduce((sum, r) => sum + r.coverage, 0) / covFiles.length).toFixed(1))
-    : null;
-
-  // Hotspot symbols
-  const hotspotIds = new Set(mod?.hotspotSymbolIds ?? []);
-  const hotspots = mod
-    ? symbols
-        .filter((s) => hotspotIds.has(s.id))
-        .map((s) => ({ symbol: s, entry: complexityById.get(s.id) }))
-        .sort((a, b) => (b.entry?.riskScore ?? 0) - (a.entry?.riskScore ?? 0))
-        .slice(0, 8)
-    : [];
-
-  return (
-    <article className="detail-page">
-      <header className="detail-hero">
-        <div>
-          <div className="crumbs">module</div>
-          <h2>{pathValue || "root"}</h2>
-          <p>
-            {files.length} files · {symbols.length} symbols · {classCount} classes
-          </p>
-        </div>
-        <div className="badge-row">
-          <Badge tone="accent">module</Badge>
-          {moduleCoverage !== null ? (
-            <Badge tone={coverageTone(moduleCoverage)}>
-              {coverageLabel(moduleCoverage)} coverage
-            </Badge>
-          ) : null}
-        </div>
-      </header>
-
-      <ModuleStats mod={mod} thresholds={thresholds} />
-
-      <section className="detail-section">
-        <div className="section-head">
-          <h3>Files</h3>
-          <span>{files.length}</span>
-        </div>
-        <div className="file-symbol-table">
-          <div className="symbol-table-header">
-            <SortableHeader col="file" label="File" sort={sort} onSort={toggleSort} />
-            <SortableHeader col="symbols" label="Symbols" sort={sort} onSort={toggleSort} />
-            <SortableHeader col="loc" label="LOC" sort={sort} onSort={toggleSort} />
-            <SortableHeader col="avgCyclo" label="Avg Cyclo" sort={sort} onSort={toggleSort} />
-            <SortableHeader col="maxCyclo" label="Max Cyclo" sort={sort} onSort={toggleSort} />
-            <SortableHeader col="avgCog" label="Avg Cogn" sort={sort} onSort={toggleSort} />
-            <SortableHeader col="coverage" label="Coverage" sort={sort} onSort={toggleSort} />
-            <SortableHeader col="risk" label="Risk" sort={sort} onSort={toggleSort} />
-          </div>
-          {fileRows.map(({ file, fileSymbols, stats, coverage }) => (
-            <button key={file} type="button" onClick={() => onSelect({ type: "file", path: file })}>
-              <strong>{file.split("/").pop()}</strong>
-              <span>{fileSymbols.length}</span>
-              <span>{stats ? metric(stats.loc) : "-"}</span>
-              <span
-                className={
-                  stats ? complexityTone(stats.avgCyclo, thresholds.cyclomaticComplexity) : ""
-                }
-              >
-                {stats ? metric(stats.avgCyclo) : "-"}
-              </span>
-              <span
-                className={
-                  stats ? complexityTone(stats.maxCyclo, thresholds.cyclomaticComplexity) : ""
-                }
-              >
-                {stats ? metric(stats.maxCyclo) : "-"}
-              </span>
-              <span
-                className={
-                  stats ? complexityTone(stats.avgCog, thresholds.cognitiveComplexity) : ""
-                }
-              >
-                {stats ? metric(stats.avgCog) : "-"}
-              </span>
-              <span className={coverageTone(coverage)}>{coverageLabel(coverage)}</span>
-              <em
-                className={
-                  stats
-                    ? stats.riskScore > 50
-                      ? "score-high"
-                      : stats.riskScore > 20
-                        ? "score-warn"
-                        : "score-ok"
-                    : ""
-                }
-              >
-                {stats ? metric(stats.riskScore) : "-"}
-              </em>
-            </button>
-          ))}
-        </div>
-      </section>
-
-      {hotspots.length > 0 ? (
-        <section className="detail-section">
-          <div className="section-head">
-            <h3>Hotspot Symbols</h3>
-            <span>highest risk in module</span>
-          </div>
-          <div className="symbol-table compact">
-            {hotspots.map(({ symbol, entry }) => (
-              <button
-                key={symbol.id}
-                type="button"
-                onClick={() => onSelect({ type: "symbol", id: symbol.id })}
-              >
-                <strong>{symbol.qualifiedName || symbol.name}</strong>
-                <span>{symbol.kind}</span>
-                <small>{symbol.file.split("/").pop()}</small>
-                <em className={scoreClass(entry)}>{metric(entry?.riskScore)}</em>
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
-    </article>
-  );
-}
-
-// ─── Dashboard ──────────────────────────────────────────────────────────────
-
-// ─── Health Score (Sonar-inspired) ──────────────────────────────────────────
-//
-// Overall = weighted average of 3 CODE pillars. Docs is NEVER part of this.
-//
-// 1. Maintainability (40%) – high-complexity symbol ratio, inspired by SonarQube
-//    Technical Debt Ratio. Thresholds: A(≤5%), B(≤10%), C(≤20%), D(≤50%), E(>50%)
-//    Score = max(0, 100 − highComplexityRatio × 2)
-//
-// 2. Coverage (40%) – averageCoveragePercent direct value.
-//
-// 3. Architecture (20%) – violation DENSITY per file (not raw count), capped.
-//    Score = max(0, 100 − (violations / files) × 15)
-//    1 violation/file → −15 pts;  ~6.7 violations/file → 0
-//
-// Documentation health is shown as an informational card below, clearly
-// separated, and does NOT influence the overall code quality score.
-
-function computeHealthScore(data) {
-  const { coverage, governance } = data.health;
-  const project = data.complexity.project;
-  const totalSymbols = project.symbolCount || 1;
-  const totalFiles = data.files.length || 1;
-
-  // Maintainability — SonarQube TDR-inspired
-  const highComplexityRatio = ((project.highComplexitySymbolCount ?? 0) / totalSymbols) * 100;
-  const maintainabilityScore = Math.round(Math.max(0, 100 - highComplexityRatio * 2));
-
-  // Coverage — direct
-  const coverageScore = Math.round(coverage?.averageCoveragePercent ?? 0);
-
-  // Architecture — density per file, each violation/file costs 15 pts
-  const violationDensity = governance.archViolationCount / totalFiles;
-  const archScore = Math.round(Math.max(0, 100 - violationDensity * 15));
-
-  // Overall code quality (docs excluded)
-  const overall = Math.round(maintainabilityScore * 0.4 + coverageScore * 0.4 + archScore * 0.2);
-
-  // Documentation — informational only, NOT in overall
-  const totalSymbolsForDocs = data.symbols.length || 1;
-  const docsScore = Math.round(
-    Math.max(0, (1 - data.health.docs.missingDocRefCount / totalSymbolsForDocs) * 100),
-  );
-
-  return { overall, maintainabilityScore, coverageScore, archScore, docsScore };
-}
-
-function healthTone(score) {
-  return score >= 80 ? "good" : score >= 50 ? "warning" : "danger";
-}
-
-function HealthDonut({ score, size = 140 }) {
+// ─── Donut ─────────────────────────────────────────────────
+function Donut({ score, size = 132 }) {
   const r = size * 0.38;
   const cx = size / 2;
   const cy = size / 2;
-  const circumference = 2 * Math.PI * r;
-  const fill = (Math.min(Math.max(score, 0), 100) / 100) * circumference;
-  const color = score >= 80 ? "#17a854" : score >= 50 ? "#e09200" : "#c53030";
-  const sw = size * 0.09;
+  const C = 2 * Math.PI * r;
+  const safe = Math.max(0, Math.min(100, score || 0));
+  const fill = (safe / 100) * C;
+  const tone = toneOfScore(safe);
+  const color = tone === "good" ? "var(--ok)" : tone === "warn" ? "var(--warn)" : "var(--danger)";
+  const sw = size * 0.085;
   return (
     <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`}>
-      <circle cx={cx} cy={cy} r={r} fill="none" stroke="#e5ebf2" strokeWidth={sw} />
+      <circle cx={cx} cy={cy} r={r} fill="none" stroke="var(--surface-3)" strokeWidth={sw} />
       <circle
         cx={cx}
         cy={cy}
@@ -1294,1421 +403,2334 @@ function HealthDonut({ score, size = 140 }) {
         fill="none"
         stroke={color}
         strokeWidth={sw}
-        strokeDasharray={`${fill} ${circumference}`}
+        strokeDasharray={`${fill} ${C}`}
         strokeLinecap="round"
         transform={`rotate(-90 ${cx} ${cy})`}
       />
       <text
         x={cx}
-        y={cy - size * 0.06}
+        y={cy - 3}
+        className="donut-text"
         textAnchor="middle"
         dominantBaseline="central"
-        fill={color}
-        style={{ fontSize: size * 0.23, fontWeight: 800 }}
+        style={{ fontSize: size * 0.26 }}
       >
-        {score}
+        {Math.round(safe)}
       </text>
-      <text
-        x={cx}
-        y={cy + size * 0.17}
-        textAnchor="middle"
-        dominantBaseline="central"
-        fill="#65758b"
-        style={{ fontSize: size * 0.1 }}
-      >
-        /100
+      <text x={cx} y={cy + size * 0.18} className="donut-sub" textAnchor="middle">
+        / 100
       </text>
     </svg>
   );
 }
 
-const MAX_DIFF_PREVIEW_LINES = 120;
-
-function classifyDiffLine(line) {
-  if (line.startsWith("+") && !line.startsWith("+++")) return "added";
-  if (line.startsWith("-") && !line.startsWith("---")) return "removed";
-  if (line.startsWith("@@")) return "hunk";
-  if (
-    line.startsWith("diff --git") ||
-    line.startsWith("index ") ||
-    line.startsWith("---") ||
-    line.startsWith("+++")
-  ) {
-    return "meta";
+// ─── Treemap ──────────────────────────────────────────────
+function slice(items, x, y, w, h, total) {
+  const out = [];
+  if (items.length === 1) {
+    out.push({ x, y, w, h, item: items[0] });
+    return out;
   }
-  return "context";
-}
-
-function diffLineGutter(tone) {
-  if (tone === "added") return "+";
-  if (tone === "removed") return "-";
-  if (tone === "hunk") return "@";
-  return " ";
-}
-
-function diffLineText(line, tone) {
-  if ((tone === "added" || tone === "removed") && /^[+-] /.test(line)) return line.slice(2);
-  if ((tone === "added" || tone === "removed") && /^[+-]/.test(line)) return line.slice(1);
-  if (tone === "context" && line.startsWith(" ")) return line.slice(1);
-  return line || " ";
-}
-
-function buildDiffLines(diff) {
-  if (!diff) return [];
-  return String(diff)
-    .split("\n")
-    .map((line, index) => {
-      const tone = classifyDiffLine(line);
-      return {
-        key: `${index}:${line}`,
-        tone,
-        gutter: diffLineGutter(tone),
-        text: diffLineText(line, tone) || " ",
-      };
-    });
-}
-
-function diffCounts(diff) {
-  const counts = { added: 0, removed: 0 };
-  for (const line of String(diff ?? "").split("\n")) {
-    const tone = classifyDiffLine(line);
-    if (tone === "added") counts.added += 1;
-    if (tone === "removed") counts.removed += 1;
+  const horizontal = w >= h;
+  const first = items[0];
+  const ratio = first._v / total;
+  if (horizontal) {
+    const fw = w * ratio;
+    out.push({ x, y, w: fw, h, item: first });
+    out.push(...slice(items.slice(1), x + fw, y, w - fw, h, total - first._v));
+  } else {
+    const fh = h * ratio;
+    out.push({ x, y, w, h: fh, item: first });
+    out.push(...slice(items.slice(1), x, y + fh, w, h - fh, total - first._v));
   }
-  return counts;
+  return out;
+}
+function squarify(items, x, y, w, h) {
+  if (!items.length) return [];
+  const total = items.reduce((s, i) => s + i._v, 0);
+  if (total === 0) return [];
+  const sorted = [...items].sort((a, b) => b._v - a._v);
+  return slice(sorted, x, y, w, h, total);
 }
 
-function hasStructuredDiff(structuredDiff) {
+function Treemap({ items, getValue, getColor, getLabel, onClick, height = 260 }) {
+  const ref = useRef(null);
+  const [size, setSize] = useState({ w: 600, h: height });
+  useEffect(() => {
+    if (!ref.current) return;
+    const obs = new ResizeObserver(([e]) =>
+      setSize({ w: e.contentRect.width, h: e.contentRect.height }),
+    );
+    obs.observe(ref.current);
+    return () => obs.disconnect();
+  }, []);
+  const rects = useMemo(
+    () =>
+      squarify(
+        items.map((it) => ({ ...it, _v: getValue(it) })),
+        0,
+        0,
+        size.w,
+        size.h,
+      ),
+    [items, size.w, size.h, getValue],
+  );
   return (
-    Array.isArray(structuredDiff?.hunks) &&
-    structuredDiff.hunks.some((hunk) => hunk.lines?.length > 0)
+    <div className="treemap-wrap" ref={ref} style={{ height }}>
+      {rects.map((r, i) => (
+        <div
+          key={i}
+          className="cell"
+          style={{ left: r.x, top: r.y, width: r.w, height: r.h, background: getColor(r.item) }}
+          onClick={() => onClick && onClick(r.item)}
+          title={getLabel(r.item)}
+        >
+          {r.w > 60 && r.h > 24 ? (
+            <div className="lbl">
+              {getLabel(r.item)}
+              <span className="small">{Math.round(r.item._v)}</span>
+            </div>
+          ) : null}
+        </div>
+      ))}
+    </div>
   );
 }
 
-function structuredDiffCounts(structuredDiff, fallbackDiff) {
-  if (!hasStructuredDiff(structuredDiff)) return diffCounts(fallbackDiff);
+// ─── Source viewer + minimap ───────────────────────────────
+function Minimap({ lines, cov, viewport, onJump, highlightSym }) {
+  const canvasRef = useRef(null);
+  useEffect(() => {
+    const c = canvasRef.current;
+    if (!c) return;
+    const rect = c.getBoundingClientRect();
+    c.width = rect.width * devicePixelRatio;
+    c.height = rect.height * devicePixelRatio;
+    const ctx = c.getContext("2d");
+    ctx.scale(devicePixelRatio, devicePixelRatio);
+    ctx.clearRect(0, 0, rect.width, rect.height);
+    const lh = rect.height / Math.max(1, lines.length);
+    const cs = getComputedStyle(document.documentElement);
+    const colorOf = (h) =>
+      h == null
+        ? cs.getPropertyValue("--text-faint")
+        : h === 0
+          ? cs.getPropertyValue("--cov-bad")
+          : h === 1
+            ? cs.getPropertyValue("--cov-warn")
+            : cs.getPropertyValue("--cov-good");
+    lines.forEach((line, i) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      const ln = i + 1;
+      const indent = line.length - line.trimStart().length;
+      const x = Math.min(indent * 0.7, 40);
+      const w = Math.min(40, trimmed.length * 0.6);
+      ctx.fillStyle = colorOf(cov[ln]);
+      ctx.globalAlpha = trimmed.startsWith("//") || trimmed.startsWith("import") ? 0.3 : 0.85;
+      ctx.fillRect(x, i * lh, w, Math.max(1.2, lh));
+    });
+    ctx.globalAlpha = 1;
+    if (highlightSym) {
+      ctx.fillStyle = cs.getPropertyValue("--accent");
+      ctx.globalAlpha = 0.2;
+      const y1 = (highlightSym.startLine - 1) * lh;
+      const y2 = highlightSym.endLine * lh;
+      ctx.fillRect(0, y1, rect.width, y2 - y1);
+    }
+  }, [lines.length, JSON.stringify(cov).length, highlightSym?.id]);
+  const vy = (viewport.top / Math.max(1, viewport.scrollHeight)) * 100;
+  const vh = (viewport.height / Math.max(1, viewport.scrollHeight)) * 100;
+  return (
+    <div
+      className="minimap"
+      onClick={(e) => {
+        const rect = e.currentTarget.getBoundingClientRect();
+        onJump((e.clientY - rect.top) / rect.height);
+      }}
+    >
+      <canvas ref={canvasRef} />
+      <div className="viewport" style={{ top: `${vy}%`, height: `${Math.max(4, vh)}%` }} />
+    </div>
+  );
+}
+
+function SourceViewer({ data, file, highlightSym, showMinimap, showHeatmap }) {
+  const sf = data.sourceFiles[file];
+  const cov = data.coverageByLine[file] || {};
+  const scrollRef = useRef(null);
+  const [viewport, setViewport] = useState({ top: 0, height: 0, scrollHeight: 1 });
+
+  useEffect(() => {
+    const el = scrollRef.current;
+    if (!el) return;
+    const update = () =>
+      setViewport({ top: el.scrollTop, height: el.clientHeight, scrollHeight: el.scrollHeight });
+    update();
+    el.addEventListener("scroll", update);
+    return () => el.removeEventListener("scroll", update);
+  }, []);
+
+  useEffect(() => {
+    if (!highlightSym || !scrollRef.current) return;
+    const lineHeight = 18.6;
+    const top = (highlightSym.startLine - 4) * lineHeight;
+    scrollRef.current.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
+  }, [highlightSym?.id]);
+
+  if (!sf) return <div className="empty">Source not available.</div>;
+  const lines = sf.text.split("\n");
+
+  return (
+    <div className="source-wrap" data-minimap={showMinimap ? "on" : "off"}>
+      <div className="source" ref={scrollRef}>
+        {lines.map((line, i) => {
+          const lineNum = i + 1;
+          const hit = showHeatmap ? cov[lineNum] : null;
+          let covCls = "c-none";
+          let lnCls = "";
+          if (showHeatmap && hit != null) {
+            if (hit === 0) {
+              covCls = "c-bad";
+              lnCls = "uncov";
+            } else if (hit === 1) {
+              covCls = "c-warn";
+              lnCls = "partial";
+            } else covCls = "c-good";
+          }
+          const isHighlight =
+            highlightSym && lineNum >= highlightSym.startLine && lineNum <= highlightSym.endLine;
+          return (
+            <div key={lineNum} className={`src-line ${lnCls} ${isHighlight ? "highlight" : ""}`}>
+              <span className={`cov ${covCls}`} />
+              <span className="gutter">{lineNum}</span>
+              <span className="code">{line || " "}</span>
+            </div>
+          );
+        })}
+      </div>
+      {showMinimap ? (
+        <Minimap
+          lines={lines}
+          cov={cov}
+          viewport={viewport}
+          onJump={(frac) => {
+            const el = scrollRef.current;
+            if (!el) return;
+            el.scrollTo({ top: frac * el.scrollHeight, behavior: "smooth" });
+          }}
+          highlightSym={highlightSym}
+        />
+      ) : null}
+    </div>
+  );
+}
+
+// ─── Inline diff ───────────────────────────────────────────
+function InlineDiff({ text }) {
+  if (!text) return null;
+  const rows = text.split("\n").map((l, i) => {
+    let kind = "ctx";
+    let ln = "";
+    if (l.startsWith("@@")) kind = "hunk";
+    else if (
+      l.startsWith("+++") ||
+      l.startsWith("---") ||
+      l.startsWith("diff") ||
+      l.startsWith("index")
+    )
+      kind = "meta";
+    else if (l.startsWith("+")) {
+      kind = "add";
+      ln = "+";
+    } else if (l.startsWith("-")) {
+      kind = "del";
+      ln = "−";
+    }
+    return { kind, line: l, idx: i, ln };
+  });
+  return (
+    <div className="inline-diff">
+      {rows.map((r) =>
+        r.kind === "meta" ? null : (
+          <div key={r.idx} className={`diff-row ${r.kind}`}>
+            <span className="ln">{r.idx}</span>
+            <span className="gut">{r.ln}</span>
+            <span className="code">
+              {r.kind === "hunk" ? r.line : r.line.replace(/^[+\- ]/, "")}
+            </span>
+          </div>
+        ),
+      )}
+    </div>
+  );
+}
+
+function SideBySideDiff({ data, text }) {
+  if (!text) return null;
+  const lines = text
+    .split("\n")
+    .filter(
+      (l) =>
+        !l.startsWith("+++") &&
+        !l.startsWith("---") &&
+        !l.startsWith("diff") &&
+        !l.startsWith("index"),
+    );
+  const left = [];
+  const right = [];
+  let oldLn = 0;
+  let newLn = 0;
+  for (const l of lines) {
+    if (l.startsWith("@@")) {
+      const m = l.match(/-(\d+)/);
+      const m2 = l.match(/\+(\d+)/);
+      oldLn = m ? +m[1] : 0;
+      newLn = m2 ? +m2[1] : 0;
+      left.push({ kind: "hunk", line: l });
+      right.push({ kind: "hunk", line: l });
+      continue;
+    }
+    if (l.startsWith("-")) {
+      left.push({ kind: "del", line: l.slice(1), ln: oldLn++ });
+    } else if (l.startsWith("+")) {
+      right.push({ kind: "add", line: l.slice(1), ln: newLn++ });
+    } else {
+      while (left.length < right.length) left.push({ kind: "ctx", line: "", ln: "" });
+      while (right.length < left.length) right.push({ kind: "ctx", line: "", ln: "" });
+      left.push({ kind: "ctx", line: l.replace(/^ /, ""), ln: oldLn++ });
+      right.push({ kind: "ctx", line: l.replace(/^ /, ""), ln: newLn++ });
+    }
+  }
+  while (left.length < right.length) left.push({ kind: "ctx", line: "", ln: "" });
+  while (right.length < left.length) right.push({ kind: "ctx", line: "", ln: "" });
+  return (
+    <div className="diff-split">
+      <div className="side old">
+        <div className="side-h">before · {data.diff?.base || "main"}</div>
+        {left.map((r, i) =>
+          r.kind === "hunk" ? (
+            <div key={i} className="diff-row hunk">
+              <span />
+              <span />
+              <pre style={{ margin: 0, padding: "2px 8px" }}>{r.line}</pre>
+            </div>
+          ) : (
+            <div key={i} className={`side-row ${r.kind}`}>
+              <span className="ln">{r.ln || ""}</span>
+              <pre>{r.line || " "}</pre>
+            </div>
+          ),
+        )}
+      </div>
+      <div className="side new">
+        <div className="side-h">after · {data.diff?.head || "head"}</div>
+        {right.map((r, i) =>
+          r.kind === "hunk" ? (
+            <div key={i} className="diff-row hunk">
+              <span />
+              <span />
+              <pre style={{ margin: 0, padding: "2px 8px" }}>{r.line}</pre>
+            </div>
+          ) : (
+            <div key={i} className={`side-row ${r.kind}`}>
+              <span className="ln">{r.ln || ""}</span>
+              <pre>{r.line || " "}</pre>
+            </div>
+          ),
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Pages ──────────────────────────────────────────────────
+function Pillar({ title, weight, score, suffix = "", meta = [] }) {
+  const tone = toneOfScore(score);
+  return (
+    <div className="pillar">
+      <div className="title">
+        <strong>{title}</strong>
+        <span>{weight}</span>
+      </div>
+      <div className={`score ${tone}`}>
+        {Math.round(score)}
+        {suffix}
+      </div>
+      <div className="bar">
+        <div className={tone} style={{ width: `${Math.max(0, Math.min(100, score))}%` }} />
+      </div>
+      <div className="meta">
+        <span className={tone === "good" ? "good" : tone === "danger" ? "danger" : ""}>
+          {meta[0]}
+        </span>
+        <span>{meta[1]}</span>
+      </div>
+    </div>
+  );
+}
+
+function StatTile({ label, value, tone, delta, deltaTone }) {
+  return (
+    <div className="stat-tile">
+      <div className="lbl">{label}</div>
+      <div className={`val ${tone || ""}`}>{value}</div>
+      {delta ? <div className={`delta ${deltaTone || ""}`}>{delta}</div> : null}
+    </div>
+  );
+}
+
+function ScopedFindingsCard({ data, archViolations, reaperFindings, onSelect, title }) {
+  const total = archViolations.length + reaperFindings.length;
+  return (
+    <div className="card" style={{ marginTop: 14 }}>
+      <div className="card-head">
+        <h3>{title}</h3>
+        <span className="count">{total}</span>
+      </div>
+      <div className="card-body flush">
+        {archViolations.map((violation, index) => (
+          <div
+            key={`arch-${index}`}
+            className="hotspot-row"
+            onClick={() =>
+              violation.symbol_id
+                ? onSelect({ type: "symbol", id: violation.symbol_id })
+                : onSelect({ type: "file", path: violation.file })
+            }
+          >
+            <span className={`tag ${violation.severity === "error" ? "danger" : "warn"}`}>
+              {violation.severity}
+            </span>
+            <div className="name trunc">
+              <strong>{violation.rule}</strong>
+              <small>{violation.message}</small>
+            </div>
+            <span className="metric">{violation.file}</span>
+            <span />
+            <span />
+          </div>
+        ))}
+        {reaperFindings.map((finding, index) => {
+          const symbol = data.symbolsById.get(finding.target);
+          const targetFile =
+            symbol?.file || (data.files.includes(finding.target) ? finding.target : null);
+          return (
+            <div
+              key={`reaper-${index}`}
+              className="hotspot-row"
+              onClick={() =>
+                symbol
+                  ? onSelect({ type: "symbol", id: symbol.id })
+                  : targetFile
+                    ? onSelect({ type: "file", path: targetFile })
+                    : undefined
+              }
+            >
+              <span className="tag warn">{finding.type}</span>
+              <div className="name trunc">
+                <strong>{symbol?.name || finding.target}</strong>
+                <small>{finding.reason}</small>
+              </div>
+              <span className="metric">{finding.suggested_action || finding.suggestedAction}</span>
+              <span />
+              <span />
+            </div>
+          );
+        })}
+        {total === 0 ? <div className="empty">No scoped violations.</div> : null}
+      </div>
+    </div>
+  );
+}
+
+function PathOverview({ data, path, onSelect }) {
+  const files = getScopedFiles(data, path);
+  const symbols = getScopedSymbols(data, path);
+  const archViolations = getScopedArchViolations(data, path);
+  const reaperFindings = getScopedReaperFindings(data, path, symbols);
+  const entries = symbols.map((symbol) => data.complexityById[symbol.id]).filter(Boolean);
+  const children = buildPathChildren(data, path, files, symbols, archViolations);
+  const fileRows = files.map((filePath) => getFileOverview(data, filePath));
+  const totalLoc = entries.reduce((sum, entry) => sum + (entry.linesOfCode || 0), 0);
+  const avgCov = averageCoverage(symbols);
+  const maxRisk = entries.length ? Math.max(...entries.map((entry) => entry.riskScore || 0)) : 0;
+  const classCount = symbols.filter(
+    (symbol) =>
+      symbol.kind === "class" || symbol.kind === "abstract_class" || symbol.kind === "interface",
+  ).length;
+  const hotspots = entries
+    .map((entry) => ({ ...entry, symbol: data.symbolsById.get(entry.id) }))
+    .filter((entry) => entry.symbol)
+    .sort(
+      (a, b) =>
+        (b.riskScore || 0) - (a.riskScore || 0) ||
+        (b.cyclomaticComplexity || 0) - (a.cyclomaticComplexity || 0),
+    )
+    .slice(0, 8);
+  const colorByRisk = (risk) =>
+    risk > 60
+      ? "color-mix(in srgb, var(--danger) 30%, var(--surface))"
+      : risk > 30
+        ? "color-mix(in srgb, var(--warn) 30%, var(--surface))"
+        : "color-mix(in srgb, var(--ok) 22%, var(--surface))";
+
+  if (files.length === 0) {
+    return (
+      <div className="page">
+        <div className="empty">Path not found.</div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <div className="page-eyebrow">Domain · path overview</div>
+          <h1 className="page-title">{path}</h1>
+          <p className="page-sub">
+            {files.length} files · {symbols.length} symbols · {classCount} class/interface symbols
+          </p>
+        </div>
+      </div>
+
+      <div className="grid-4">
+        <StatTile label="Files" value={files.length} />
+        <StatTile label="Symbols" value={symbols.length} />
+        <StatTile label="LOC (sum)" value={totalLoc} />
+        <StatTile
+          label="Avg coverage"
+          value={avgCov != null ? `${fmt(avgCov)}%` : "—"}
+          tone={avgCov != null ? toneOfScore(avgCov) : ""}
+        />
+        <StatTile
+          label="Violations"
+          value={archViolations.length + reaperFindings.length}
+          tone={archViolations.length + reaperFindings.length > 0 ? "danger" : "good"}
+        />
+        <StatTile
+          label="Risk (max)"
+          value={maxRisk}
+          tone={maxRisk > 50 ? "danger" : maxRisk > 25 ? "warn" : ""}
+        />
+      </div>
+
+      <div className="grid-2" style={{ marginTop: 14 }}>
+        <div className="card">
+          <div className="card-head">
+            <h3>Child map</h3>
+            <span className="count">size = LOC · color = risk</span>
+          </div>
+          {children.length > 0 ? (
+            <Treemap
+              items={children.map((child) => ({
+                ...child,
+                value: Math.max(10, child.totalLoc || child.symbolIds.size || child.files.size),
+              }))}
+              getValue={(child) => child.value}
+              getColor={(child) => colorByRisk(child.maxRisk)}
+              getLabel={(child) => child.label}
+              onClick={(child) =>
+                onSelect({ type: child.isFile ? "file" : "path", path: child.path })
+              }
+            />
+          ) : (
+            <div className="empty">No child paths.</div>
+          )}
+        </div>
+
+        <div className="card">
+          <div className="card-head">
+            <h3>Scoped hotspots</h3>
+            <span className="count">{hotspots.length}</span>
+          </div>
+          <div className="card-body flush">
+            {hotspots.map((entry) => (
+              <div
+                key={entry.id}
+                className="hotspot-row"
+                onClick={() => onSelect({ type: "symbol", id: entry.id })}
+              >
+                <SymIcon kind={entry.symbol.kind} />
+                <div className="name trunc">
+                  <strong>{entry.symbol.qualifiedName || entry.symbol.name}</strong>
+                  <small>{entry.symbol.file}</small>
+                </div>
+                <span className="metric">cyc {fmt(entry.cyclomaticComplexity)}</span>
+                <span className="metric">LOC {fmt(entry.linesOfCode)}</span>
+                <span
+                  className={`tag ${riskCls(entry.riskScore) === "r-high" ? "danger" : riskCls(entry.riskScore) === "r-warn" ? "warn" : "good"}`}
+                >
+                  risk {entry.riskScore}
+                </span>
+              </div>
+            ))}
+            {hotspots.length === 0 ? <div className="empty">No hotspots detected.</div> : null}
+          </div>
+        </div>
+      </div>
+
+      <ScopedFindingsCard
+        data={data}
+        archViolations={archViolations}
+        reaperFindings={reaperFindings}
+        onSelect={onSelect}
+        title="Scoped violations"
+      />
+
+      <div className="card" style={{ marginTop: 14 }}>
+        <div className="card-head">
+          <h3>Files in scope</h3>
+          <span className="count">{fileRows.length}</span>
+        </div>
+        <div style={{ maxHeight: 360, overflow: "auto" }}>
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>File</th>
+                <th className="right">Symbols</th>
+                <th>Coverage</th>
+                <th className="right">Violations</th>
+                <th className="right">Risk</th>
+              </tr>
+            </thead>
+            <tbody>
+              {fileRows
+                .sort(
+                  (a, b) =>
+                    b.violationCount - a.violationCount ||
+                    b.maxRisk - a.maxRisk ||
+                    a.filePath.localeCompare(b.filePath),
+                )
+                .map((row) => (
+                  <tr
+                    key={row.filePath}
+                    onClick={() => onSelect({ type: "file", path: row.filePath })}
+                  >
+                    <td className="name">
+                      <strong>{row.filePath}</strong>
+                    </td>
+                    <td className="num right">{row.symbols.length}</td>
+                    <td>
+                      {row.avgCoverage != null ? (
+                        <>
+                          <span className="cell-bar">
+                            <i
+                              style={{
+                                width: `${row.avgCoverage}%`,
+                                background:
+                                  row.avgCoverage >= 80
+                                    ? "var(--ok)"
+                                    : row.avgCoverage >= 50
+                                      ? "var(--warn)"
+                                      : "var(--danger)",
+                              }}
+                            />
+                          </span>
+                          <span className="num">{fmt(row.avgCoverage)}%</span>
+                        </>
+                      ) : (
+                        <span style={{ color: "var(--text-faint)" }}>—</span>
+                      )}
+                    </td>
+                    <td className={`num right ${row.violationCount > 0 ? "danger" : "good"}`}>
+                      {row.violationCount}
+                    </td>
+                    <td
+                      className={`num right ${row.maxRisk > 50 ? "danger" : row.maxRisk > 25 ? "warn" : "good"}`}
+                    >
+                      {fmt(row.maxRisk)}
+                    </td>
+                  </tr>
+                ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Dashboard({ data, onSelect }) {
+  const proj = data.complexity.project;
+  const cov = data.health.coverage;
+  const totalSyms = Math.max(1, proj.symbolCount);
+  const highRatio = (proj.highComplexitySymbolCount / totalSyms) * 100;
+  const maint = Math.round(Math.max(0, 100 - highRatio * 2));
+  const avgCov = cov.averageCoveragePercent ?? 0;
+  const cover = Math.round(avgCov);
+  const fileCount = Math.max(1, data.files.length);
+  const arch = Math.round(
+    Math.max(0, 100 - (data.health.governance.archViolationCount / fileCount) * 15),
+  );
+  const overall = Math.round(maint * 0.4 + cover * 0.4 + arch * 0.2);
+
+  const topSymbols = (data.complexity.topSymbols || []).slice(0, 6);
+  const treemapItems = (data.complexity.modules || []).map((m) => ({
+    label: m.path.replace(/^src\//, ""),
+    value: Math.max(20, m.totalLinesOfCode),
+    risk: m.riskScore,
+    path: m.path,
+  }));
+  const colorByRisk = (r) =>
+    r > 60
+      ? "color-mix(in srgb, var(--danger) 30%, var(--surface))"
+      : r > 30
+        ? "color-mix(in srgb, var(--warn) 30%, var(--surface))"
+        : "color-mix(in srgb, var(--ok) 22%, var(--surface))";
+
+  return (
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <div className="page-eyebrow">Project · Overview</div>
+          <h1 className="page-title">{data.project.name}</h1>
+          <p className="page-sub">
+            {proj.symbolCount} symbols across {data.files.length} files · {proj.classCount} classes
+            · branch <code style={{ fontFamily: "var(--font-mono)" }}>{data.project.branch}</code>
+          </p>
+        </div>
+      </div>
+
+      <div className="card">
+        <div className="health-hero">
+          <div className="health-donut-cell">
+            <Donut score={overall} />
+            <div className="label">Code Quality</div>
+            <div className="grade">
+              Grade {overall >= 80 ? "A" : overall >= 60 ? "B" : overall >= 40 ? "C" : "D"} ·{" "}
+              {overall >= 80 ? "Healthy" : overall >= 50 ? "Needs attention" : "Critical"}
+            </div>
+          </div>
+          <div className="pillars">
+            <Pillar
+              title="Maintainability"
+              weight="40%"
+              score={maint}
+              meta={[
+                `${proj.highComplexitySymbolCount} high-complexity`,
+                `${highRatio.toFixed(1)}% of symbols`,
+              ]}
+            />
+            <Pillar
+              title="Test Coverage"
+              weight="40%"
+              score={cover}
+              suffix="%"
+              meta={[`${cov.coveredSymbolCount} covered`, `${cov.uncoveredSymbolCount} below 60%`]}
+            />
+            <Pillar
+              title="Architecture"
+              weight="20%"
+              score={arch}
+              meta={[
+                `${data.health.governance.archViolationCount} violations`,
+                `${(data.health.governance.archViolationCount / fileCount).toFixed(2)}/file`,
+              ]}
+            />
+          </div>
+        </div>
+      </div>
+
+      <div className="grid-4" style={{ marginTop: 14 }}>
+        <StatTile label="Symbols" value={proj.symbolCount} />
+        <StatTile label="Files" value={data.files.length} />
+        <StatTile
+          label="Avg coverage"
+          value={`${fmt(cov.averageCoveragePercent)}%`}
+          tone={toneOfScore(cov.averageCoveragePercent)}
+        />
+        <StatTile
+          label="Open violations"
+          value={data.health.governance.archViolationCount}
+          tone={data.health.governance.archViolationCount > 0 ? "danger" : "good"}
+        />
+      </div>
+
+      <div className="grid-2" style={{ marginTop: 14 }}>
+        <div className="card">
+          <div className="card-head">
+            <h3>Module risk treemap</h3>
+            <span className="count">size = LOC · color = risk</span>
+            <div className="card-head-spacer" />
+          </div>
+          {treemapItems.length > 0 ? (
+            <Treemap
+              items={treemapItems}
+              getValue={(i) => i.value}
+              getColor={(i) => colorByRisk(i.risk)}
+              getLabel={(i) => i.label}
+              onClick={(i) => onSelect({ type: "path", path: i.path })}
+            />
+          ) : (
+            <div className="empty">No modules indexed.</div>
+          )}
+          <div className="legend">
+            <span>
+              <span
+                className="swatch"
+                style={{ background: "color-mix(in srgb, var(--ok) 22%, var(--surface))" }}
+              />
+              low
+            </span>
+            <span>
+              <span
+                className="swatch"
+                style={{ background: "color-mix(in srgb, var(--warn) 30%, var(--surface))" }}
+              />
+              medium
+            </span>
+            <span>
+              <span
+                className="swatch"
+                style={{ background: "color-mix(in srgb, var(--danger) 30%, var(--surface))" }}
+              />
+              high
+            </span>
+          </div>
+        </div>
+
+        <div className="card">
+          <div className="card-head">
+            <h3>Top hotspots</h3>
+            <span className="count">{topSymbols.length}</span>
+          </div>
+          <div className="card-body flush">
+            {topSymbols.map((s) => {
+              const full = data.symbolsById.get(s.id);
+              return (
+                <div
+                  key={s.id}
+                  className="hotspot-row"
+                  onClick={() => onSelect({ type: "symbol", id: s.id })}
+                >
+                  <SymIcon kind={s.kind} />
+                  <div className="name trunc">
+                    <strong>{s.qualifiedName || s.name}</strong>
+                    <small>{s.file}</small>
+                  </div>
+                  <span className="metric">cyc {fmt(s.cyclomaticComplexity)}</span>
+                  <span className="metric">
+                    cov{" "}
+                    {full?.metrics?.testCoverage?.coveragePercent != null
+                      ? fmt(full.metrics.testCoverage.coveragePercent) + "%"
+                      : "—"}
+                  </span>
+                  <span
+                    className={`tag ${riskCls(s.riskScore) === "r-high" ? "danger" : riskCls(s.riskScore) === "r-warn" ? "warn" : "good"}`}
+                  >
+                    risk {s.riskScore}
+                  </span>
+                </div>
+              );
+            })}
+            {topSymbols.length === 0 ? <div className="empty">No hotspots detected.</div> : null}
+          </div>
+        </div>
+      </div>
+
+      {data.diff ? (
+        <div className="card" style={{ marginTop: 14 }}>
+          <div className="card-head">
+            <h3>Recent change · {data.diff.head}</h3>
+            <span className="count">
+              {data.diff.changedFiles?.length || 0} files · {data.diff.impacts?.length || 0}{" "}
+              impacted symbols
+            </span>
+            <div className="card-head-spacer" />
+            <button className="btn" onClick={() => onSelect({ type: "diff" })}>
+              Open review →
+            </button>
+          </div>
+          <div className="card-body" style={{ padding: 0 }}>
+            {(data.diff.impacts || []).slice(0, 2).map((imp, i) => (
+              <div key={i} style={{ borderBottom: i === 0 ? "1px solid var(--border)" : "none" }}>
+                <div
+                  style={{
+                    padding: "8px 14px",
+                    display: "flex",
+                    gap: 10,
+                    alignItems: "center",
+                    fontSize: 12.5,
+                  }}
+                >
+                  <SymIcon kind={imp.kind} />
+                  <strong>{imp.qualifiedName || imp.symbolName}</strong>
+                  <span
+                    style={{
+                      color: "var(--text-faint)",
+                      fontFamily: "var(--font-mono)",
+                      fontSize: 11,
+                    }}
+                  >
+                    {imp.file}
+                  </span>
+                  <span className="tag accent">{imp.changeType}</span>
+                  {imp.docUpdateRequired ? <span className="tag warn">docs required</span> : null}
+                </div>
+                {imp.diff ? <InlineDiff text={imp.diff} /> : null}
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+
+      {data.archViolations.length > 0 ? (
+        <div className="card" style={{ marginTop: 14 }}>
+          <div className="card-head">
+            <h3>Architecture violations</h3>
+            <span className="count">{data.archViolations.length}</span>
+          </div>
+          <div className="card-body flush">
+            {data.archViolations.slice(0, 10).map((v, i) => (
+              <div
+                key={i}
+                className="hotspot-row"
+                onClick={() =>
+                  v.symbol_id
+                    ? onSelect({ type: "symbol", id: v.symbol_id })
+                    : onSelect({ type: "file", path: v.file })
+                }
+              >
+                <span className={`tag ${v.severity === "error" ? "danger" : "warn"}`}>
+                  {v.severity}
+                </span>
+                <div className="name trunc">
+                  <strong>{v.rule}</strong>
+                  <small>{v.message}</small>
+                </div>
+                <span className="metric">{v.file.split("/").pop()}</span>
+                <span />
+                <span />
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function SymbolDetail({ data, symbol, onSelect, showMinimap, showHeatmap }) {
+  if (!symbol) return <div className="empty">Symbol not found.</div>;
+  const entry = data.complexityById[symbol.id];
+  const file = data.sourceFiles[symbol.file];
+  const deps = data.relationships
+    .filter((r) => r.source_id === symbol.id)
+    .map((r) => ({ rel: r, sym: data.symbolsById.get(r.target_id) }))
+    .filter((x) => x.sym);
+  const dependents = data.relationships
+    .filter((r) => r.target_id === symbol.id)
+    .map((r) => ({ rel: r, sym: data.symbolsById.get(r.source_id) }))
+    .filter((x) => x.sym);
+  const cov = symbol.metrics?.testCoverage?.coveragePercent;
+  const inDiff = data.diff?.impacts?.find((i) => i.symbolId === symbol.id);
+
+  return (
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <div className="page-eyebrow">
+            {symbol.kind} · {symbol.layer || "—"}
+          </div>
+          <h1 className="page-title">
+            {symbol.qualifiedName ? (
+              <span>
+                <span className="qn">
+                  {symbol.qualifiedName.split(".").slice(0, -1).join(".")}.
+                </span>
+                {symbol.name}
+              </span>
+            ) : (
+              symbol.name
+            )}
+          </h1>
+          <p className="page-sub">
+            {symbol.file}
+            <span style={{ color: "var(--text-faint)" }}>
+              {" "}
+              · lines {symbol.startLine}–{symbol.endLine}
+            </span>
+          </p>
+          {symbol.signature ? (
+            <pre
+              style={{
+                margin: "10px 0 0",
+                padding: "8px 12px",
+                background: "var(--surface-2)",
+                border: "1px solid var(--border)",
+                borderRadius: 6,
+                fontFamily: "var(--font-mono)",
+                fontSize: 12,
+                whiteSpace: "pre-wrap",
+                color: "var(--text)",
+              }}
+            >
+              {symbol.signature}
+            </pre>
+          ) : null}
+        </div>
+        <div className="page-head-actions">
+          {symbol.docRef ? (
+            <span className="tag good">docs ✓</span>
+          ) : (
+            <span className="tag warn">missing docs</span>
+          )}
+          {symbol.deprecated ? <span className="tag danger">deprecated</span> : null}
+          {inDiff ? <span className="tag accent">in current PR</span> : null}
+        </div>
+      </div>
+
+      <div className="grid-4">
+        <StatTile label="LOC" value={fmt(entry?.linesOfCode)} />
+        <StatTile
+          label="Cyclomatic"
+          value={fmt(entry?.cyclomaticComplexity)}
+          tone={
+            entry?.cyclomaticComplexity > 15
+              ? "danger"
+              : entry?.cyclomaticComplexity > 10
+                ? "warn"
+                : ""
+          }
+        />
+        <StatTile
+          label="Cognitive"
+          value={fmt(entry?.cognitiveComplexity)}
+          tone={
+            entry?.cognitiveComplexity > 20
+              ? "danger"
+              : entry?.cognitiveComplexity > 15
+                ? "warn"
+                : ""
+          }
+        />
+        <StatTile
+          label="Coverage"
+          value={cov != null ? `${fmt(cov)}%` : "—"}
+          tone={cov == null ? "" : toneOfScore(cov)}
+        />
+      </div>
+
+      {symbol.summary ? (
+        <div className="card" style={{ marginTop: 14 }}>
+          <div className="card-head">
+            <h3>Summary</h3>
+            <span className="count">generated by docs-kit</span>
+          </div>
+          <div className="card-body" style={{ lineHeight: 1.65 }}>
+            {symbol.summary}
+          </div>
+        </div>
+      ) : null}
+
+      <div className="grid-2" style={{ marginTop: 14 }}>
+        <div className="card">
+          <div className="card-head">
+            <h3>Metadata</h3>
+          </div>
+          <div className="meta-grid">
+            <div>
+              <span className="k">Kind</span>
+              <span className="v">{symbol.kind}</span>
+            </div>
+            <div>
+              <span className="k">Layer</span>
+              <span className="v">{symbol.layer || "—"}</span>
+            </div>
+            <div>
+              <span className="k">File</span>
+              <span className="v trunc">{symbol.file}</span>
+            </div>
+            <div>
+              <span className="k">Lines</span>
+              <span className="v">
+                {symbol.startLine}–{symbol.endLine}
+              </span>
+            </div>
+            <div>
+              <span className="k">Doc</span>
+              <span className="v">{symbol.docRef || "missing"}</span>
+            </div>
+            <div>
+              <span className="k">Tags</span>
+              <span className="v">{(symbol.tags || []).join(", ") || "—"}</span>
+            </div>
+          </div>
+        </div>
+        <div className="card">
+          <div className="card-head">
+            <h3>Dependencies</h3>
+            <span className="count">
+              {deps.length} out · {dependents.length} in
+            </span>
+          </div>
+          <div className="dep-list">
+            {[
+              ...deps.map((x) => ({ ...x, dir: "out" })),
+              ...dependents.map((x) => ({ ...x, dir: "in" })),
+            ]
+              .slice(0, 12)
+              .map((x, i) => (
+                <div
+                  key={i}
+                  className="dep-row"
+                  onClick={() => onSelect({ type: "symbol", id: x.sym.id })}
+                >
+                  <SymIcon kind={x.sym.kind} />
+                  <div className="trunc">
+                    <strong>{x.sym.name}</strong> <small>{x.sym.file}</small>
+                  </div>
+                  <span className="rel-tag">
+                    {x.dir === "out" ? "→" : "←"} {x.rel.type}
+                  </span>
+                </div>
+              ))}
+            {deps.length + dependents.length === 0 ? (
+              <div className="empty">No relationships detected.</div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+
+      {inDiff?.diff ? (
+        <div className="card" style={{ marginTop: 14 }}>
+          <div className="card-head">
+            <h3>Inline diff · vs {data.diff.base}</h3>
+            <span className="count">{inDiff.changeType}</span>
+          </div>
+          <InlineDiff text={inDiff.diff} />
+        </div>
+      ) : null}
+
+      <div className="card" style={{ marginTop: 14 }}>
+        <div className="card-head">
+          <h3>Source</h3>
+          <span className="count">{file?.language}</span>
+        </div>
+        <SourceViewer
+          data={data}
+          file={symbol.file}
+          highlightSym={symbol}
+          showMinimap={showMinimap}
+          showHeatmap={showHeatmap}
+        />
+      </div>
+    </div>
+  );
+}
+
+function FileDetail({ data, filePath, onSelect, showMinimap, showHeatmap }) {
+  const sf = data.sourceFiles[filePath];
+  const syms = data.symbols.filter((s) => s.file === filePath);
+  const cls = syms.filter((s) => s.kind === "class" || s.kind === "interface");
+  const totalLoc = syms.reduce((a, b) => a + (data.complexityById[b.id]?.linesOfCode || 0), 0);
+  const covs = syms.map((s) => s.metrics?.testCoverage?.coveragePercent).filter((v) => v != null);
+  const avgCov = covs.length ? covs.reduce((a, b) => a + b, 0) / covs.length : null;
+  const maxRisk = syms.length
+    ? Math.max(...syms.map((s) => data.complexityById[s.id]?.riskScore || 0))
+    : 0;
+  const archViolations = (data.archViolations || []).filter(
+    (violation) => violation.file === filePath,
+  );
+  const reaperFindings = getScopedReaperFindings(data, filePath, syms);
+  const violationCount = archViolations.length + reaperFindings.length;
+
+  return (
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <div className="page-eyebrow">File</div>
+          <h1 className="page-title">{filePath.split("/").pop()}</h1>
+          <p className="page-sub">
+            {filePath} · {syms.length} symbols · {cls.length} class(es)
+          </p>
+        </div>
+        <div className="page-head-actions">
+          {avgCov != null ? (
+            <span
+              className={`tag ${toneOfScore(avgCov) === "good" ? "good" : toneOfScore(avgCov) === "warn" ? "warn" : "danger"}`}
+            >
+              {fmt(avgCov)}% covered
+            </span>
+          ) : null}
+        </div>
+      </div>
+
+      <div className="grid-4">
+        <StatTile label="Symbols" value={syms.length} />
+        <StatTile label="LOC (sum)" value={totalLoc} />
+        <StatTile
+          label="Avg coverage"
+          value={avgCov != null ? `${fmt(avgCov)}%` : "—"}
+          tone={avgCov != null ? toneOfScore(avgCov) : ""}
+        />
+        <StatTile label="Risk (max)" value={maxRisk} />
+        <StatTile
+          label="Violations"
+          value={violationCount}
+          tone={violationCount > 0 ? "danger" : "good"}
+        />
+      </div>
+
+      <ScopedFindingsCard
+        data={data}
+        archViolations={archViolations}
+        reaperFindings={reaperFindings}
+        onSelect={onSelect}
+        title="File violations"
+      />
+
+      <div className="card" style={{ marginTop: 14 }}>
+        <div className="card-head">
+          <h3>Symbols in file</h3>
+          <span className="count">{syms.length}</span>
+        </div>
+        <div style={{ maxHeight: 320, overflow: "auto" }}>
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Kind</th>
+                <th>Lines</th>
+                <th className="right">LOC</th>
+                <th className="right">Cyclo</th>
+                <th className="right">Cogn</th>
+                <th>Coverage</th>
+                <th className="right">Risk</th>
+              </tr>
+            </thead>
+            <tbody>
+              {syms.map((s) => {
+                const e = data.complexityById[s.id];
+                const c = s.metrics?.testCoverage?.coveragePercent;
+                return (
+                  <tr key={s.id} onClick={() => onSelect({ type: "symbol", id: s.id })}>
+                    <td className="name">
+                      <SymIcon kind={s.kind} /> <strong>{s.parent ? "↳ " + s.name : s.name}</strong>
+                    </td>
+                    <td className="num">
+                      <small>{s.kind}</small>
+                    </td>
+                    <td className="num">
+                      {s.startLine}–{s.endLine}
+                    </td>
+                    <td className="num right">{fmt(e?.linesOfCode)}</td>
+                    <td
+                      className={`num right ${e?.cyclomaticComplexity > 15 ? "danger" : e?.cyclomaticComplexity > 10 ? "warn" : ""}`}
+                    >
+                      {fmt(e?.cyclomaticComplexity)}
+                    </td>
+                    <td className={`num right ${e?.cognitiveComplexity > 20 ? "danger" : ""}`}>
+                      {fmt(e?.cognitiveComplexity)}
+                    </td>
+                    <td>
+                      {c != null ? (
+                        <>
+                          <span className="cell-bar">
+                            <i
+                              style={{
+                                width: `${c}%`,
+                                background:
+                                  c >= 80 ? "var(--ok)" : c >= 50 ? "var(--warn)" : "var(--danger)",
+                              }}
+                            />
+                          </span>
+                          <span className="num">{fmt(c)}%</span>
+                        </>
+                      ) : (
+                        <span style={{ color: "var(--text-faint)" }}>—</span>
+                      )}
+                    </td>
+                    <td
+                      className={`num right ${e?.riskScore > 50 ? "danger" : e?.riskScore > 25 ? "warn" : "good"}`}
+                    >
+                      {fmt(e?.riskScore)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div className="card" style={{ marginTop: 14 }}>
+        <div className="card-head">
+          <h3>Source</h3>
+          <span className="count">
+            {sf?.language} · {sf?.lineCount} lines
+          </span>
+        </div>
+        <SourceViewer
+          data={data}
+          file={filePath}
+          highlightSym={null}
+          showMinimap={showMinimap}
+          showHeatmap={showHeatmap}
+        />
+      </div>
+    </div>
+  );
+}
+
+function DiffReview({ data, onSelect }) {
+  const diff = data.diff;
+  if (!diff) {
+    return (
+      <div className="page">
+        <div className="page-head">
+          <div>
+            <div className="page-eyebrow">Pull request · review</div>
+            <h1 className="page-title">No diff available</h1>
+            <p className="page-sub">
+              Run <code>docs-kit diff</code> to generate a PR review bundle.
+            </p>
+          </div>
+        </div>
+      </div>
+    );
+  }
+  const uncovered = diff.docGuard?.uncoveredChanges || [];
+  return (
+    <div className="page">
+      <div className="page-head">
+        <div>
+          <div className="page-eyebrow">Pull request · review</div>
+          <h1 className="page-title">
+            {diff.base} ← {diff.head}
+          </h1>
+          <p className="page-sub">
+            {diff.changedFiles.length} files changed · {diff.impacts.length} semantic impacts
+          </p>
+        </div>
+        <div className="page-head-actions">
+          {diff.review?.status ? <span className="tag good">{diff.review.status}</span> : null}
+        </div>
+      </div>
+
+      <div className="grid-4">
+        <StatTile label="Changed files" value={diff.changedFiles.length} />
+        <StatTile label="Impacts" value={diff.impacts.length} />
+        <StatTile label="Doc updates" value={diff.docUpdates?.length || 0} tone="good" />
+        <StatTile
+          label="Docs-guard"
+          value={`${diff.docGuard?.coveredChanges ?? 0}/${diff.docGuard?.totalChanges ?? 0}`}
+          tone={uncovered.length ? "danger" : "good"}
+        />
+      </div>
+
+      {diff.review ? (
+        <div className="card" style={{ marginTop: 14 }}>
+          <div className="card-head">
+            <h3>AI review summary</h3>
+            <span className="count">{diff.review.status}</span>
+          </div>
+          <div className="card-body" style={{ lineHeight: 1.6 }}>
+            {diff.review.summary}
+            {diff.review.findingsBySeverity ? (
+              <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
+                {Object.entries(diff.review.findingsBySeverity).map(([s, n]) => (
+                  <span
+                    key={s}
+                    className={`tag ${s === "error" ? "danger" : s === "warning" ? "warn" : "accent"}`}
+                  >
+                    {n} {s}
+                  </span>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        </div>
+      ) : null}
+
+      {diff.impacts.map((imp, i) => (
+        <div className="card" key={i} style={{ marginTop: 14 }}>
+          <div className="card-head">
+            <SymIcon kind={imp.kind} />
+            <h3 style={{ marginLeft: 6 }}>{imp.qualifiedName || imp.symbolName}</h3>
+            <span className="count">
+              {imp.changeType} · {imp.file}
+            </span>
+            <div className="card-head-spacer" />
+            {imp.docUpdateRequired ? (
+              <span className="tag warn">docs required</span>
+            ) : (
+              <span className="tag good">no docs needed</span>
+            )}
+            {imp.symbolId ? (
+              <button
+                className="btn ghost"
+                onClick={() => onSelect({ type: "symbol", id: imp.symbolId })}
+              >
+                Open symbol →
+              </button>
+            ) : null}
+          </div>
+          {imp.diff ? <SideBySideDiff data={data} text={imp.diff} /> : null}
+        </div>
+      ))}
+
+      {uncovered.length > 0 ? (
+        <div
+          className="card"
+          style={{
+            marginTop: 14,
+            borderColor: "color-mix(in srgb, var(--danger) 35%, var(--border))",
+          }}
+        >
+          <div className="card-head">
+            <h3>Docs-guard violations</h3>
+            <span className="count">{uncovered.length}</span>
+          </div>
+          <div className="card-body flush">
+            {uncovered.map((u, i) => (
+              <div key={i} className="hotspot-row">
+                <span className="tag danger">block</span>
+                <div className="name trunc">
+                  <strong>{u.symbolName}</strong>
+                  <small>{u.reason}</small>
+                </div>
+                <span className="metric">{u.docPath}</span>
+                <span />
+                <span />
+              </div>
+            ))}
+          </div>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+// ─── Command palette ───────────────────────────────────────
+function CommandPalette({ data, open, onClose, onSelect, setTweak, tweaks }) {
+  const [q, setQ] = useState("");
+  const [idx, setIdx] = useState(0);
+  const inputRef = useRef(null);
+  useEffect(() => {
+    if (open) {
+      setQ("");
+      setIdx(0);
+      setTimeout(() => inputRef.current?.focus(), 30);
+    }
+  }, [open]);
+
+  const commands = useMemo(
+    () => [
+      {
+        id: "go-dashboard",
+        group: "navigate",
+        label: "Go to dashboard",
+        kbd: "G D",
+        action: () => onSelect({ type: "dashboard" }),
+      },
+      {
+        id: "go-diff",
+        group: "navigate",
+        label: "Open PR review",
+        kbd: "G R",
+        action: () => onSelect({ type: "diff" }),
+      },
+      {
+        id: "toggle-theme",
+        group: "settings",
+        label: `Switch theme (${tweaks.theme})`,
+        kbd: "T",
+        action: () => setTweak("theme", tweaks.theme === "light" ? "dark" : "light"),
+      },
+      {
+        id: "toggle-ai",
+        group: "settings",
+        label: `${tweaks.ai ? "Hide" : "Show"} AI panel`,
+        kbd: "A",
+        action: () => setTweak("ai", !tweaks.ai),
+      },
+      {
+        id: "toggle-minimap",
+        group: "settings",
+        label: `${tweaks.minimap ? "Hide" : "Show"} minimap`,
+        kbd: "M",
+        action: () => setTweak("minimap", !tweaks.minimap),
+      },
+      {
+        id: "toggle-heatmap",
+        group: "settings",
+        label: `${tweaks.heatmap ? "Hide" : "Show"} coverage heatmap`,
+        kbd: "H",
+        action: () => setTweak("heatmap", !tweaks.heatmap),
+      },
+    ],
+    [tweaks, onSelect, setTweak],
+  );
+
+  const filtered = useMemo(() => {
+    const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
+    const match = (s) => tokens.length === 0 || tokens.every((t) => s.toLowerCase().includes(t));
+    const symHits = data.symbols
+      .filter((s) => match(s.name) || match(s.qualifiedName || "") || match(s.file))
+      .slice(0, 8)
+      .map((s) => ({
+        id: "s:" + s.id,
+        group: "symbols",
+        label: s.qualifiedName || s.name,
+        meta: s.file,
+        kind: s.kind,
+        action: () => onSelect({ type: "symbol", id: s.id }),
+      }));
+    const fileHits = data.files
+      .filter((f) => match(f))
+      .slice(0, 5)
+      .map((f) => ({
+        id: "f:" + f,
+        group: "files",
+        label: f.split("/").pop(),
+        meta: f,
+        kind: "file",
+        action: () => onSelect({ type: "file", path: f }),
+      }));
+    const cmdHits = commands.filter((c) => match(c.label));
+    return [...cmdHits, ...symHits, ...fileHits];
+  }, [q, commands, data]);
+
+  useEffect(() => {
+    setIdx(0);
+  }, [q]);
+
+  if (!open) return null;
+  const groups = {};
+  filtered.forEach((f) => {
+    (groups[f.group] = groups[f.group] || []).push(f);
+  });
+  const flat = filtered;
+
+  const onKey = (e) => {
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setIdx((i) => Math.min(flat.length - 1, i + 1));
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setIdx((i) => Math.max(0, i - 1));
+    } else if (e.key === "Enter") {
+      e.preventDefault();
+      flat[idx]?.action();
+      onClose();
+    } else if (e.key === "Escape") onClose();
+  };
+
+  return (
+    <div className="palette-back" onClick={onClose}>
+      <div className="palette" onClick={(e) => e.stopPropagation()}>
+        <div className="palette-input">
+          <span
+            style={{ color: "var(--text-faint)", fontFamily: "var(--font-mono)", fontSize: 14 }}
+          >
+            ⌘K
+          </span>
+          <input
+            ref={inputRef}
+            placeholder="Search symbols, files, or run a command…"
+            value={q}
+            onChange={(e) => setQ(e.target.value)}
+            onKeyDown={onKey}
+          />
+          <span className="kbd">esc</span>
+        </div>
+        <div className="palette-list">
+          {Object.entries(groups).map(([g, items]) => (
+            <div key={g}>
+              <div className="palette-group-label">{g}</div>
+              {items.map((it) => {
+                const i = flat.indexOf(it);
+                return (
+                  <div
+                    key={it.id}
+                    className={`palette-item ${i === idx ? "selected" : ""}`}
+                    onMouseEnter={() => setIdx(i)}
+                    onClick={() => {
+                      it.action();
+                      onClose();
+                    }}
+                  >
+                    {it.kind && it.kind !== "file" ? (
+                      <SymIcon kind={it.kind} />
+                    ) : it.kind === "file" ? (
+                      <span className="sym-icon" style={{ background: "#1f6feb" }}>
+                        F
+                      </span>
+                    ) : (
+                      <span style={{ color: "var(--text-faint)" }}>⌘</span>
+                    )}
+                    <div className="trunc">
+                      {it.label}
+                      <span className="pi-meta" style={{ marginLeft: 8 }}>
+                        {it.meta || ""}
+                      </span>
+                    </div>
+                    {it.kbd ? (
+                      <span className="kbd">{it.kbd}</span>
+                    ) : (
+                      <span className="pi-meta">↵</span>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          ))}
+          {flat.length === 0 ? <div className="empty">No matches</div> : null}
+        </div>
+        <div className="palette-foot">
+          <span>
+            <span className="kbd">↑↓</span> navigate
+          </span>
+          <span>
+            <span className="kbd">↵</span> open
+          </span>
+          <span>
+            <span className="kbd">esc</span> close
+          </span>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Tweaks popover ────────────────────────────────────────
+const ACCENT_PALETTE = [
+  { name: "Indigo", color: "#6366f1", soft: "#eef2ff", strong: "#4f46e5" },
+  { name: "Emerald", color: "#10b981", soft: "#ecfdf5", strong: "#059669" },
+  { name: "Amber", color: "#f59e0b", soft: "#fffbeb", strong: "#d97706" },
+  { name: "Sky", color: "#0ea5e9", soft: "#f0f9ff", strong: "#0284c7" },
+  { name: "Rose", color: "#f43f5e", soft: "#fff1f2", strong: "#e11d48" },
+];
+
+function TweaksPopover({ tweaks, setTweak, onClose }) {
+  return (
+    <div
+      className="palette-back"
+      style={{
+        background: "transparent",
+        paddingTop: 56,
+        alignItems: "start",
+        justifyItems: "end",
+        paddingRight: 16,
+      }}
+      onClick={onClose}
+    >
+      <div className="palette" style={{ width: 320 }} onClick={(e) => e.stopPropagation()}>
+        <div className="palette-input">
+          <strong style={{ fontSize: 13 }}>Tweaks</strong>
+          <div style={{ flex: 1 }} />
+          <button className="icon-btn" onClick={onClose}>
+            ×
+          </button>
+        </div>
+        <div
+          style={{ padding: 14, display: "flex", flexDirection: "column", gap: 14, fontSize: 12.5 }}
+        >
+          <div>
+            <div className="chip-label" style={{ marginBottom: 6 }}>
+              Theme
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {["light", "dark"].map((t) => (
+                <button
+                  key={t}
+                  className={`chip ${tweaks.theme === t ? "active" : ""}`}
+                  onClick={() => setTweak("theme", t)}
+                >
+                  {t}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="chip-label" style={{ marginBottom: 6 }}>
+              Accent
+            </div>
+            <div style={{ display: "flex", gap: 8 }}>
+              {ACCENT_PALETTE.map((p) => (
+                <button
+                  key={p.color}
+                  title={p.name}
+                  onClick={() => setTweak("accent", p.color)}
+                  style={{
+                    width: 22,
+                    height: 22,
+                    borderRadius: "50%",
+                    background: p.color,
+                    border:
+                      tweaks.accent === p.color
+                        ? "2px solid var(--text)"
+                        : "2px solid var(--border)",
+                  }}
+                />
+              ))}
+            </div>
+          </div>
+          <div>
+            <div className="chip-label" style={{ marginBottom: 6 }}>
+              Density
+            </div>
+            <div style={{ display: "flex", gap: 6 }}>
+              {["compact", "cozy", "comfortable"].map((d) => (
+                <button
+                  key={d}
+                  className={`chip ${tweaks.density === d ? "active" : ""}`}
+                  onClick={() => setTweak("density", d)}
+                >
+                  {d}
+                </button>
+              ))}
+            </div>
+          </div>
+          <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+            {[
+              ["ai", "AI assistant"],
+              ["minimap", "Code minimap"],
+              ["heatmap", "Coverage heatmap"],
+            ].map(([key, label]) => (
+              <label
+                key={key}
+                style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+              >
+                <input
+                  type="checkbox"
+                  checked={!!tweaks[key]}
+                  onChange={(e) => setTweak(key, e.target.checked)}
+                />
+                <span>{label}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── AI Panel (mock scaffold) ──────────────────────────────
+function AIPanel({ data, symbol, file, onSelect, onClose }) {
+  const ctxLabel = symbol
+    ? symbol.qualifiedName || symbol.name
+    : file
+      ? file.split("/").pop()
+      : "project";
+  const [messages, setMessages] = useState([
+    {
+      role: "ai",
+      text: "I'm scoped to ",
+      refLabel: ctxLabel,
+      refTarget: symbol
+        ? { type: "symbol", id: symbol.id }
+        : file
+          ? { type: "file", path: file }
+          : null,
+      tail: ". This is a mock assistant — wire it to your LLM provider to enable real answers.",
+    },
+  ]);
+  const [input, setInput] = useState("");
+  const suggestions = symbol
+    ? [`Explain ${symbol.name}`, "Why is this risky?", "What tests are missing?"]
+    : file
+      ? ["What does this file do?", "Map dependencies", "Find untested branches"]
+      : ["Highest-risk symbols", "Coverage gaps", "Recent regressions"];
+
+  const send = (text) => {
+    if (!text.trim()) return;
+    setMessages((m) => [...m, { role: "user", text }]);
+    setInput("");
+    setTimeout(() => {
+      setMessages((m) => [
+        ...m,
+        {
+          role: "ai",
+          text: `(mock) I'd analyze "${text}" against ${ctxLabel}. Plug in an LLM provider to enable.`,
+        },
+      ]);
+    }, 250);
+  };
+
+  return (
+    <div className="aside">
+      <div className="aside-head">
+        <div className="brand-mark" style={{ width: 20, height: 20, fontSize: 11 }}>
+          AI
+        </div>
+        <strong>Assistant</strong>
+        <small>scoped: {ctxLabel}</small>
+        <div style={{ flex: 1 }} />
+        {onClose ? (
+          <button className="icon-btn" onClick={onClose} title="Close panel">
+            ×
+          </button>
+        ) : null}
+      </div>
+      <div className="aside-body">
+        {messages.map((m, i) => (
+          <div key={i} className={`msg ${m.role}`}>
+            <span className="avatar">{m.role === "ai" ? "AI" : "U"}</span>
+            <div className="bubble">
+              <p>
+                {m.text}
+                {m.refLabel ? (
+                  <a
+                    className="ref"
+                    onClick={() => m.refTarget && onSelect(m.refTarget)}
+                    style={{ cursor: m.refTarget ? "pointer" : "default" }}
+                  >
+                    {m.refLabel}
+                  </a>
+                ) : null}
+                {m.tail || ""}
+              </p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="aside-foot">
+        <div className="ai-chips">
+          {suggestions.map((s, i) => (
+            <button key={i} className="chip" onClick={() => send(s)}>
+              {s}
+            </button>
+          ))}
+        </div>
+        <textarea
+          className="ai-textarea"
+          placeholder={`Ask about ${ctxLabel}…`}
+          value={input}
+          onChange={(e) => setInput(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) {
+              e.preventDefault();
+              send(input);
+            }
+          }}
+        />
+        <div className="ai-actions">
+          <span
+            style={{ color: "var(--text-faint)", fontSize: 11, fontFamily: "var(--font-mono)" }}
+          >
+            ⌘↵ to send
+          </span>
+          <button className="btn primary" onClick={() => send(input)}>
+            Send
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Breadcrumbs ───────────────────────────────────────────
+function buildCrumbs(data, selection) {
+  if (selection.type === "dashboard")
+    return [{ label: "Dashboard", target: { type: "dashboard" } }];
+  if (selection.type === "diff")
+    return [
+      { label: "Dashboard", target: { type: "dashboard" } },
+      { label: `PR · ${data.diff?.head || "diff"}`, target: { type: "diff" } },
+    ];
+  const filesSet = new Set(data.files);
+  const siblingPeek = (p) => {
+    const prefix = p + "/";
+    const items = new Set();
+    for (const f of data.files) {
+      if (f.startsWith(prefix)) {
+        const rest = f.slice(prefix.length).split("/")[0];
+        items.add(rest);
+      }
+    }
+    return Array.from(items)
+      .slice(0, 10)
+      .map((n) => ({
+        label: n,
+        target: { type: filesSet.has(prefix + n) ? "file" : "path", path: prefix + n },
+      }));
+  };
+  const filePeek = (filePath) =>
+    data.symbols
+      .filter((s) => s.file === filePath && !s.parent)
+      .slice(0, 10)
+      .map((s) => ({ label: s.name, target: { type: "symbol", id: s.id }, kind: s.kind }));
+
+  if (selection.type === "file") {
+    const parts = selection.path.split("/");
+    return [
+      { label: "Dashboard", target: { type: "dashboard" } },
+      ...parts.map((p, i) => {
+        const path = parts.slice(0, i + 1).join("/");
+        const isFile = i === parts.length - 1;
+        return {
+          label: p,
+          target: isFile ? { type: "file", path } : { type: "path", path },
+          peek: !isFile ? siblingPeek(path) : filePeek(path),
+        };
+      }),
+    ];
+  }
+  if (selection.type === "symbol") {
+    const sym = data.symbolsById.get(selection.id);
+    if (!sym) return [];
+    const parts = sym.file.split("/");
+    return [
+      { label: "Dashboard", target: { type: "dashboard" } },
+      ...parts.map((p, i) => {
+        const path = parts.slice(0, i + 1).join("/");
+        const isFile = i === parts.length - 1;
+        return {
+          label: p,
+          target: isFile ? { type: "file", path } : { type: "path", path },
+          peek: !isFile ? siblingPeek(path) : filePeek(path),
+        };
+      }),
+      { label: sym.name, target: { type: "symbol", id: sym.id }, peek: filePeek(sym.file) },
+    ];
+  }
+  if (selection.type === "path") {
+    const parts = selection.path.split("/");
+    return [
+      { label: "Dashboard", target: { type: "dashboard" } },
+      ...parts.map((p, i) => {
+        const path = parts.slice(0, i + 1).join("/");
+        return { label: p, target: { type: "path", path }, peek: siblingPeek(path) };
+      }),
+    ];
+  }
+  return [];
+}
+
+function BreadcrumbItem({ crumb, last, onSelect }) {
+  const [hover, setHover] = useState(false);
+  return (
+    <>
+      <span
+        style={{ position: "relative" }}
+        onMouseEnter={() => setHover(true)}
+        onMouseLeave={() => setHover(false)}
+      >
+        <button className={`crumb ${last ? "last" : ""}`} onClick={() => onSelect(crumb.target)}>
+          {crumb.label}
+        </button>
+        {hover && crumb.peek && crumb.peek.length > 0 ? (
+          <div className="crumb-peek">
+            {crumb.peek.map((p, i) => (
+              <button key={i} onClick={() => onSelect(p.target)}>
+                <span style={{ display: "flex", alignItems: "center", gap: 6 }}>
+                  {p.kind ? <SymIcon kind={p.kind} /> : null}
+                  {p.label}
+                </span>
+                {p.kind ? <small>{p.kind}</small> : <small>↗</small>}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </span>
+      {!last ? <span className="sep">/</span> : null}
+    </>
+  );
+}
+
+// ─── Routing ───────────────────────────────────────────────
+function selectionToHash(sel) {
+  if (sel.type === "dashboard") return "#/";
+  if (sel.type === "diff") return "#/diff";
+  if (sel.type === "symbol") return `#/symbol/${encodeURIComponent(sel.id)}`;
+  if (sel.type === "file") return `#/file/${encodeURIComponent(sel.path)}`;
+  if (sel.type === "path") return `#/path/${encodeURIComponent(sel.path)}`;
+  return "#/";
+}
+function hashToSelection() {
+  const h = window.location.hash || "#/";
+  if (h === "#/" || h === "") return { type: "dashboard" };
+  if (h === "#/diff") return { type: "diff" };
+  const m = h.match(/^#\/(symbol|file|path)\/(.+)$/);
+  if (!m) return { type: "dashboard" };
+  const [, type, raw] = m;
+  const value = decodeURIComponent(raw);
+  if (type === "symbol") return { type: "symbol", id: value };
+  if (type === "file") return { type: "file", path: value };
+  return { type: "path", path: value };
+}
+
+// ─── Tweaks persistence ────────────────────────────────────
+const DEFAULT_TWEAKS = {
+  theme: "light",
+  accent: "#6366f1",
+  density: "cozy",
+  ai: true,
+  minimap: true,
+  heatmap: true,
+};
+const TWEAKS_KEY = "docs-kit:v2:tweaks";
+function loadTweaks() {
+  try {
+    const raw = localStorage.getItem(TWEAKS_KEY);
+    if (!raw) return DEFAULT_TWEAKS;
+    return { ...DEFAULT_TWEAKS, ...JSON.parse(raw) };
+  } catch {
+    return DEFAULT_TWEAKS;
+  }
+}
+function saveTweaks(t) {
+  try {
+    localStorage.setItem(TWEAKS_KEY, JSON.stringify(t));
+  } catch {}
+}
+
+// ─── App ───────────────────────────────────────────────────
+function App({ data }) {
+  const [tweaks, setTweaksRaw] = useState(loadTweaks);
+  const setTweak = useCallback((key, value) => {
+    setTweaksRaw((p) => {
+      const next = { ...p, [key]: value };
+      saveTweaks(next);
+      return next;
+    });
+  }, []);
+
+  useEffect(() => {
+    document.documentElement.dataset.theme = tweaks.theme;
+    document.documentElement.dataset.density = tweaks.density;
+    const palette = ACCENT_PALETTE.find((p) => p.color === tweaks.accent) || ACCENT_PALETTE[0];
+    document.documentElement.style.setProperty("--accent", palette.color);
+    document.documentElement.style.setProperty("--accent-strong", palette.strong);
+    if (tweaks.theme === "light")
+      document.documentElement.style.setProperty("--accent-soft", palette.soft);
+    else document.documentElement.style.removeProperty("--accent-soft");
+  }, [tweaks.theme, tweaks.accent, tweaks.density]);
+
+  const [selection, setSelection] = useState(() => hashToSelection());
+  const [history, setHistory] = useState([]);
+  const onSelect = useCallback((sel) => {
+    setSelection((prev) => {
+      setHistory((h) => [...h.slice(-19), prev]);
+      window.location.hash = selectionToHash(sel);
+      return sel;
+    });
+  }, []);
+  const goBack = () => {
+    setHistory((h) => {
+      if (h.length === 0) return h;
+      const prev = h[h.length - 1];
+      setSelection(prev);
+      window.location.hash = selectionToHash(prev);
+      return h.slice(0, -1);
+    });
+  };
+  useEffect(() => {
+    const onHash = () => setSelection(hashToSelection());
+    window.addEventListener("hashchange", onHash);
+    return () => window.removeEventListener("hashchange", onHash);
+  }, []);
+
+  const [treeQuery, setTreeQuery] = useState("");
+  const [paletteOpen, setPaletteOpen] = useState(false);
+  const [tweaksOpen, setTweaksOpen] = useState(false);
+
+  useEffect(() => {
+    const h = (e) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "k") {
+        e.preventDefault();
+        setPaletteOpen((p) => !p);
+      }
+      if (e.key === "Escape") setPaletteOpen(false);
+    };
+    window.addEventListener("keydown", h);
+    return () => window.removeEventListener("keydown", h);
+  }, []);
+
+  const currentSymbol = selection.type === "symbol" ? data.symbolsById.get(selection.id) : null;
+  const currentFile = selection.type === "file" ? selection.path : currentSymbol?.file;
+  const currentPathStats = useMemo(
+    () =>
+      selection.type === "path"
+        ? {
+            files: getScopedFiles(data, selection.path).length,
+            symbols: getScopedSymbols(data, selection.path).length,
+          }
+        : null,
+    [data, selection.type, selection.type === "path" ? selection.path : null],
+  );
+  const crumbs = useMemo(() => buildCrumbs(data, selection), [data, selection]);
+
+  return (
+    <div className="app">
+      <header className="titlebar">
+        <div className="brand">
+          <div className="brand-mark">D</div>
+          <div className="brand-name">docs-kit</div>
+          <span className="brand-tag">v2</span>
+        </div>
+        <div className="titlebar-sep" />
+        <div className="repo-crumbs">
+          <strong>{data.project.name}</strong>
+          <span style={{ color: "var(--text-faint)" }}>·</span>
+          <span className="branch">⌥ {data.project.branch}</span>
+        </div>
+
+        <div className="titlebar-spacer" />
+
+        <button className="cmdk-trigger" onClick={() => setPaletteOpen(true)}>
+          <span style={{ color: "var(--text-faint)" }}>⌕</span>
+          <span>Search symbols, files, run commands…</span>
+          <span className="kbd">⌘ K</span>
+        </button>
+
+        <button
+          className={`icon-btn ${tweaks.ai ? "active" : ""}`}
+          title="Toggle AI panel"
+          onClick={() => setTweak("ai", !tweaks.ai)}
+        >
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+          >
+            <path d="M2 4h10v6H6l-3 3V4z" />
+            <circle cx="6" cy="7" r=".7" fill="currentColor" />
+            <circle cx="9" cy="7" r=".7" fill="currentColor" />
+            <path d="M11 1l.6 1.4L13 3l-1.4.6L11 5l-.6-1.4L9 3l1.4-.6z" fill="currentColor" />
+          </svg>
+        </button>
+        <button
+          className="icon-btn"
+          title="Toggle theme"
+          onClick={() => setTweak("theme", tweaks.theme === "light" ? "dark" : "light")}
+        >
+          {tweaks.theme === "light" ? (
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            >
+              <path d="M12 9.5A4 4 0 016.5 4a4 4 0 105.5 5.5z" />
+            </svg>
+          ) : (
+            <svg
+              width="16"
+              height="16"
+              viewBox="0 0 16 16"
+              fill="none"
+              stroke="currentColor"
+              strokeWidth="1.5"
+            >
+              <circle cx="8" cy="8" r="3" />
+              <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6L13 13M3 13l1.4-1.4M11.6 4.4L13 3" />
+            </svg>
+          )}
+        </button>
+        <button className="icon-btn" title="Tweaks" onClick={() => setTweaksOpen(true)}>
+          <svg
+            width="16"
+            height="16"
+            viewBox="0 0 16 16"
+            fill="none"
+            stroke="currentColor"
+            strokeWidth="1.4"
+          >
+            <circle cx="8" cy="8" r="2" />
+            <path d="M8 1v2M8 13v2M1 8h2M13 8h2M3 3l1.4 1.4M11.6 11.6L13 13M3 13l1.4-1.4M11.6 4.4L13 3" />
+          </svg>
+        </button>
+      </header>
+
+      <div className="filterbar">
+        <span className="chip-label">View</span>
+        <button
+          className={`chip ${selection.type === "dashboard" ? "active" : ""}`}
+          onClick={() => onSelect({ type: "dashboard" })}
+        >
+          Dashboard
+        </button>
+        <button
+          className={`chip ${selection.type === "diff" ? "active" : ""}`}
+          onClick={() => onSelect({ type: "diff" })}
+          title="Open PR review"
+        >
+          PR review
+        </button>
+        <div className="filterbar-spacer" />
+        <span className="chip-label">{data.symbols.length} symbols</span>
+      </div>
+
+      <div className="workspace" data-aside={tweaks.ai ? "on" : "off"}>
+        <aside className="sidebar">
+          <div className="sidebar-tabs">
+            <button className="sidebar-tab active">Tree</button>
+            <div style={{ flex: 1 }} />
+          </div>
+          <div className="sidebar-search">
+            <input
+              placeholder="Filter…"
+              value={treeQuery}
+              onChange={(e) => setTreeQuery(e.target.value)}
+            />
+          </div>
+          <div className="sidebar-body">
+            <TreeView data={data} selection={selection} onSelect={onSelect} query={treeQuery} />
+          </div>
+          <div className="sidebar-foot">
+            <span>
+              {data.files.length} files · {data.symbols.length} symbols
+            </span>
+          </div>
+        </aside>
+
+        <main className="main">
+          <div className="breadcrumbs">
+            <button
+              className="icon-btn"
+              style={{ width: 22, height: 22 }}
+              onClick={goBack}
+              disabled={history.length === 0}
+              title="Back"
+            >
+              ←
+            </button>
+            {crumbs.map((c, i) => (
+              <BreadcrumbItem
+                key={i}
+                crumb={c}
+                last={i === crumbs.length - 1}
+                onSelect={onSelect}
+              />
+            ))}
+            <div className="breadcrumbs-spacer" />
+            <span className="meta">
+              {selection.type === "symbol" && currentSymbol
+                ? `lines ${currentSymbol.startLine}–${currentSymbol.endLine}`
+                : selection.type === "file"
+                  ? `${data.sourceFiles[currentFile]?.lineCount || 0} lines`
+                  : selection.type === "path" && currentPathStats
+                    ? `${currentPathStats.files} files · ${currentPathStats.symbols} symbols`
+                    : ""}
+            </span>
+          </div>
+
+          {selection.type === "dashboard" ? (
+            <Dashboard data={data} onSelect={onSelect} />
+          ) : selection.type === "symbol" ? (
+            <SymbolDetail
+              data={data}
+              symbol={currentSymbol}
+              onSelect={onSelect}
+              showMinimap={tweaks.minimap}
+              showHeatmap={tweaks.heatmap}
+            />
+          ) : selection.type === "file" ? (
+            <FileDetail
+              data={data}
+              filePath={selection.path}
+              onSelect={onSelect}
+              showMinimap={tweaks.minimap}
+              showHeatmap={tweaks.heatmap}
+            />
+          ) : selection.type === "diff" ? (
+            <DiffReview data={data} onSelect={onSelect} />
+          ) : selection.type === "path" ? (
+            <PathOverview data={data} path={selection.path} onSelect={onSelect} />
+          ) : (
+            <div className="empty">Pick a file or symbol to inspect.</div>
+          )}
+        </main>
+
+        {tweaks.ai ? (
+          <AIPanel
+            data={data}
+            symbol={currentSymbol}
+            file={currentFile}
+            onSelect={onSelect}
+            onClose={() => setTweak("ai", false)}
+          />
+        ) : null}
+      </div>
+
+      <div className="statusbar">
+        <span className="seg">
+          <span className="dot" />
+          ready
+        </span>
+        <span className="seg">{data.project.branch}</span>
+        <span className="seg">avg cov {fmt(data.health.coverage.averageCoveragePercent)}%</span>
+        <span className="seg">{data.health.governance.archViolationCount} violations</span>
+        <div className="grow" />
+        <span className="seg">density: {tweaks.density}</span>
+        <span className="seg">{tweaks.theme}</span>
+        <span className="seg">⌘K palette</span>
+      </div>
+
+      <CommandPalette
+        data={data}
+        open={paletteOpen}
+        onClose={() => setPaletteOpen(false)}
+        onSelect={onSelect}
+        tweaks={tweaks}
+        setTweak={setTweak}
+      />
+      {tweaksOpen ? (
+        <TweaksPopover tweaks={tweaks} setTweak={setTweak} onClose={() => setTweaksOpen(false)} />
+      ) : null}
+    </div>
+  );
+}
+
+// ─── Bootstrap ─────────────────────────────────────────────
+function indexData(raw) {
+  const symbolsById = new Map(raw.symbols.map((s) => [s.id, s]));
+  const childrenByParent = new Map();
+  for (const s of raw.symbols) {
+    if (!s.parent) continue;
+    const arr = childrenByParent.get(s.parent) ?? [];
+    arr.push(s);
+    childrenByParent.set(s.parent, arr);
+  }
+  const complexityById = {};
+  for (const c of raw.complexity?.symbols || []) {
+    complexityById[c.id] = c;
+  }
+  // Pre-compute symbol count per file to avoid O(n×m) filtering in TreeNode
+  const symbolCountByFile = new Map();
+  for (const s of raw.symbols) {
+    if (!s.file) continue;
+    symbolCountByFile.set(s.file, (symbolCountByFile.get(s.file) ?? 0) + 1);
+  }
+  const tree = buildTree(raw.files, raw.symbols);
   return {
-    added: structuredDiff.addedLines ?? 0,
-    removed: structuredDiff.removedLines ?? 0,
+    ...raw,
+    archViolations: raw.archViolations || [],
+    symbolsById,
+    childrenByParent,
+    complexityById,
+    symbolCountByFile,
+    tree,
   };
 }
 
-function formatHunkHeader(hunk) {
-  return `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`;
-}
-
-function buildStructuredDiffRows(structuredDiff) {
-  if (!hasStructuredDiff(structuredDiff)) return [];
-  const rows = [];
-
-  structuredDiff.hunks.forEach((hunk, hunkIndex) => {
-    rows.push({
-      key: `hunk:${hunkIndex}:${hunk.oldStart}:${hunk.newStart}`,
-      type: "hunk",
-      header: formatHunkHeader(hunk),
-    });
-
-    (hunk.lines ?? []).forEach((line, lineIndex) => {
-      rows.push({
-        key: `line:${hunkIndex}:${lineIndex}:${line.oldLineNumber ?? ""}:${line.newLineNumber ?? ""}`,
-        type: "line",
-        ...line,
-      });
-    });
-  });
-
-  return rows;
-}
-
-function reviewStatusTone(status) {
-  if (status === "generated") return "good";
-  if (status === "failed") return "danger";
-  if (status === "skipped") return "warning";
-  return "accent";
-}
-
-function findingTone(severity) {
-  if (severity === "critical" || severity === "error") return "danger";
-  if (severity === "warning") return "warning";
-  return "accent";
-}
-
-function reviewItemBySymbolMap(review) {
-  const map = new Map();
-  for (const item of review?.items ?? []) {
-    map.set(item.symbolId, item);
-  }
-  return map;
-}
-
-function buildCodeToSitePreviews(diff, docUpdates) {
-  if (Array.isArray(diff.previews) && diff.previews.length > 0) {
-    return diff.previews.map((preview) => ({
-      ...preview,
-      docUpdates: (preview.docUpdates ?? []).filter((update) => update.action !== "skipped"),
-    }));
-  }
-
-  return (diff.impacts ?? []).map((impact) => ({
-    symbolId: impact.symbolId,
-    symbolName: impact.symbolName,
-    qualifiedName: impact.qualifiedName,
-    kind: impact.kind,
-    file: impact.file,
-    changeType: impact.changeType,
-    docUpdateRequired: impact.docUpdateRequired,
-    codeDiff: impact.diff,
-    structuredDiff: impact.structuredDiff,
-    docUpdates: docUpdates.filter((update) => update.symbolName === impact.symbolName),
-  }));
-}
-
-function previewSiteStatus(preview) {
-  if (preview.docUpdates.length > 0) {
-    return { tone: "good", label: `${preview.docUpdates.length} site update(s)` };
-  }
-  if (preview.docUpdateRequired) return { tone: "warning", label: "no site update" };
-  return { tone: undefined, label: "not required" };
-}
-
-function DiffCodeBlock({ title, path, diff, emptyText }) {
-  const lines = buildDiffLines(diff);
-  const visibleLines = lines.slice(0, MAX_DIFF_PREVIEW_LINES);
-  const hiddenCount = Math.max(0, lines.length - visibleLines.length);
-  const counts = diffCounts(diff);
-
-  return (
-    <div className="diff-code-block">
-      <div className="diff-code-block-head">
-        <div>
-          <strong>{title}</strong>
-          {path ? <span>{path}</span> : null}
-        </div>
-        <div className="diff-counts" aria-label="Diff line counts">
-          <span className="removed">-{counts.removed}</span>
-          <span className="added">+{counts.added}</span>
-        </div>
-      </div>
-      <pre className="diff-code-preview">
-        {visibleLines.length > 0 ? (
-          visibleLines.map((line) => (
-            <span key={line.key} className={`diff-code-line ${line.tone}`}>
-              <span className="diff-code-gutter">{line.gutter}</span>
-              <span className="diff-code-text">{line.text}</span>
-            </span>
-          ))
-        ) : (
-          <span className="diff-code-line muted">
-            <span className="diff-code-gutter"> </span>
-            <span className="diff-code-text">{emptyText}</span>
-          </span>
-        )}
-        {hiddenCount > 0 ? (
-          <span className="diff-code-line muted">
-            <span className="diff-code-gutter"> </span>
-            <span className="diff-code-text">... {hiddenCount} more lines</span>
-          </span>
-        ) : null}
-      </pre>
-    </div>
-  );
-}
-
-function SideBySideDiffBlock({ title, path, diff, structuredDiff, emptyText }) {
-  if (!hasStructuredDiff(structuredDiff)) {
-    return <DiffCodeBlock title={title} path={path} diff={diff} emptyText={emptyText} />;
-  }
-
-  const rows = buildStructuredDiffRows(structuredDiff);
-  const visibleRows = rows.slice(0, MAX_DIFF_PREVIEW_LINES);
-  const hiddenCount = Math.max(0, rows.length - visibleRows.length);
-  const counts = structuredDiffCounts(structuredDiff, diff);
-
-  const renderRows = (side) =>
-    visibleRows.length > 0 ? (
-      visibleRows.map((row) =>
-        row.type === "hunk" ? (
-          <div key={`${side}:${row.key}`} className="diff-side-hunk">
-            {row.header}
-          </div>
-        ) : (
-          <div key={`${side}:${row.key}`} className={`diff-side-row-single ${row.tone}`}>
-            <span className="diff-side-line-number">
-              {side === "old" ? (row.oldLineNumber ?? "") : (row.newLineNumber ?? "")}
-            </span>
-            <code className="diff-side-code">
-              {side === "old" ? (row.oldText ?? "") : (row.newText ?? "")}
-            </code>
-          </div>
-        ),
-      )
-    ) : (
-      <div className="diff-side-row-single muted">
-        <span className="diff-side-line-number"> </span>
-        <code className="diff-side-code">{side === "old" ? emptyText : " "}</code>
-      </div>
-    );
-
-  return (
-    <div className="diff-code-block diff-side-by-side-block">
-      <div className="diff-code-block-head">
-        <div>
-          <strong>{title}</strong>
-          {path ? <span>{path}</span> : null}
-        </div>
-        <div className="diff-counts" aria-label="Diff line counts">
-          <span className="removed">-{counts.removed}</span>
-          <span className="added">+{counts.added}</span>
-        </div>
-      </div>
-      <div className="diff-side-by-side">
-        <div className="diff-side-pane">
-          <div className="diff-side-pane-header">Old</div>
-          <div className="diff-side-pane-body">
-            {renderRows("old")}
-            {hiddenCount > 0 ? (
-              <div className="diff-side-hunk">... {hiddenCount} more lines</div>
-            ) : null}
-          </div>
-        </div>
-        <div className="diff-side-pane new">
-          <div className="diff-side-pane-header">New</div>
-          <div className="diff-side-pane-body">
-            {renderRows("new")}
-            {hiddenCount > 0 ? (
-              <div className="diff-side-hunk">... {hiddenCount} more lines</div>
-            ) : null}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DiffReviewOverview({ review }) {
-  if (!review) return null;
-
-  return (
-    <section className="diff-review-overview">
-      <div className="section-head compact">
-        <h3>Code Review Summary</h3>
-        <Badge tone={reviewStatusTone(review.status)}>{review.status}</Badge>
-      </div>
-      <p>{review.summary}</p>
-      <div className="diff-finding-counts">
-        {Object.entries(review.findingsBySeverity ?? {}).map(([severity, count]) => (
-          <Badge key={severity} tone={findingTone(severity)}>
-            {count} {severity}
-          </Badge>
-        ))}
-      </div>
-      {review.error ? <small>{review.error}</small> : null}
-    </section>
-  );
-}
-
-function DiffReviewPanel({ item }) {
-  if (!item || item.status === "not_requested") return null;
-
-  return (
-    <section className="diff-review-panel">
-      <div className="section-head compact">
-        <h3>AI Review</h3>
-        <Badge tone={reviewStatusTone(item.status)}>{item.status}</Badge>
-      </div>
-      <p>{item.aiSummary || item.error || "AI review did not return a note for this change."}</p>
-    </section>
-  );
-}
-
-function DiffFindingsPanel({ findings }) {
-  const visibleFindings = findings ?? [];
-
-  return (
-    <section className="diff-findings-panel">
-      <div className="section-head compact">
-        <h3>Anti-patterns & Problems</h3>
-        <span>{visibleFindings.length}</span>
-      </div>
-      {visibleFindings.length === 0 ? (
-        <p>No anti-patterns or code problems detected for this diff.</p>
-      ) : (
-        <div className="diff-finding-list">
-          {visibleFindings.slice(0, 8).map((finding) => (
-            <div key={finding.id} className={`diff-finding-item ${findingTone(finding.severity)}`}>
-              <div>
-                <strong>{finding.title}</strong>
-                <span>{finding.message}</span>
-                {finding.suggestion ? <small>{finding.suggestion}</small> : null}
-              </div>
-              <Badge tone={findingTone(finding.severity)}>
-                {finding.source} · {finding.severity}
-                {finding.line ? ` · L${finding.line}` : ""}
-              </Badge>
-            </div>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function DiffPreviewSection({ data, onSelect }) {
-  const diff = data.diff;
-  if (!diff) return null;
-
-  const symbolsById = symbolByIdMap(data.symbols);
-  const docUpdates = (diff.docUpdates ?? []).filter((update) => update.action !== "skipped");
-  const previews = buildCodeToSitePreviews(diff, docUpdates);
-  const reviewItemsBySymbol = reviewItemBySymbolMap(diff.review);
-  const violations = diff.docGuard?.uncoveredChanges ?? [];
-  const docsGuardTone = violations.length > 0 ? "danger" : "good";
-
-  return (
-    <section className="dashboard-section diff-preview-section">
-      <div className="diff-preview-head">
-        <div>
-          <div className="crumbs">diff preview</div>
-          <h3>
-            {diff.base}...{diff.head}
-          </h3>
-        </div>
-        <Badge tone={docsGuardTone}>{violations.length} Docs-Guard violations</Badge>
-      </div>
-
-      <div className="diff-stat-grid">
-        <Stat label="Changed Files" value={metric(diff.changedFiles?.length ?? 0)} />
-        <Stat label="Impacts" value={metric(diff.impacts?.length ?? 0)} />
-        <Stat label="Doc Updates" value={metric(docUpdates.length)} />
-        <Stat
-          label="Covered"
-          value={`${metric(diff.docGuard?.coveredChanges ?? 0)}/${metric(diff.docGuard?.totalChanges ?? 0)}`}
-          tone={docsGuardTone}
-        />
-      </div>
-
-      <div className="diff-preview-grid">
-        <section className="diff-list-panel">
-          <div className="section-head">
-            <h3>Changed Files</h3>
-            <span>{diff.changedFiles.length}</span>
-          </div>
-          <div className="diff-list">
-            {diff.changedFiles.length === 0 ? <p>No files changed</p> : null}
-            {diff.changedFiles.slice(0, 40).map((file) => (
-              <button
-                key={file}
-                type="button"
-                onClick={() => onSelect({ type: "file", path: file })}
-              >
-                <strong>{file.split("/").pop()}</strong>
-                <small>{file}</small>
-              </button>
-            ))}
-          </div>
-        </section>
-
-        <section className="diff-list-panel">
-          <div className="section-head">
-            <h3>Impacted Symbols</h3>
-            <span>{diff.impacts.length}</span>
-          </div>
-          <div className="diff-list">
-            {diff.impacts.length === 0 ? <p>No semantic symbol impacts</p> : null}
-            {diff.impacts.slice(0, 40).map((impact) => {
-              const symbol = symbolsById.get(impact.symbolId);
-              return (
-                <button
-                  key={`${impact.symbolId}:${impact.changeType}`}
-                  type="button"
-                  onClick={() => onSelect({ type: "symbol", id: impact.symbolId })}
-                >
-                  <strong>
-                    {symbol?.qualifiedName || impact.qualifiedName || impact.symbolName}
-                  </strong>
-                  <small>
-                    {impact.changeType} · {impact.kind} · {impact.file}
-                  </small>
-                  {impact.docUpdateRequired ? <Badge tone="warning">docs</Badge> : null}
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      </div>
-
-      <DiffReviewOverview review={diff.review} />
-
-      {previews.length > 0 ? (
-        <section className="diff-list-panel diff-wide-panel">
-          <div className="section-head">
-            <h3>Code -&gt; Site Preview</h3>
-            <span>{previews.length}</span>
-          </div>
-          <div className="diff-change-preview-list">
-            {previews.slice(0, 12).map((preview, index) => {
-              const status = previewSiteStatus(preview);
-              const reviewItem = reviewItemsBySymbol.get(preview.symbolId);
-              return (
-                <details
-                  key={`${preview.symbolId}:${preview.changeType}:${index}`}
-                  className="diff-change-preview"
-                  open={index === 0}
-                >
-                  <summary>
-                    <span className="diff-change-title">
-                      <strong>{preview.qualifiedName || preview.symbolName}</strong>
-                      <small>
-                        {preview.changeType} · {preview.kind} · {preview.file}
-                      </small>
-                    </span>
-                    <Badge tone={status.tone}>{status.label}</Badge>
-                  </summary>
-                  <div className="diff-compare-grid diff-compare-grid-stacked">
-                    <SideBySideDiffBlock
-                      title="Code change"
-                      path={preview.file}
-                      diff={preview.codeDiff}
-                      structuredDiff={preview.structuredDiff}
-                      emptyText="No code diff captured for this symbol."
-                    />
-                    <div className="diff-site-preview-stack">
-                      {preview.docUpdates.length > 0 ? (
-                        preview.docUpdates.map((update, updateIndex) => (
-                          <SideBySideDiffBlock
-                            key={`${update.docPath}:${update.symbolName}:${updateIndex}`}
-                            title={update.action === "removed" ? "Site removal" : "Site update"}
-                            path={update.docPath || update.sectionHeading}
-                            diff={update.diff}
-                            structuredDiff={update.structuredDiff}
-                            emptyText="No generated site diff for this doc."
-                          />
-                        ))
-                      ) : (
-                        <div className="diff-no-site-update">
-                          <strong>
-                            {preview.docUpdateRequired
-                              ? "No site update generated"
-                              : "No site update needed"}
-                          </strong>
-                          <span>
-                            {preview.docUpdateRequired
-                              ? "Docs-Guard will flag this because documentation is required."
-                              : "This change is tracked for review, but does not require documentation."}
-                          </span>
-                        </div>
-                      )}
-                    </div>
-                  </div>
-                  <DiffReviewPanel item={reviewItem} />
-                  <DiffFindingsPanel findings={reviewItem?.findings ?? []} />
-                </details>
-              );
-            })}
-          </div>
-        </section>
-      ) : null}
-
-      {violations.length > 0 ? (
-        <section className="diff-list-panel diff-wide-panel">
-          <div className="section-head">
-            <h3>Docs-Guard</h3>
-            <span>{violations.length}</span>
-          </div>
-          <div className="diff-violation-list">
-            {violations.map((violation, index) => (
-              <button
-                key={`${violation.symbolName}:${index}`}
-                type="button"
-                onClick={() => onSelect({ type: "file", path: violation.file })}
-              >
-                <strong>{violation.symbolName}</strong>
-                <span>{violation.reason}</span>
-                <small>{violation.docPath || violation.file}</small>
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {docUpdates.length > 0 ? (
-        <section className="diff-list-panel diff-wide-panel">
-          <div className="section-head">
-            <h3>Suggested Doc Updates</h3>
-            <span>{docUpdates.length}</span>
-          </div>
-          <div className="diff-update-list">
-            {docUpdates.slice(0, 12).map((update, index) => (
-              <details key={`${update.symbolName}:${update.docPath}:${index}`}>
-                <summary>
-                  <strong>{update.symbolName}</strong>
-                  <span>
-                    {update.action} · {update.docPath}
-                  </span>
-                </summary>
-                <DiffCodeBlock
-                  title={update.sectionHeading || "Documentation diff"}
-                  path={update.docPath}
-                  diff={update.diff}
-                  emptyText="No textual diff"
-                />
-              </details>
-            ))}
-          </div>
-        </section>
-      ) : null}
-    </section>
-  );
-}
-
-function ProgressBar({ value, tone }) {
-  const clamp = Math.max(0, Math.min(100, value ?? 0));
-  return (
-    <div className="progress-bar-track">
-      <div className={`progress-bar-fill ${tone || ""}`} style={{ width: `${clamp}%` }} />
-    </div>
-  );
-}
-
-function Dashboard({ data, symbolsById, onSelect }) {
-  const scores = computeHealthScore(data);
-  const { docs, coverage, governance } = data.health;
-  const project = data.complexity.project;
-
-  // Top modules sorted by avg cyclomatic complexity
-  const topModules = [...(data.complexity.modules ?? [])]
-    .sort((a, b) => b.avgCyclomaticComplexity - a.avgCyclomaticComplexity)
-    .slice(0, 10);
-
-  // Top hotspots: merge topClasses + topSymbols, deduplicate, sort by riskScore
-  const seen = new Set();
-  const topHotspots = [];
-  for (const h of [...(data.complexity.topClasses ?? []), ...(data.complexity.topSymbols ?? [])]) {
-    if (!seen.has(h.id)) {
-      seen.add(h.id);
-      topHotspots.push(h);
-    }
-  }
-  topHotspots.sort((a, b) => (b.riskScore ?? 0) - (a.riskScore ?? 0));
-  const hotspots = topHotspots.slice(0, 8);
-
-  // Symbol kind distribution
-  const kindCounts = {};
-  for (const s of data.symbols) {
-    kindCounts[s.kind] = (kindCounts[s.kind] ?? 0) + 1;
-  }
-  const kinds = Object.entries(kindCounts)
-    .sort((a, b) => b[1] - a[1])
-    .slice(0, 8);
-  const maxKindCount = kinds[0]?.[1] ?? 1;
-
-  const overallTone = healthTone(scores.overall);
-  const thresholds = data.complexity.thresholds;
-
-  return (
-    <article className="detail-page dashboard-page">
-      <header className="detail-hero">
-        <div>
-          <div className="crumbs">overview</div>
-          <h2>Project Health Dashboard</h2>
-          <p>
-            {project.symbolCount} symbols · {data.files.length} files · {project.classCount} classes
-          </p>
-        </div>
-        <div className="badge-row">
-          <Badge tone={overallTone}>
-            {scores.overall >= 80
-              ? "Healthy"
-              : scores.overall >= 50
-                ? "Needs Attention"
-                : "Critical"}
-          </Badge>
-        </div>
-      </header>
-
-      <DiffPreviewSection data={data} onSelect={onSelect} />
-
-      {/* Health Hero */}
-      <section className="dashboard-section">
-        <div className="health-hero-grid">
-          <div className="health-donut-wrap">
-            <HealthDonut score={scores.overall} size={140} />
-            <div className="donut-label">Code Quality</div>
-            <div className="donut-sublabel">Maintainability · Coverage · Architecture</div>
-          </div>
-          <div className="pillar-cards">
-            <div className={`pillar-card pillar-${healthTone(scores.maintainabilityScore)}`}>
-              <div className="pillar-title">Maintainability · 40%</div>
-              <div className={`pillar-score ${healthTone(scores.maintainabilityScore)}`}>
-                {scores.maintainabilityScore}
-              </div>
-              <ProgressBar
-                value={scores.maintainabilityScore}
-                tone={healthTone(scores.maintainabilityScore)}
-              />
-              <div className="pillar-stats">
-                <span
-                  className={project.highComplexitySymbolCount > 0 ? "danger-text" : "good-text"}
-                >
-                  {project.highComplexitySymbolCount} high-complexity
-                </span>
-                <span className="muted-text">
-                  {((project.highComplexitySymbolCount / (project.symbolCount || 1)) * 100).toFixed(
-                    1,
-                  )}
-                  % of symbols
-                </span>
-              </div>
-            </div>
-            <div className={`pillar-card pillar-${healthTone(scores.coverageScore)}`}>
-              <div className="pillar-title">Test Coverage · 40%</div>
-              <div className={`pillar-score ${healthTone(scores.coverageScore)}`}>
-                {scores.coverageScore}%
-              </div>
-              <ProgressBar value={scores.coverageScore} tone={healthTone(scores.coverageScore)} />
-              <div className="pillar-stats">
-                <span className="good-text">{coverage.coveredSymbolCount} covered</span>
-                <span className={coverage.uncoveredSymbolCount > 0 ? "danger-text" : "good-text"}>
-                  {coverage.uncoveredSymbolCount} uncovered
-                </span>
-              </div>
-            </div>
-            <div className={`pillar-card pillar-${healthTone(scores.archScore)}`}>
-              <div className="pillar-title">Architecture · 20%</div>
-              <div className={`pillar-score ${healthTone(scores.archScore)}`}>
-                {scores.archScore}
-              </div>
-              <ProgressBar value={scores.archScore} tone={healthTone(scores.archScore)} />
-              <div className="pillar-stats">
-                <span className={governance.archViolationCount > 0 ? "danger-text" : "good-text"}>
-                  {governance.archViolationCount} violations
-                </span>
-                <span className="muted-text">
-                  {(governance.archViolationCount / (data.files.length || 1)).toFixed(1)}/file
-                </span>
-              </div>
-            </div>
-          </div>
-        </div>
-        {/* Docs — informational card, clearly separate from code score */}
-        <div className="docs-info-card">
-          <div className="docs-info-label">📄 Documentation Health</div>
-          <div className="docs-info-note">Não afeta o Code Quality Score</div>
-          <div className="docs-info-body">
-            <div className={`docs-info-score ${healthTone(scores.docsScore)}`}>
-              {scores.docsScore}
-            </div>
-            <ProgressBar value={scores.docsScore} tone={healthTone(scores.docsScore)} />
-            <div className="pillar-stats" style={{ marginTop: 6 }}>
-              <span className="good-text">{docs.documentedSymbolCount} documented</span>
-              <span className={docs.missingDocRefCount > 0 ? "warning-text" : "good-text"}>
-                {docs.missingDocRefCount} missing docRef
-              </span>
-              {docs.missingDocRefByKind ? (
-                <span className="muted-text">
-                  top missing:{" "}
-                  {Object.entries(docs.missingDocRefByKind)
-                    .sort((a, b) => b[1] - a[1])
-                    .slice(0, 3)
-                    .map(([k, v]) => `${v} ${k}`)
-                    .join(", ")}
-                </span>
-              ) : null}
-            </div>
-          </div>
-        </div>
-      </section>
-
-      {/* Top Risk Hotspots */}
-      {hotspots.length > 0 ? (
-        <section className="dashboard-section">
-          <div
-            className="section-head"
-            style={{ padding: "12px 14px", borderBottom: "1px solid #edf1f6" }}
-          >
-            <h3 style={{ margin: 0 }}>Top Risk Hotspots</h3>
-            <span>highest composite risk score</span>
-          </div>
-          <div className="hotspot-list">
-            {hotspots.map((h) => {
-              const sym = symbolsById.get(h.id);
-              if (!sym) return null;
-              const risk = h.riskScore ?? 0;
-              const tone = risk > 60 ? "score-high" : risk > 30 ? "score-warn" : "score-ok";
-              return (
-                <button
-                  key={h.id}
-                  type="button"
-                  className="hotspot-row"
-                  onClick={() => onSelect({ type: "symbol", id: h.id })}
-                >
-                  <span className={`symbol-dot ${sym.kind}`} />
-                  <strong>{sym.qualifiedName || sym.name}</strong>
-                  <span className="hotspot-kind">{sym.kind}</span>
-                  <small className="hotspot-file">{sym.file}</small>
-                  <em className={tone}>{riskMetric(risk)}</em>
-                </button>
-              );
-            })}
-          </div>
-        </section>
-      ) : null}
-
-      {/* Symbol Kind Distribution */}
-      {kinds.length > 0 ? (
-        <section className="dashboard-section">
-          <div
-            className="section-head"
-            style={{ padding: "12px 14px", borderBottom: "1px solid #edf1f6" }}
-          >
-            <h3 style={{ margin: 0 }}>Symbol Distribution</h3>
-            <span>{data.symbols.length} total</span>
-          </div>
-          <div className="kind-bars">
-            {kinds.map(([kind, count]) => (
-              <div key={kind} className="kind-bar-row">
-                <span className={`symbol-dot ${kind}`} />
-                <span className="kind-label">{kind}</span>
-                <div className="kind-bar-track">
-                  <div
-                    className="kind-bar-fill"
-                    style={{ width: `${(count / maxKindCount) * 100}%` }}
-                  />
-                </div>
-                <span className="kind-count">{count}</span>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {/* Module Breakdown */}
-      {topModules.length > 0 ? (
-        <section className="dashboard-section">
-          <div
-            className="section-head"
-            style={{ padding: "12px 14px", borderBottom: "1px solid #dfe6ef" }}
-          >
-            <h3 style={{ margin: 0 }}>Module Breakdown</h3>
-            <span>by avg cyclomatic complexity</span>
-          </div>
-          <div className="module-table">
-            <div className="module-table-header">
-              <span>Module</span>
-              <span>Files</span>
-              <span>Symbols</span>
-              <span>Avg Cyclo</span>
-              <span>Max Cyclo</span>
-              <span>Avg Cogn</span>
-            </div>
-            {topModules.map((mod) => (
-              <button
-                key={mod.path}
-                type="button"
-                className="module-row"
-                onClick={() => onSelect({ type: "path", path: mod.path })}
-              >
-                <strong>{mod.path || "root"}</strong>
-                <span>{mod.fileCount}</span>
-                <span>{mod.symbolCount}</span>
-                <span
-                  className={complexityTone(
-                    mod.avgCyclomaticComplexity,
-                    thresholds.cyclomaticComplexity,
-                  )}
-                >
-                  {metric(mod.avgCyclomaticComplexity)}
-                </span>
-                <span
-                  className={complexityTone(
-                    mod.maxCyclomaticComplexity,
-                    thresholds.cyclomaticComplexity,
-                  )}
-                >
-                  {metric(mod.maxCyclomaticComplexity)}
-                </span>
-                <span
-                  className={complexityTone(
-                    mod.avgCognitiveComplexity,
-                    thresholds.cognitiveComplexity,
-                  )}
-                >
-                  {metric(mod.avgCognitiveComplexity)}
-                </span>
-              </button>
-            ))}
-          </div>
-        </section>
-      ) : null}
-    </article>
-  );
-}
-
-// ─── Router ─────────────────────────────────────────────────────────────────
-
-function DetailRouter({ data, selected, symbolsById, childrenByParent, complexityById, onSelect }) {
-  if (selected.type === "dashboard") {
-    return <Dashboard data={data} symbolsById={symbolsById} onSelect={onSelect} />;
-  }
-
-  if (selected.type === "symbol") {
-    const symbol = symbolsById.get(selected.id);
-    if (symbol) {
-      return (
-        <SymbolDetail
-          data={data}
-          symbol={symbol}
-          symbolsById={symbolsById}
-          childrenByParent={childrenByParent}
-          complexityById={complexityById}
-          onSelect={onSelect}
-        />
-      );
-    }
-  }
-
-  if (selected.type === "file" && selected.path) {
-    return (
-      <FileDetail
-        data={data}
-        filePath={selected.path}
-        symbolsById={symbolsById}
-        complexityById={complexityById}
-        onSelect={onSelect}
-      />
-    );
-  }
-
-  if (selected.type === "path" && selected.path) {
-    return (
-      <PathDetail
-        data={data}
-        pathValue={selected.path}
-        complexityById={complexityById}
-        onSelect={onSelect}
-      />
-    );
-  }
-
-  return <Dashboard data={data} symbolsById={symbolsById} onSelect={onSelect} />;
-}
-
-// ─── Drill-down Panels ──────────────────────────────────────────────────────
-
-function ComplexityPanel({ data, sortBy, onSortChange, onClose, onSelect }) {
-  const thresholds = data.complexity.thresholds;
-  const sorted = [...data.complexity.symbols]
-    .sort((a, b) => {
-      if (sortBy === "nesting") return (b.maxNestingDepth ?? 0) - (a.maxNestingDepth ?? 0);
-      if (sortBy === "cognitive")
-        return (b.cognitiveComplexity ?? 0) - (a.cognitiveComplexity ?? 0);
-      return (b.cyclomaticComplexity ?? 0) - (a.cyclomaticComplexity ?? 0);
-    })
-    .slice(0, 100);
-
-  return (
-    <section className="complexity-panel">
-      <div className="panel-head">
-        <h2>Complexity — {data.complexity.project.highComplexitySymbolCount} above threshold</h2>
-        <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
-          <div className="sort-tabs">
-            {[
-              { key: "cyclomatic", label: "Cyclomatic" },
-              { key: "cognitive", label: "Cognitive" },
-              { key: "nesting", label: "Nesting" },
-            ].map(({ key, label }) => (
-              <button
-                key={key}
-                type="button"
-                className={`sort-tab${sortBy === key ? " active" : ""}`}
-                onClick={() => onSortChange(key)}
-              >
-                {label}
-              </button>
-            ))}
-          </div>
-          <button
-            type="button"
-            className="close-btn"
-            style={{ color: "#795000" }}
-            onClick={onClose}
-          >
-            ✕
-          </button>
-        </div>
-      </div>
-      <div className="panel-table">
-        <div className="panel-table-header complexity-header">
-          <span>Symbol</span>
-          <span>Kind</span>
-          <span>File</span>
-          <span>Cyclo</span>
-          <span>Cogn</span>
-          <span>Nesting</span>
-          <span>Risk</span>
-        </div>
-        {sorted.map((entry) => (
-          <button
-            key={entry.id}
-            type="button"
-            className="panel-table-row"
-            onClick={() => onSelect({ type: "symbol", id: entry.id })}
-          >
-            <strong className="panel-cell-truncate">{entry.name}</strong>
-            <span>{entry.kind}</span>
-            <small className="panel-cell-truncate">{entry.file}</small>
-            <span
-              className={complexityTone(
-                entry.cyclomaticComplexity,
-                thresholds.cyclomaticComplexity,
-              )}
-            >
-              {metric(entry.cyclomaticComplexity)}
-            </span>
-            <span
-              className={complexityTone(entry.cognitiveComplexity, thresholds.cognitiveComplexity)}
-            >
-              {metric(entry.cognitiveComplexity)}
-            </span>
-            <span className={complexityTone(entry.maxNestingDepth, thresholds.maxNestingDepth)}>
-              {metric(entry.maxNestingDepth)}
-            </span>
-            <em className={scoreClass(entry)}>{metric(entry.riskScore)}</em>
-          </button>
-        ))}
-      </div>
-    </section>
-  );
-}
-
-function PatternsPanel({ data, symbolsById, onClose, onSelect }) {
-  const patterns = data.patterns ?? [];
-  return (
-    <section className="patterns-panel">
-      <div className="panel-head">
-        <h2>Detected Patterns ({patterns.length})</h2>
-        <button type="button" className="close-btn" style={{ color: "#2457b8" }} onClick={onClose}>
-          ✕
-        </button>
-      </div>
-      <div className="pattern-list">
-        {patterns.length === 0 ? (
-          <p style={{ padding: "12px 14px", color: "#65758b" }}>No patterns detected.</p>
-        ) : (
-          patterns.map((pattern, i) => {
-            const patternSymbols = (pattern.symbols ?? [])
-              .map((id) => symbolsById.get(id))
-              .filter(Boolean);
-            return (
-              <div key={i} className="pattern-item">
-                <div className="pattern-item-head">
-                  <Badge tone="accent">{pattern.kind}</Badge>
-                  <span className="pattern-confidence">
-                    confidence: {Math.round((pattern.confidence ?? 0) * 100)}%
-                  </span>
-                  {pattern.violations?.length > 0 ? (
-                    <Badge tone="danger">{pattern.violations.length} violations</Badge>
-                  ) : null}
-                </div>
-                <div className="pattern-symbols">
-                  {patternSymbols.map((sym) => (
-                    <button
-                      key={sym.id}
-                      type="button"
-                      className="pattern-symbol-btn"
-                      onClick={() => onSelect({ type: "symbol", id: sym.id })}
-                    >
-                      {sym.name}
-                      <small style={{ marginLeft: 4, color: "#65758b" }}>{sym.kind}</small>
-                    </button>
-                  ))}
-                  {(pattern.symbols?.length ?? 0) > patternSymbols.length ? (
-                    <span style={{ fontSize: 12, color: "#65758b", padding: "2px 4px" }}>
-                      +{pattern.symbols.length - patternSymbols.length} more
-                    </span>
-                  ) : null}
-                </div>
-                {pattern.violations?.length > 0 ? (
-                  <div className="pattern-violations-list">
-                    {pattern.violations.map((v, vi) => (
-                      <div key={vi} className={`pattern-violation-row severity-${v.severity}`}>
-                        <span className="violation-severity">{v.severity}</span>
-                        <span className="violation-rule">{v.rule}</span>
-                        <span className="violation-msg">{v.message}</span>
-                      </div>
-                    ))}
-                  </div>
-                ) : null}
-              </div>
-            );
-          })
-        )}
-      </div>
-    </section>
-  );
-}
-
-function DeprecatedPanel({ data, onClose, onSelect }) {
-  const deprecated = data.symbols.filter((s) => s.deprecated);
-  return (
-    <section className="info-panel">
-      <div className="panel-head">
-        <h2>Deprecated Symbols ({deprecated.length})</h2>
-        <button type="button" className="close-btn" onClick={onClose}>
-          ✕
-        </button>
-      </div>
-      {deprecated.length === 0 ? (
-        <p style={{ padding: "12px 14px", color: "#65758b" }}>No deprecated symbols found.</p>
-      ) : (
-        <div className="panel-table">
-          <div className="panel-table-header info-header">
-            <span>Symbol</span>
-            <span>Kind</span>
-            <span>File</span>
-          </div>
-          {deprecated.map((sym) => (
-            <button
-              key={sym.id}
-              type="button"
-              className="panel-table-row"
-              onClick={() => onSelect({ type: "symbol", id: sym.id })}
-            >
-              <strong className="panel-cell-truncate">{sym.name}</strong>
-              <span>{sym.kind}</span>
-              <small className="panel-cell-truncate">{sym.file}</small>
-            </button>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function DeadCodePanel({ data, symbolsById, onClose, onSelect }) {
-  const findings = data.reaperFindings ?? [];
-  return (
-    <section className="info-panel dead-code-panel">
-      <div className="panel-head">
-        <h2>Dead Code / Reaper ({findings.length})</h2>
-        <button type="button" className="close-btn" onClick={onClose}>
-          ✕
-        </button>
-      </div>
-      {findings.length === 0 ? (
-        <p style={{ padding: "12px 14px", color: "#65758b" }}>No dead code findings.</p>
-      ) : (
-        <div className="panel-table">
-          <div className="panel-table-header dead-code-header">
-            <span>Type</span>
-            <span>Symbol</span>
-            <span>Reason</span>
-            <span>Action</span>
-          </div>
-          {findings.map((finding, i) => {
-            const sym = symbolsById.get(finding.target);
-            return (
-              <button
-                key={i}
-                type="button"
-                className="panel-table-row"
-                onClick={sym ? () => onSelect({ type: "symbol", id: sym.id }) : undefined}
-                style={!sym ? { cursor: "default" } : undefined}
-              >
-                <Badge tone="warning">{(finding.type ?? "dead_code").replace(/_/g, " ")}</Badge>
-                <strong className="panel-cell-truncate">{sym?.name ?? finding.target}</strong>
-                <span style={{ color: "#65758b" }}>{finding.reason}</span>
-                <small>{finding.suggested_action}</small>
-              </button>
-            );
-          })}
-        </div>
-      )}
-    </section>
-  );
-}
-
-function serializeSelected(sel) {
-  if (!sel || sel.type === "empty" || sel.type === "dashboard") return "";
-  if (sel.type === "symbol") return `symbol:${sel.id}`;
-  if (sel.type === "file") return `file:${sel.path}`;
-  if (sel.type === "path") return `path:${sel.path}`;
-  return "";
-}
-
-function deserializeSelected(hash) {
-  const raw = hash.startsWith("#") ? hash.slice(1) : hash;
-  if (!raw) return { type: "dashboard" };
-  const colonIndex = raw.indexOf(":");
-  if (colonIndex === -1) return { type: "dashboard" };
-  const type = raw.slice(0, colonIndex);
-  const value = raw.slice(colonIndex + 1);
-  if (type === "symbol") return { type: "symbol", id: value };
-  if (type === "file") return { type: "file", path: value };
-  if (type === "path") return { type: "path", path: value };
-  return { type: "dashboard" };
-}
-
-function App() {
+function Root() {
   const [data, setData] = useState(null);
   const [error, setError] = useState(null);
-  const [query, setQuery] = useState("");
-  const [selected, setSelected] = useState({ type: "empty" });
-  const [showViolations, setShowViolations] = useState(false);
-  const [activePanel, setActivePanel] = useState(null);
-  const [panelSort, setPanelSort] = useState("cyclomatic");
-
-  function openPanel(name, sort) {
-    setShowViolations(false);
-    setActivePanel((prev) => (prev === name && sort === panelSort ? null : name));
-    if (sort) setPanelSort(sort);
-  }
-
-  function closePanel() {
-    setActivePanel(null);
-  }
-
-  function navigate(nextSelected) {
-    const hash = serializeSelected(nextSelected);
-    history.pushState(nextSelected, "", hash ? `#${hash}` : location.pathname);
-    setSelected(nextSelected);
-  }
-
-  useEffect(() => {
-    function onPopState(event) {
-      const restored = event.state ?? deserializeSelected(location.hash);
-      if (restored) setSelected(restored);
-    }
-    window.addEventListener("popstate", onPopState);
-    return () => window.removeEventListener("popstate", onPopState);
-  }, []);
-
   useEffect(() => {
     fetch("./site-data.json")
-      .then((response) => {
-        if (!response.ok) throw new Error("Failed to load site-data.json");
-        return response.json();
+      .then((r) => {
+        if (!r.ok) throw new Error(`Failed to load site-data.json (${r.status})`);
+        return r.json();
       })
-      .then((bundle) => {
-        setData(bundle);
-        const fromHash = deserializeSelected(location.hash);
-        setSelected(fromHash);
-        if (fromHash.type === "dashboard") {
-          history.replaceState(fromHash, "", location.pathname);
-        }
-      })
-      .catch((err) => setError(err));
+      .then((raw) => setData(indexData(raw)))
+      .catch((e) => setError(String(e)));
   }, []);
 
-  const symbolsById = useMemo(() => (data ? symbolByIdMap(data.symbols) : new Map()), [data]);
-  const complexityById = useMemo(
-    () => (data ? complexityByIdMap(data.complexity.symbols) : new Map()),
-    [data],
-  );
-  const childrenByParent = useMemo(
-    () => (data ? childrenByParentMap(data.symbols) : new Map()),
-    [data],
-  );
-
-  function selectSearchResult(nextSelected) {
-    navigate(nextSelected);
-    setQuery("");
-  }
-
-  if (error) {
-    return (
-      <main className="page narrow">
-        <h1>docs-kit v2</h1>
-        <p className="error">{error.message}</p>
-      </main>
-    );
-  }
-
-  if (!data) {
-    return (
-      <main className="page narrow">
-        <h1>docs-kit v2</h1>
-        <p>Loading</p>
-      </main>
-    );
-  }
-
-  return (
-    <main className="page app-shell">
-      <header className="topbar">
-        <div>
-          <h1>docs-kit v2</h1>
-          <p>
-            {data.files.length} files · {data.symbols.length} symbols · generated{" "}
-            {new Date(data.generatedAt).toLocaleString()}
-          </p>
-        </div>
-        <div className="topbar-actions">
-          <button
-            type="button"
-            className={`topbar-home-btn${selected.type === "dashboard" ? " active" : ""}`}
-            onClick={() => navigate({ type: "dashboard" })}
-          >
-            ⌂ Dashboard
-          </button>
-          <label className="global-search">
-            <span>Search</span>
-            <input
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="path, name, symbol"
-            />
-          </label>
-          <div className="health-strip">
-            {data.diff ? <Badge tone="accent">diff preview</Badge> : null}
-            {data.diff ? (
-              <Badge
-                tone={(data.diff.docGuard?.uncoveredChanges?.length ?? 0) > 0 ? "danger" : "good"}
-              >
-                {data.diff.docGuard?.uncoveredChanges?.length ?? 0} Docs-Guard
-              </Badge>
-            ) : null}
-            <Badge tone={data.health.docs.missingDocRefCount > 0 ? "warning" : "good"}>
-              {data.health.docs.missingDocRefCount} missing docs
-            </Badge>
-            <button
-              type="button"
-              className={`badge-btn ${data.health.governance.archViolationCount > 0 ? "danger" : "good"}`}
-              onClick={() => {
-                setActivePanel(null);
-                setShowViolations((v) => !v);
-              }}
-              title="Click to toggle arch violations"
-            >
-              {data.health.governance.archViolationCount} arch violations
-            </button>
-            <button
-              type="button"
-              className={`badge-btn accent${activePanel === "patterns" ? " panel-active" : ""}`}
-              onClick={() => openPanel("patterns")}
-              title="Click to view detected patterns"
-            >
-              {data.health.governance.patternCount} patterns
-            </button>
-            <button
-              type="button"
-              className={`badge-btn ${(data.health.governance.reaperFindingCount ?? 0) > 0 ? "warning" : ""}${activePanel === "dead-code" ? " panel-active" : ""}`}
-              onClick={() => openPanel("dead-code")}
-              title="Click to view dead code findings"
-            >
-              {data.health.governance.reaperFindingCount ?? 0} dead code
-            </button>
-            {(data.health.governance.deprecatedSymbolCount ?? 0) > 0 ? (
-              <button
-                type="button"
-                className={`badge-btn danger${activePanel === "deprecated" ? " panel-active" : ""}`}
-                onClick={() => openPanel("deprecated")}
-                title="Click to view deprecated symbols"
-              >
-                {data.health.governance.deprecatedSymbolCount} deprecated
-              </button>
-            ) : null}
-          </div>
-        </div>
-      </header>
-
-      {showViolations && data.archViolations?.length > 0 ? (
-        <section className="violations-panel">
-          <div className="panel-head">
-            <h2>Arch Violations ({data.archViolations.length})</h2>
-            <button type="button" className="close-btn" onClick={() => setShowViolations(false)}>
-              ✕
-            </button>
-          </div>
-          <div className="violation-list">
-            {data.archViolations.map((v, i) => (
-              <div key={i} className={`violation-row severity-${v.severity}`}>
-                <span className="violation-severity">{v.severity}</span>
-                <span className="violation-rule">{v.rule}</span>
-                <span className="violation-msg">{v.message}</span>
-                <small className="violation-file">{v.file}</small>
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      {activePanel === "complexity" ? (
-        <ComplexityPanel
-          data={data}
-          sortBy={panelSort}
-          onSortChange={setPanelSort}
-          onClose={closePanel}
-          onSelect={(sel) => {
-            closePanel();
-            navigate(sel);
-          }}
-        />
-      ) : null}
-      {activePanel === "patterns" ? (
-        <PatternsPanel
-          data={data}
-          symbolsById={symbolsById}
-          onClose={closePanel}
-          onSelect={(sel) => {
-            closePanel();
-            navigate(sel);
-          }}
-        />
-      ) : null}
-      {activePanel === "deprecated" ? (
-        <DeprecatedPanel
-          data={data}
-          onClose={closePanel}
-          onSelect={(sel) => {
-            closePanel();
-            navigate(sel);
-          }}
-        />
-      ) : null}
-      {activePanel === "dead-code" ? (
-        <DeadCodePanel
-          data={data}
-          symbolsById={symbolsById}
-          onClose={closePanel}
-          onSelect={(sel) => {
-            closePanel();
-            navigate(sel);
-          }}
-        />
-      ) : null}
-
-      <SearchResults
-        data={data}
-        query={query}
-        complexityById={complexityById}
-        onSelect={selectSearchResult}
-      />
-      <SummaryStrip data={data} onStatClick={openPanel} />
-
-      <div className="explorer-layout">
-        <ExplorerTree
-          data={data}
-          query={query}
-          selected={selected}
-          onSelect={navigate}
-          symbolsById={symbolsById}
-          childrenByParent={childrenByParent}
-          complexityById={complexityById}
-        />
-        <section className="content-panel">
-          <DetailRouter
-            data={data}
-            selected={selected}
-            symbolsById={symbolsById}
-            childrenByParent={childrenByParent}
-            complexityById={complexityById}
-            onSelect={navigate}
-          />
-        </section>
-      </div>
-    </main>
-  );
+  if (error) return <div className="empty">⚠ {error}</div>;
+  if (!data) return <div className="empty">Loading site data…</div>;
+  return <App data={data} />;
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+createRoot(document.getElementById("root")).render(<Root />);

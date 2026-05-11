@@ -6,7 +6,7 @@ export default {
 
   // Output directories for generated content
   output: {
-    site: "docs-site", // used by `docs-kit build-site`
+    site: "docs-site-v2", // used by `docs-kit build-site`
     docs: "my-docs", // used by `docs-kit build-docs`
   },
 

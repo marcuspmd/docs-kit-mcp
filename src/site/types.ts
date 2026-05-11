@@ -1,8 +1,11 @@
 /**
- * Template types and interfaces for site generation.
+ * Shared site types (v2). Independent from the deprecated v1 templates.
  */
 
-/** Doc entry for docs index and nav (matches generator DocEntry). */
+import type { CodeSymbol } from "../indexer/symbol.types.js";
+import type { DetectedPattern } from "../patterns/patternAnalyzer.js";
+import type { ArchViolationRow, ReaperFindingRow, RelationshipRow } from "../storage/db.js";
+
 export interface DocEntry {
   path: string;
   title?: string;
@@ -19,25 +22,10 @@ export interface DocEntry {
   showOnMenu?: boolean;
 }
 
-export interface ArchViolationRow {
-  rule: string;
-  file: string;
-  symbol_id: string | null;
-  message: string;
-  severity: string;
-}
-
-export interface ReaperFindingRow {
-  type: string;
-  target: string;
-  reason: string;
-  suggested_action: string;
-}
-
 export interface SiteData {
-  symbols: import("../../indexer/symbol.types.js").CodeSymbol[];
-  relationships: import("../../storage/db.js").RelationshipRow[];
-  patterns: import("../../patterns/patternAnalyzer.js").DetectedPattern[];
+  symbols: CodeSymbol[];
+  relationships: RelationshipRow[];
+  patterns: DetectedPattern[];
   files: string[];
   archViolations?: ArchViolationRow[];
   reaperFindings?: ReaperFindingRow[];

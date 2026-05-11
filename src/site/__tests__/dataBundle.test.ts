@@ -16,7 +16,7 @@ function makeSymbol(
 }
 
 describe("createSiteDataBundle", () => {
-  it("builds complexity, search, and health summaries for the v2 site", () => {
+  it("builds complexity, search, and health summaries for the v2 site", async () => {
     const documentedSymbol = makeSymbol({
       id: "class:OrderService",
       name: "OrderService",
@@ -100,7 +100,7 @@ describe("createSiteDataBundle", () => {
       "export function validateOrder() {\n  return true;\n}\n",
     );
 
-    const bundle = createSiteDataBundle(data, "2026-01-01T00:00:00.000Z", rootDir);
+    const bundle = await createSiteDataBundle(data, "2026-01-01T00:00:00.000Z", rootDir);
 
     expect(bundle.schemaVersion).toBe(SITE_DATA_BUNDLE_SCHEMA_VERSION);
     expect(bundle.generatedAt).toBe("2026-01-01T00:00:00.000Z");

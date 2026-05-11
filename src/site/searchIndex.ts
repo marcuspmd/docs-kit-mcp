@@ -1,22 +1,45 @@
 /**
- * Search index builder for the site.
+ * Search index builder for the site (standalone, no v1 template deps).
  */
 
-import type { CodeSymbol } from "../../../indexer/symbol.types.js";
-import { formatDate } from "../utils.js";
-import { badgeClass } from "../badges.js";
+import type { CodeSymbol } from "../indexer/symbol.types.js";
+
+function formatDate(d?: Date): string | undefined {
+  if (!d) return undefined;
+  try {
+    return d.toISOString();
+  } catch {
+    return String(d);
+  }
+}
 
 /**
- * Build search index data for client-side search (Fuse.js).
+ * Lightweight badge-class hint used by the client to color symbol chips.
+ * The v2 site renders its own badges, so this is purely informational.
  */
-export function buildSearchIndex(symbols: CodeSymbol[]): {
+function badgeClass(kind: string): string {
+  const map: Record<string, string> = {
+    class: "kind-class",
+    abstract_class: "kind-class",
+    interface: "kind-interface",
+    function: "kind-function",
+    method: "kind-method",
+    enum: "kind-enum",
+    type: "kind-type",
+  };
+  return map[kind] ?? "kind-other";
+}
+
+export interface SearchIndex {
   items: object[];
   facets: {
     kinds: Record<string, number>;
     tags: Record<string, number>;
     files: Record<string, number>;
   };
-} {
+}
+
+export function buildSearchIndex(symbols: CodeSymbol[]): SearchIndex {
   const items = symbols.map((s) => ({
     id: s.id,
     name: s.name,

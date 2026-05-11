@@ -5,7 +5,15 @@
 
 import type { CodeSymbol } from "../indexer/symbol.types.js";
 import type { RelationshipRow } from "../storage/db.js";
-import { mermaidDiagramWrap } from "./templates/mermaid.js";
+
+/**
+ * Wrap a Mermaid diagram source in a fenced code block that renders inside
+ * Markdown viewers and the React v2 site.
+ */
+function mermaidDiagramWrap(source: string): string {
+  if (!source.trim()) return "";
+  return "```mermaid\n" + source + "\n```";
+}
 
 interface DiagramView {
   id: string;

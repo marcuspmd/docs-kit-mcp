@@ -67,7 +67,7 @@ export async function openSiteUseCase(input: OpenSiteUseCaseInput = {}): Promise
   const rootDir = input.rootDir ?? ".";
 
   console.log("  Generating docs-kit site v2…");
-  await buildSiteUseCase({ version: "v2", outDir, dbPath, rootDir });
+  await buildSiteUseCase({ outDir, dbPath, rootDir });
 
   await serveStatic(outDir, port);
 
