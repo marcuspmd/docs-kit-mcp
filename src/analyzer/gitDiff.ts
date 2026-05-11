@@ -18,6 +18,15 @@ export interface FileDiff {
   hunks: DiffHunk[];
 }
 
+export type GitDiffRange = "direct" | "merge-base";
+
+export interface GitDiffOptions {
+  repoPath: string;
+  base: string;
+  head?: string;
+  range?: GitDiffRange;
+}
+
 const DIFF_HEADER = /^diff --git a\/(.+) b\/(.+)$/;
 const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 const BINARY_MARKER = /^Binary files/;
@@ -69,11 +78,7 @@ function parseHunks(lines: string[], startIdx: number): { hunks: DiffHunk[]; nex
     i++;
 
     const contentLines: string[] = [];
-    while (
-      i < lines.length &&
-      !lines[i].startsWith("diff --git") &&
-      !HUNK_HEADER.test(lines[i])
-    ) {
+    while (i < lines.length && !lines[i].startsWith("diff --git") && !HUNK_HEADER.test(lines[i])) {
       contentLines.push(lines[i]);
       i++;
     }
@@ -120,13 +125,25 @@ export function parseGitDiff(rawDiff: string): FileDiff[] {
   return files;
 }
 
-export async function getGitDiff(options: {
-  repoPath: string;
-  base: string;
-  head?: string;
-}): Promise<FileDiff[]> {
-  const args = ["diff", "--unified=3", options.base];
-  if (options.head) args.push(options.head);
+function buildDiffRange(options: GitDiffOptions): string[] {
+  const range = options.range ?? "direct";
+  if (range === "merge-base") {
+    const head = options.head ?? "HEAD";
+    return [`${options.base}...${head}`];
+  }
+
+  return options.head ? [options.base, options.head] : [options.base];
+}
+
+export function buildGitDiffArgs(
+  options: GitDiffOptions,
+  mode: "patch" | "name-only" = "patch",
+): string[] {
+  return ["diff", mode === "patch" ? "--unified=3" : "--name-only", ...buildDiffRange(options)];
+}
+
+export async function getGitDiff(options: GitDiffOptions): Promise<FileDiff[]> {
+  const args = buildGitDiffArgs(options);
 
   const { stdout } = await execFileAsync("git", args, {
     cwd: options.repoPath,
@@ -134,4 +151,24 @@ export async function getGitDiff(options: {
   });
 
   return parseGitDiff(stdout);
+}
+
+export async function getGitChangedFiles(options: GitDiffOptions): Promise<string[]> {
+  const args = buildGitDiffArgs(options, "name-only");
+  const { stdout } = await execFileAsync("git", args, {
+    cwd: options.repoPath,
+    maxBuffer: 10 * 1024 * 1024,
+  });
+
+  return stdout.trim().split("\n").filter(Boolean);
+}
+
+export async function getGitMergeBase(options: GitDiffOptions): Promise<string> {
+  const head = options.head ?? "HEAD";
+  const { stdout } = await execFileAsync("git", ["merge-base", options.base, head], {
+    cwd: options.repoPath,
+    maxBuffer: 1024 * 1024,
+  });
+
+  return stdout.trim();
 }

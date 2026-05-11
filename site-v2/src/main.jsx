@@ -1318,6 +1318,135 @@ function HealthDonut({ score, size = 140 }) {
   );
 }
 
+function DiffPreviewSection({ data, onSelect }) {
+  const diff = data.diff;
+  if (!diff) return null;
+
+  const symbolsById = symbolByIdMap(data.symbols);
+  const docUpdates = (diff.docUpdates ?? []).filter((update) => update.action !== "skipped");
+  const violations = diff.docGuard?.uncoveredChanges ?? [];
+  const docsGuardTone = violations.length > 0 ? "danger" : "good";
+
+  return (
+    <section className="dashboard-section diff-preview-section">
+      <div className="diff-preview-head">
+        <div>
+          <div className="crumbs">diff preview</div>
+          <h3>
+            {diff.base}...{diff.head}
+          </h3>
+        </div>
+        <Badge tone={docsGuardTone}>{violations.length} Docs-Guard violations</Badge>
+      </div>
+
+      <div className="diff-stat-grid">
+        <Stat label="Changed Files" value={metric(diff.changedFiles?.length ?? 0)} />
+        <Stat label="Impacts" value={metric(diff.impacts?.length ?? 0)} />
+        <Stat label="Doc Updates" value={metric(docUpdates.length)} />
+        <Stat
+          label="Covered"
+          value={`${metric(diff.docGuard?.coveredChanges ?? 0)}/${metric(diff.docGuard?.totalChanges ?? 0)}`}
+          tone={docsGuardTone}
+        />
+      </div>
+
+      <div className="diff-preview-grid">
+        <section className="diff-list-panel">
+          <div className="section-head">
+            <h3>Changed Files</h3>
+            <span>{diff.changedFiles.length}</span>
+          </div>
+          <div className="diff-list">
+            {diff.changedFiles.length === 0 ? <p>No files changed</p> : null}
+            {diff.changedFiles.slice(0, 40).map((file) => (
+              <button
+                key={file}
+                type="button"
+                onClick={() => onSelect({ type: "file", path: file })}
+              >
+                <strong>{file.split("/").pop()}</strong>
+                <small>{file}</small>
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="diff-list-panel">
+          <div className="section-head">
+            <h3>Impacted Symbols</h3>
+            <span>{diff.impacts.length}</span>
+          </div>
+          <div className="diff-list">
+            {diff.impacts.length === 0 ? <p>No semantic symbol impacts</p> : null}
+            {diff.impacts.slice(0, 40).map((impact) => {
+              const symbol = symbolsById.get(impact.symbolId);
+              return (
+                <button
+                  key={`${impact.symbolId}:${impact.changeType}`}
+                  type="button"
+                  onClick={() => onSelect({ type: "symbol", id: impact.symbolId })}
+                >
+                  <strong>
+                    {symbol?.qualifiedName || impact.qualifiedName || impact.symbolName}
+                  </strong>
+                  <small>
+                    {impact.changeType} · {impact.kind} · {impact.file}
+                  </small>
+                  {impact.docUpdateRequired ? <Badge tone="warning">docs</Badge> : null}
+                </button>
+              );
+            })}
+          </div>
+        </section>
+      </div>
+
+      {violations.length > 0 ? (
+        <section className="diff-list-panel diff-wide-panel">
+          <div className="section-head">
+            <h3>Docs-Guard</h3>
+            <span>{violations.length}</span>
+          </div>
+          <div className="diff-violation-list">
+            {violations.map((violation, index) => (
+              <button
+                key={`${violation.symbolName}:${index}`}
+                type="button"
+                onClick={() => onSelect({ type: "file", path: violation.file })}
+              >
+                <strong>{violation.symbolName}</strong>
+                <span>{violation.reason}</span>
+                <small>{violation.docPath || violation.file}</small>
+              </button>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      {docUpdates.length > 0 ? (
+        <section className="diff-list-panel diff-wide-panel">
+          <div className="section-head">
+            <h3>Suggested Doc Updates</h3>
+            <span>{docUpdates.length}</span>
+          </div>
+          <div className="diff-update-list">
+            {docUpdates.slice(0, 12).map((update, index) => (
+              <details key={`${update.symbolName}:${update.docPath}:${index}`}>
+                <summary>
+                  <strong>{update.symbolName}</strong>
+                  <span>
+                    {update.action} · {update.docPath}
+                  </span>
+                </summary>
+                <pre>{update.diff || "No textual diff"}</pre>
+              </details>
+            ))}
+          </div>
+        </section>
+      ) : null}
+    </section>
+  );
+}
+
 function ProgressBar({ value, tone }) {
   const clamp = Math.max(0, Math.min(100, value ?? 0));
   return (
@@ -1382,6 +1511,8 @@ function Dashboard({ data, symbolsById, onSelect }) {
           </Badge>
         </div>
       </header>
+
+      <DiffPreviewSection data={data} onSelect={onSelect} />
 
       {/* Health Hero */}
       <section className="dashboard-section">
@@ -2015,6 +2146,14 @@ function App() {
             />
           </label>
           <div className="health-strip">
+            {data.diff ? <Badge tone="accent">diff preview</Badge> : null}
+            {data.diff ? (
+              <Badge
+                tone={(data.diff.docGuard?.uncoveredChanges?.length ?? 0) > 0 ? "danger" : "good"}
+              >
+                {data.diff.docGuard?.uncoveredChanges?.length ?? 0} Docs-Guard
+              </Badge>
+            ) : null}
             <Badge tone={data.health.docs.missingDocRefCount > 0 ? "warning" : "good"}>
               {data.health.docs.missingDocRefCount} missing docs
             </Badge>

@@ -1352,6 +1352,144 @@ button.stat.stat-clickable .stat-value.good {
   border-bottom: none;
 }
 
+.diff-preview-section {
+  padding: 16px 18px 18px;
+  background: #fbfcfe;
+}
+
+.diff-preview-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 14px;
+  margin-bottom: 12px;
+}
+
+.diff-preview-head h3 {
+  color: #172033;
+  font-size: 18px;
+}
+
+.diff-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 12px;
+}
+
+.diff-preview-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.diff-list-panel {
+  min-width: 0;
+  border: 1px solid #dfe6ef;
+  border-radius: 8px;
+  background: #ffffff;
+  overflow: hidden;
+}
+
+.diff-wide-panel {
+  margin-top: 12px;
+}
+
+.diff-list,
+.diff-violation-list,
+.diff-update-list {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.diff-list p {
+  margin: 0;
+  padding: 12px 14px;
+}
+
+.diff-list button,
+.diff-violation-list button {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 3px 12px;
+  width: 100%;
+  min-width: 0;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid #edf1f6;
+  background: #ffffff;
+  color: inherit;
+  text-align: left;
+}
+
+.diff-list button:hover,
+.diff-violation-list button:hover {
+  background: #f6f9ff;
+}
+
+.diff-list strong,
+.diff-list small,
+.diff-violation-list strong,
+.diff-violation-list span,
+.diff-violation-list small {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-list small,
+.diff-violation-list small,
+.diff-violation-list span {
+  color: #65758b;
+}
+
+.diff-list .badge {
+  grid-column: 2;
+  grid-row: 1 / span 2;
+  align-self: center;
+}
+
+.diff-update-list details {
+  border-bottom: 1px solid #edf1f6;
+}
+
+.diff-update-list details:last-child {
+  border-bottom: 0;
+}
+
+.diff-update-list summary {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 2fr);
+  gap: 12px;
+  padding: 10px 12px;
+  cursor: pointer;
+}
+
+.diff-update-list summary strong,
+.diff-update-list summary span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.diff-update-list summary span {
+  color: #65758b;
+  font-size: 12px;
+}
+
+.diff-update-list pre {
+  max-height: 260px;
+  margin: 0;
+  padding: 12px;
+  overflow: auto;
+  border-top: 1px solid #edf1f6;
+  background: #f8fafc;
+  color: #243247;
+  font-size: 12px;
+  line-height: 1.45;
+}
+
 /* Health hero */
 .health-hero-grid {
   display: grid;
@@ -1681,6 +1819,10 @@ button.stat.stat-clickable .stat-value.good {
 
 /* Dashboard responsive */
 @media (max-width: 900px) {
+  .diff-preview-grid,
+  .diff-stat-grid {
+    grid-template-columns: 1fr;
+  }
   .health-hero-grid {
     grid-template-columns: 1fr;
     justify-items: center;
@@ -1694,6 +1836,13 @@ button.stat.stat-clickable .stat-value.good {
   }
 }
 @media (max-width: 600px) {
+  .diff-preview-head,
+  .diff-update-list summary {
+    grid-template-columns: 1fr;
+  }
+  .diff-preview-head {
+    display: grid;
+  }
   .hotspot-row {
     grid-template-columns: 14px minmax(0, 1fr) 56px;
   }

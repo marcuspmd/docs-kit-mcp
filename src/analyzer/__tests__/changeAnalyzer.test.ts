@@ -232,6 +232,51 @@ describe("analyzeChanges", () => {
     expect(impacts).toHaveLength(1);
     expect(impacts[0].changeType).toBe("moved");
   });
+
+  it("reads old source from merge-base when using merge-base range", async () => {
+    const oldSym = sym({
+      name: "Changed",
+      kind: "function",
+      startLine: 1,
+      endLine: 5,
+      file: "src/changed.ts",
+      signature: "Changed()",
+    });
+    const newSym = sym({
+      name: "Changed",
+      kind: "function",
+      startLine: 1,
+      endLine: 5,
+      file: "src/changed.ts",
+      signature: "Changed(input: string)",
+    });
+    const refs: string[] = [];
+    let indexCall = 0;
+    const deps: AnalyzeDeps = {
+      getFileDiffs: async () => [
+        {
+          oldPath: "src/changed.ts",
+          newPath: "src/changed.ts",
+          status: "modified",
+          hunks: [{ oldStart: 1, oldLines: 5, newStart: 1, newLines: 5, content: "+input" }],
+        },
+      ],
+      getFileAtRef: async (_repo, _filePath, ref) => {
+        refs.push(ref);
+        return "source";
+      },
+      indexSource: () => (++indexCall === 1 ? [oldSym] : [newSym]),
+      getMergeBase: async () => "abc123",
+    };
+
+    const impacts = await analyzeChanges(
+      { repoPath: ".", base: "main", head: "feature", range: "merge-base" },
+      deps,
+    );
+
+    expect(refs).toEqual(["abc123", "feature"]);
+    expect(impacts[0].changeType).toBe("signature_changed");
+  });
 });
 
 describe("extractRelevantDiff", () => {

@@ -8,6 +8,7 @@ import { buildSearchIndex } from "./templates.js";
 import type { DocEntry } from "./templates/types.js";
 import { buildComplexityModel, type ComplexityModel } from "./complexityAggregates.js";
 import { loadSiteData, type LoadedSiteData } from "./dataLoader.js";
+import type { DiffSiteMetadata } from "./diffData.js";
 
 export const SITE_DATA_BUNDLE_SCHEMA_VERSION = 2;
 
@@ -49,6 +50,7 @@ export interface SourceFileContext {
 export interface SiteDataBundle {
   schemaVersion: number;
   generatedAt: string;
+  diff?: DiffSiteMetadata;
   symbols: CodeSymbol[];
   relationships: RelationshipRow[];
   patterns: DetectedPattern[];
@@ -189,12 +191,14 @@ export function createSiteDataBundle(
   data: LoadedSiteData,
   generatedAt = new Date().toISOString(),
   rootDir?: string,
+  options?: { diff?: DiffSiteMetadata },
 ): SiteDataBundle {
   const complexity = buildComplexityModel(data.symbols, data.files);
 
   return {
     schemaVersion: SITE_DATA_BUNDLE_SCHEMA_VERSION,
     generatedAt,
+    diff: options?.diff,
     symbols: data.symbols,
     relationships: data.relationships,
     patterns: data.patterns,

@@ -18,6 +18,13 @@ BUILD
   docs-kit build-docs  [--out dir] [--db path] Generate structured Markdown docs
                        [--root dir]
 
+DIFF PREVIEW
+  docs-kit diff <base> [--head ref]          Generate a v2 preview site scoped to
+                       [--out docs-site-diff] the PR-style git diff base...HEAD
+                       [--db path] [--docs dir]
+                       [--strict]            Run Docs-Guard and suggested docs
+                                             updates without writing docs files
+
 ANALYZE
   docs-kit explain-symbol <symbol>             Explain a symbol (code + docs + LLM)
                        [--docs dir] [--db path]

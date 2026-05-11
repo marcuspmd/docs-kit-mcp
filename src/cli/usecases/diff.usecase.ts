@@ -1,0 +1,146 @@
+import "reflect-metadata";
+import fs from "node:fs";
+import path from "node:path";
+import type Database from "better-sqlite3";
+import { analyzeChanges } from "../../analyzer/changeAnalyzer.js";
+import { getGitChangedFiles } from "../../analyzer/gitDiff.js";
+import { loadConfig } from "../../configLoader.js";
+import type { DocRegistry } from "../../docs/docRegistry.js";
+import { createDocUpdater } from "../../docs/docUpdater.js";
+import { setupContainer, resolve } from "../../di/container.js";
+import { DATABASE_TOKEN, DOC_REGISTRY_TOKEN } from "../../di/tokens.js";
+import { evaluateDocGuard, formatResult } from "../../governance/docGuardCli.js";
+import { buildDiffSiteMetadata, filterSiteDataForDiff } from "../../site/diffData.js";
+import { loadSiteData } from "../../site/dataLoader.js";
+import { generateSiteV2 } from "../../site/v2Generator.js";
+import { done, header, step, summary } from "../utils/index.js";
+import { resolveConfigPath } from "../utils/index.js";
+
+export interface DiffUseCaseParams {
+  base: string;
+  head?: string;
+  outDir?: string;
+  dbPath?: string;
+  docsDir?: string;
+  rootDir?: string;
+  strict?: boolean;
+}
+
+export async function diffUseCase(params: DiffUseCaseParams): Promise<void> {
+  const configDir = process.cwd();
+  const config = await loadConfig(configDir);
+  const base = params.base;
+  const head = params.head || undefined;
+  const outDir = params.outDir ?? "docs-site-diff";
+  const dbPath = resolveConfigPath(params.dbPath, configDir, config.dbPath);
+  const docsDir = params.docsDir ?? "docs";
+  const rootDir = params.rootDir ? path.resolve(configDir, params.rootDir) : config.projectRoot;
+  const range = "merge-base" as const;
+
+  if (!fs.existsSync(dbPath)) {
+    console.error(`Error: Database not found at ${dbPath}`);
+    console.error(`Run "docs-kit index" first to create the index.`);
+    process.exit(1);
+    return;
+  }
+
+  await setupContainer({ dbPath });
+
+  header(`Generating diff preview: ${base}...${head ?? "HEAD"}`);
+
+  step("Reading index from SQLite");
+  const db = resolve<Database.Database>(DATABASE_TOKEN);
+  const registry = resolve<DocRegistry>(DOC_REGISTRY_TOKEN);
+  done(dbPath);
+
+  let strictFailure = false;
+
+  try {
+    step("Rebuilding doc registry");
+    await registry.rebuild(docsDir);
+    done(docsDir);
+
+    step("Collecting changed files");
+    const changedFiles = await getGitChangedFiles({
+      repoPath: config.projectRoot,
+      base,
+      head,
+      range,
+    });
+    done(`${changedFiles.length} file(s)`);
+
+    step("Analyzing semantic changes");
+    const impacts = await analyzeChanges({
+      repoPath: config.projectRoot,
+      base,
+      head,
+      range,
+    });
+    done(`${impacts.length} impact(s)`);
+
+    step("Generating documentation preview");
+    const updater = createDocUpdater({ dryRun: true });
+    const docUpdates = await updater.applyChanges(impacts, registry, docsDir, config);
+    done(`${docUpdates.filter((update) => update.action !== "skipped").length} update(s)`);
+
+    step("Evaluating Docs-Guard");
+    const docGuard = await evaluateDocGuard({
+      impacts,
+      changedFiles,
+      registry,
+      strict: true,
+    });
+    done(docGuard.passed ? "passed" : `${docGuard.uncoveredChanges.length} violation(s)`);
+
+    step("Building diff-scoped site data");
+    const fullData = loadSiteData(db, rootDir);
+    const filteredData = filterSiteDataForDiff(fullData, {
+      impacts,
+      changedFiles,
+      docUpdates,
+    });
+    const diff = buildDiffSiteMetadata({
+      base,
+      head,
+      range,
+      changedFiles,
+      impacts,
+      docUpdates,
+      docGuard,
+    });
+    done(`${filteredData.symbols.length} symbol(s)`);
+
+    step("Generating React v2 diff site");
+    const result = await generateSiteV2({
+      db,
+      data: filteredData,
+      diff,
+      outDir,
+      rootDir,
+    });
+    done();
+
+    header("Diff Preview Summary");
+    summary([
+      ["Range", `${base}...${head ?? "HEAD"}`],
+      ["Changed files", changedFiles.length],
+      ["Impacted symbols", impacts.length],
+      ["Doc updates", docUpdates.filter((update) => update.action !== "skipped").length],
+      ["Docs-Guard", docGuard.passed ? "passed" : "failed"],
+      ["Violations", docGuard.uncoveredChanges.length],
+      ["Output", path.resolve(outDir)],
+      ["Data", result.dataFile],
+    ]);
+
+    console.log(`\n${formatResult(docGuard)}`);
+    console.log(`\n  Open ${outDir}/index.html in your browser.\n`);
+
+    strictFailure = Boolean(params.strict && !docGuard.passed);
+  } finally {
+    db.close();
+  }
+
+  if (strictFailure) {
+    process.exit(1);
+  }
+}

@@ -4,7 +4,13 @@ import Parser from "tree-sitter";
 import TypeScript from "tree-sitter-typescript";
 import type { ChangeImpact, CodeSymbol } from "../indexer/symbol.types.js";
 import { indexFile } from "../indexer/indexer.js";
-import { getGitDiff, type FileDiff, type DiffHunk } from "./gitDiff.js";
+import {
+  getGitDiff,
+  getGitMergeBase,
+  type FileDiff,
+  type DiffHunk,
+  type GitDiffRange,
+} from "./gitDiff.js";
 import { diffSymbols, type AstChange } from "./astDiff.js";
 
 const execFileAsync = promisify(execFile);
@@ -13,12 +19,14 @@ export interface AnalyzeOptions {
   repoPath: string;
   base: string;
   head?: string;
+  range?: GitDiffRange;
 }
 
 export interface AnalyzeDeps {
   getFileDiffs: (options: AnalyzeOptions) => Promise<FileDiff[]>;
   getFileAtRef: (repoPath: string, filePath: string, ref: string) => Promise<string | null>;
   indexSource: (filePath: string, source: string) => CodeSymbol[];
+  getMergeBase?: (options: AnalyzeOptions) => Promise<string>;
 }
 
 export function isSymbolImpacted(symbol: CodeSymbol, hunks: DiffHunk[]): boolean {
@@ -69,22 +77,30 @@ export function createDefaultDeps(): AnalyzeDeps {
     getFileDiffs: getGitDiff,
     getFileAtRef: defaultGetFileAtRef,
     indexSource: defaultIndexSource(),
+    getMergeBase: getGitMergeBase,
   };
+}
+
+async function resolveBaseRef(options: AnalyzeOptions, deps: AnalyzeDeps): Promise<string> {
+  if ((options.range ?? "direct") !== "merge-base") return options.base;
+  return deps.getMergeBase ? deps.getMergeBase(options) : options.base;
 }
 
 export async function analyzeChanges(
   options: AnalyzeOptions,
   deps?: AnalyzeDeps,
 ): Promise<ChangeImpact[]> {
-  const { getFileDiffs, getFileAtRef, indexSource } = deps ?? createDefaultDeps();
+  const actualDeps = deps ?? createDefaultDeps();
+  const { getFileDiffs, getFileAtRef, indexSource } = actualDeps;
   const diffs = await getFileDiffs(options);
   const impacts: ChangeImpact[] = [];
   const head = options.head ?? "HEAD";
+  const baseRef = await resolveBaseRef(options, actualDeps);
 
   for (const fileDiff of diffs) {
     const oldSource =
       fileDiff.status !== "added"
-        ? await getFileAtRef(options.repoPath, fileDiff.oldPath, options.base)
+        ? await getFileAtRef(options.repoPath, fileDiff.oldPath, baseRef)
         : null;
     const newSource =
       fileDiff.status !== "deleted"

@@ -11,6 +11,7 @@ import {
   indexUseCase,
   buildSiteUseCase,
   buildDocsUseCase,
+  diffUseCase,
   impactAnalysisUseCase,
   analyzePatternsUseCase,
   explainSymbolUseCase,
@@ -68,6 +69,34 @@ async function runBuildDocs(args: string[]) {
     outDir: flags.out,
     dbPath: flags.db,
     rootDir: flags.root,
+  });
+}
+
+async function runDiff(args: string[]) {
+  const { positional, flags } = parseArgs(args, {
+    head: "",
+    out: "docs-site-diff",
+    db: ".docs-kit/index.db",
+    docs: "docs",
+    root: "",
+  });
+
+  const base = positional[0];
+  if (!base) {
+    console.error(
+      "Usage: docs-kit diff <base> [--head ref] [--out dir] [--db path] [--docs dir] [--strict]",
+    );
+    process.exit(1);
+  }
+
+  await diffUseCase({
+    base,
+    head: flags.head || undefined,
+    outDir: flags.out,
+    dbPath: flags.db,
+    docsDir: flags.docs,
+    rootDir: flags.root || undefined,
+    strict: flags.strict === "true" || flags.ci === "true",
   });
 }
 
@@ -196,6 +225,9 @@ async function main() {
         break;
       case "build-docs":
         await runBuildDocs(args.slice(1));
+        break;
+      case "diff":
+        await runDiff(args.slice(1));
         break;
       case "impact-analysis":
         await runImpactAnalysis(args.slice(1));

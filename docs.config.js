@@ -33,6 +33,7 @@ export default {
     "**/coverage/**",
     "**/docs-site/**",
     "**/docs-site-v2/**",
+    "**/docs-site-diff/**",
     "**/docs-output/**",
     "**/*.min.js",
     "**/*.bundle.js",

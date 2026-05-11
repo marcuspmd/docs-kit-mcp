@@ -3,11 +3,14 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import Database from "better-sqlite3";
 import { createSiteDataBundle } from "./dataBundle.js";
-import { loadSiteData } from "./dataLoader.js";
+import { loadSiteData, type LoadedSiteData } from "./dataLoader.js";
+import type { DiffSiteMetadata } from "./diffData.js";
 
 export interface GenerateSiteV2Options {
   dbPath?: string;
   db?: Database.Database;
+  data?: LoadedSiteData;
+  diff?: DiffSiteMetadata;
   outDir: string;
   rootDir?: string;
   generatedAt?: string;
@@ -67,11 +70,15 @@ export async function generateSiteV2(
   options: GenerateSiteV2Options,
 ): Promise<GenerateSiteV2Result> {
   const ownsDb = !options.db;
-  const db = options.db ?? new Database(options.dbPath!, { readonly: true });
+  const db = options.data
+    ? undefined
+    : (options.db ?? new Database(options.dbPath!, { readonly: true }));
 
   try {
-    const data = loadSiteData(db, options.rootDir);
-    const bundle = createSiteDataBundle(data, options.generatedAt, options.rootDir);
+    const data = options.data ?? loadSiteData(db!, options.rootDir);
+    const bundle = createSiteDataBundle(data, options.generatedAt, options.rootDir, {
+      diff: options.diff,
+    });
 
     await buildReactApp(options.outDir);
 
@@ -87,6 +94,6 @@ export async function generateSiteV2(
       dataFile,
     };
   } finally {
-    if (ownsDb) db.close();
+    if (ownsDb) db?.close();
   }
 }

@@ -58,6 +58,7 @@ export default {
     "**/coverage/**",
     "**/docs-site/**",
     "**/docs-site-v2/**",
+    "**/docs-site-diff/**",
     "**/docs-output/**",
     "**/__tests__/**",
     "**/*.min.js",

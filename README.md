@@ -117,6 +117,14 @@ Após `npm run build`, use `docs-kit` (se instalado/linkado) ou `node dist/cli.j
 | `docs-kit build-site` | `--out`, `--db`, `--root` | Gera site HTML estático com dashboard, símbolo pages, inspector |
 | `docs-kit build-docs` | `--out`, `--db`, `--root` | Gera documentação estruturada em Markdown                       |
 
+### DIFF PREVIEW
+
+| Comando                | Opções                                          | Descrição                                                            |
+| ---------------------- | ----------------------------------------------- | -------------------------------------------------------------------- |
+| `docs-kit diff <base>` | `--head`, `--out`, `--db`, `--docs`, `--strict` | Gera site v2 em `docs-site-diff/` para o diff PR-style `base...HEAD` |
+
+`docs-kit diff master` roda em modo preview: analisa os símbolos impactados pelo Git diff, calcula sugestões dry-run de documentação, avalia Docs-Guard e grava um site filtrado em `docs-site-diff/`. O comando não altera arquivos `.md`; use `--strict` em CI para retornar exit code 1 quando houver violações de Docs-Guard.
+
 ### ANALYZE
 
 | Comando                             | Opções                                | Descrição                                |

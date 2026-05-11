@@ -1,11 +1,13 @@
 import type { ChangeImpact } from "../indexer/symbol.types.js";
 import type { DocRegistry } from "../docs/docRegistry.js";
 import type { AnalyzeDeps } from "../analyzer/changeAnalyzer.js";
+import type { GitDiffRange } from "../analyzer/gitDiff.js";
 
 export interface DocGuardOptions {
   repoPath: string;
   base: string;
   head?: string;
+  range?: GitDiffRange;
   strict?: boolean;
 }
 
@@ -26,33 +28,29 @@ export interface DocGuardViolation {
 
 export interface DocGuardDeps {
   analyzeChanges: (
-    options: { repoPath: string; base: string; head?: string },
+    options: { repoPath: string; base: string; head?: string; range?: GitDiffRange },
     deps?: AnalyzeDeps,
   ) => Promise<ChangeImpact[]>;
   registry: DocRegistry;
   getChangedFiles: (options: DocGuardOptions) => Promise<string[]>;
 }
 
-export async function runDocGuard(
-  options: DocGuardOptions,
-  deps: DocGuardDeps,
-): Promise<DocGuardResult> {
+export interface EvaluateDocGuardOptions {
+  impacts: ChangeImpact[];
+  changedFiles: string[];
+  registry: DocRegistry;
+  strict?: boolean;
+}
+
+export async function evaluateDocGuard(options: EvaluateDocGuardOptions): Promise<DocGuardResult> {
   const strict = options.strict ?? true;
-
-  const impacts = await deps.analyzeChanges({
-    repoPath: options.repoPath,
-    base: options.base,
-    head: options.head,
-  });
-
-  const requiring = impacts.filter((i) => i.docUpdateRequired);
-  const changedFiles = await deps.getChangedFiles(options);
-  const changedDocs = changedFiles.filter((f) => f.endsWith(".md"));
+  const requiring = options.impacts.filter((i) => i.docUpdateRequired);
+  const changedDocs = options.changedFiles.filter((f) => f.endsWith(".md"));
 
   const violations: DocGuardViolation[] = [];
 
   for (const impact of requiring) {
-    const mappings = await deps.registry.findDocBySymbol(impact.symbol.name);
+    const mappings = await options.registry.findDocBySymbol(impact.symbol.name);
     const docTouched = mappings.some((m) => changedDocs.includes(m.docPath));
 
     if (!docTouched) {
@@ -77,6 +75,25 @@ export async function runDocGuard(
     coveredChanges: requiring.length - violations.length,
     uncoveredChanges: violations,
   };
+}
+
+export async function runDocGuard(
+  options: DocGuardOptions,
+  deps: DocGuardDeps,
+): Promise<DocGuardResult> {
+  const impacts = await deps.analyzeChanges({
+    repoPath: options.repoPath,
+    base: options.base,
+    head: options.head,
+    range: options.range,
+  });
+  const changedFiles = await deps.getChangedFiles(options);
+  return evaluateDocGuard({
+    impacts,
+    changedFiles,
+    registry: deps.registry,
+    strict: options.strict,
+  });
 }
 
 export function formatResult(result: DocGuardResult): string {

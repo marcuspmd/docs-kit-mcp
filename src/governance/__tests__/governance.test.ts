@@ -1,5 +1,6 @@
 import {
   runDocGuard,
+  evaluateDocGuard,
   formatResult,
   type DocGuardDeps,
   type DocGuardOptions,
@@ -48,6 +49,20 @@ function makeDeps(
 const baseOpts: DocGuardOptions = { repoPath: "/repo", base: "main" };
 
 describe("runDocGuard", () => {
+  test("evaluates precomputed impacts and changed files", async () => {
+    const result = await evaluateDocGuard({
+      impacts: [impact("createOrder", "signature_changed")],
+      changedFiles: ["src/order.ts"],
+      registry: mockRegistry({
+        createOrder: [{ symbolName: "createOrder", docPath: "docs/domain/orders.md" }],
+      }),
+    });
+
+    expect(result.passed).toBe(false);
+    expect(result.totalChanges).toBe(1);
+    expect(result.uncoveredChanges[0].symbolName).toBe("createOrder");
+  });
+
   test("passes when all impacted symbols have updated docs", async () => {
     const deps = makeDeps(
       [impact("createOrder", "signature_changed")],

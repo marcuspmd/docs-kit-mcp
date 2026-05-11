@@ -427,7 +427,12 @@ export function indexFile(filePath: string, source: string, parser: Parser): Cod
   } catch {
     return [];
   }
-  const tree = parser.parse(source);
+  let tree: Parser.Tree | null;
+  try {
+    tree = parser.parse(source);
+  } catch {
+    return [];
+  }
   if (!tree) return [];
   const strategy = getStrategy(detectLanguage(filePath));
   const namespace = strategy.extractNamespace(tree.rootNode);

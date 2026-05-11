@@ -8,6 +8,7 @@ dist
 /dist/
 docs-site/
 docs-site-v2/
+docs-site-diff/
 docs-output/
 docs-site/
 coverage/
