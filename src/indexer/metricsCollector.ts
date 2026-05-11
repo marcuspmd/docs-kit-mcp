@@ -9,6 +9,7 @@ const CYCLOMATIC_BRANCH_NODE_TYPES = new Set([
   "switch_case",
   "for_statement",
   "for_in_statement",
+  "foreach_statement",
   "while_statement",
   "do_statement",
   "catch_clause",
@@ -21,6 +22,7 @@ const COGNITIVE_FLOW_NODE_TYPES = new Set([
   "switch_statement",
   "for_statement",
   "for_in_statement",
+  "foreach_statement",
   "while_statement",
   "do_statement",
   "catch_clause",
@@ -32,13 +34,14 @@ const NESTING_NODE_TYPES = new Set([
   "switch_statement",
   "for_statement",
   "for_in_statement",
+  "foreach_statement",
   "while_statement",
   "do_statement",
   "catch_clause",
   "ternary_expression",
 ]);
 
-const LOGICAL_OPERATORS = new Set(["&&", "||", "??"]);
+const LOGICAL_OPERATORS = new Set(["&&", "||"]);
 
 function getLogicalOperator(node: Parser.SyntaxNode): string | undefined {
   const fieldOperator = node.childForFieldName("operator")?.text;

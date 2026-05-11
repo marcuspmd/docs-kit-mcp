@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { promisify } from "node:util";
+import type { StructuredDiff, StructuredDiffLine } from "../indexer/symbol.types.js";
 
 const execFileAsync = promisify(execFile);
 
@@ -18,6 +19,11 @@ export interface FileDiff {
   hunks: DiffHunk[];
 }
 
+type ParsedHunkLine =
+  | { kind: "context"; text: string }
+  | { kind: "added"; text: string }
+  | { kind: "removed"; text: string };
+
 export type GitDiffRange = "direct" | "merge-base";
 
 export interface GitDiffOptions {
@@ -30,6 +36,139 @@ export interface GitDiffOptions {
 const DIFF_HEADER = /^diff --git a\/(.+) b\/(.+)$/;
 const HUNK_HEADER = /^@@ -(\d+)(?:,(\d+))? \+(\d+)(?:,(\d+))? @@/;
 const BINARY_MARKER = /^Binary files/;
+
+function parseHunkLine(line: string): ParsedHunkLine | null {
+  if (line.startsWith("\\ No newline at end of file")) return null;
+  if (line.startsWith("+") && !line.startsWith("+++")) {
+    return { kind: "added", text: line.slice(1) };
+  }
+  if (line.startsWith("-") && !line.startsWith("---")) {
+    return { kind: "removed", text: line.slice(1) };
+  }
+  if (line.startsWith(" ")) return { kind: "context", text: line.slice(1) };
+  return { kind: "context", text: line };
+}
+
+function lineNumber(value: number): number | undefined {
+  return value > 0 ? value : undefined;
+}
+
+function pushChangedLines(
+  lines: StructuredDiffLine[],
+  removed: string[],
+  added: string[],
+  oldStart: number,
+  newStart: number,
+): void {
+  const length = Math.max(removed.length, added.length);
+
+  for (let index = 0; index < length; index++) {
+    const oldText = removed[index];
+    const newText = added[index];
+
+    if (oldText !== undefined && newText !== undefined) {
+      lines.push({
+        oldLineNumber: lineNumber(oldStart + index),
+        newLineNumber: lineNumber(newStart + index),
+        oldText,
+        newText,
+        tone: "changed",
+      });
+    } else if (oldText !== undefined) {
+      lines.push({
+        oldLineNumber: lineNumber(oldStart + index),
+        oldText,
+        tone: "removed",
+      });
+    } else if (newText !== undefined) {
+      lines.push({
+        newLineNumber: lineNumber(newStart + index),
+        newText,
+        tone: "added",
+      });
+    }
+  }
+}
+
+export function buildStructuredDiff(hunks: DiffHunk[]): StructuredDiff {
+  let addedLines = 0;
+  let removedLines = 0;
+
+  const structuredHunks = hunks.map((hunk) => {
+    const lines: StructuredDiffLine[] = [];
+    const parsedLines = hunk.content
+      .split("\n")
+      .map(parseHunkLine)
+      .filter((line): line is ParsedHunkLine => Boolean(line));
+
+    let index = 0;
+    let oldLine = hunk.oldStart;
+    let newLine = hunk.newStart;
+
+    while (index < parsedLines.length) {
+      const parsed = parsedLines[index];
+
+      if (parsed.kind === "context") {
+        lines.push({
+          oldLineNumber: lineNumber(oldLine),
+          newLineNumber: lineNumber(newLine),
+          oldText: parsed.text,
+          newText: parsed.text,
+          tone: "context",
+        });
+        oldLine++;
+        newLine++;
+        index++;
+        continue;
+      }
+
+      if (parsed.kind === "removed") {
+        const removed: string[] = [];
+        const added: string[] = [];
+        const removedStart = oldLine;
+
+        while (index < parsedLines.length && parsedLines[index].kind === "removed") {
+          removed.push(parsedLines[index].text);
+          index++;
+        }
+
+        const addedStart = newLine;
+        while (index < parsedLines.length && parsedLines[index].kind === "added") {
+          added.push(parsedLines[index].text);
+          index++;
+        }
+
+        pushChangedLines(lines, removed, added, removedStart, addedStart);
+        oldLine += removed.length;
+        newLine += added.length;
+        removedLines += removed.length;
+        addedLines += added.length;
+        continue;
+      }
+
+      const added: string[] = [];
+      const addedStart = newLine;
+      while (index < parsedLines.length && parsedLines[index].kind === "added") {
+        added.push(parsedLines[index].text);
+        index++;
+      }
+
+      pushChangedLines(lines, [], added, oldLine, addedStart);
+      newLine += added.length;
+      addedLines += added.length;
+    }
+
+    return {
+      oldStart: hunk.oldStart,
+      oldLines: hunk.oldLines,
+      newStart: hunk.newStart,
+      newLines: hunk.newLines,
+      lines,
+    };
+  });
+
+  return { hunks: structuredHunks, addedLines, removedLines };
+}
 
 function parseFileStatus(
   lines: string[],

@@ -22,8 +22,11 @@ DIFF PREVIEW
   docs-kit diff <base> [--head ref]          Generate a v2 preview site scoped to
                        [--out docs-site-diff] the PR-style git diff base...HEAD
                        [--db path] [--docs dir]
-                       [--strict]            Run Docs-Guard and suggested docs
-                                             updates without writing docs files
+                       [--strict] [--ai-review]
+                                             Run Docs-Guard and suggested docs
+                                             updates without writing docs files;
+                                             preview code changes beside site diffs;
+                                             optionally generate AI review notes
 
 ANALYZE
   docs-kit explain-symbol <symbol>             Explain a symbol (code + docs + LLM)

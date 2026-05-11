@@ -17,6 +17,25 @@ function makeImpact(symbol: CodeSymbol): ChangeImpact {
     symbol,
     changeType: "signature_changed",
     diff: "+ changed",
+    structuredDiff: {
+      hunks: [
+        {
+          oldStart: 1,
+          oldLines: 1,
+          newStart: 1,
+          newLines: 1,
+          lines: [
+            {
+              newLineNumber: 1,
+              newText: "changed",
+              tone: "added",
+            },
+          ],
+        },
+      ],
+      addedLines: 1,
+      removedLines: 0,
+    },
     docUpdateRequired: true,
   };
 }
@@ -90,7 +109,12 @@ describe("diffData", () => {
     expect(filtered.patterns[0].symbols).toEqual([service.id]);
     expect(filtered.files).toEqual(["src/orders/service.ts"]);
     expect(filtered.docEntries).toEqual([{ path: "docs/orders.md", title: "Orders" }]);
-    expect(filtered.archViolations).toEqual([]);
+    expect(filtered.archViolations).toEqual([
+      expect.objectContaining({
+        file: "src/orders/service.ts",
+        symbol_id: service.id,
+      }),
+    ]);
   });
 
   it("builds serializable diff metadata", () => {
@@ -113,6 +137,11 @@ describe("diffData", () => {
           symbolName: "createOrder",
           action: "updated",
           diff: "+ docs",
+          structuredDiff: {
+            hunks: [],
+            addedLines: 0,
+            removedLines: 0,
+          },
         },
       ],
       docGuard: {
@@ -129,10 +158,28 @@ describe("diffData", () => {
       symbolId: "symbol",
       symbolName: "createOrder",
       changeType: "signature_changed",
+      structuredDiff: expect.objectContaining({ addedLines: 1 }),
     });
     expect(metadata.docUpdates[0]).toMatchObject({
       docPath: "docs/orders.md",
       action: "updated",
+      structuredDiff: expect.objectContaining({ addedLines: 0 }),
+    });
+    expect(metadata.previews[0]).toMatchObject({
+      symbolId: "symbol",
+      symbolName: "createOrder",
+      file: "src/orders.ts",
+      changeType: "signature_changed",
+      docUpdateRequired: true,
+      codeDiff: "+ changed",
+      structuredDiff: expect.objectContaining({ addedLines: 1 }),
+      docUpdates: [
+        expect.objectContaining({
+          docPath: "docs/orders.md",
+          action: "updated",
+          diff: "+ docs",
+        }),
+      ],
     });
   });
 });

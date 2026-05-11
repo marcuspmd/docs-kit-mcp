@@ -2,6 +2,7 @@ import type { GitDiffRange } from "../analyzer/gitDiff.js";
 import type { UpdateResult } from "../docs/docUpdater.js";
 import type { DocGuardResult } from "../governance/docGuardCli.js";
 import type { ChangeImpact, CodeSymbol } from "../indexer/symbol.types.js";
+import type { DiffReviewSummary } from "../governance/diffReview.js";
 import type { LoadedSiteData } from "./dataLoader.js";
 
 export interface DiffImpactSummary {
@@ -15,6 +16,7 @@ export interface DiffImpactSummary {
   changeType: ChangeImpact["changeType"];
   docUpdateRequired: boolean;
   diff: string;
+  structuredDiff?: ChangeImpact["structuredDiff"];
 }
 
 export interface DiffDocUpdateSummary {
@@ -23,6 +25,20 @@ export interface DiffDocUpdateSummary {
   action: UpdateResult["action"];
   sectionHeading?: string;
   diff?: string;
+  structuredDiff?: UpdateResult["structuredDiff"];
+}
+
+export interface DiffCodeToSitePreview {
+  symbolId: string;
+  symbolName: string;
+  qualifiedName?: string;
+  kind: string;
+  file: string;
+  changeType: ChangeImpact["changeType"];
+  docUpdateRequired: boolean;
+  codeDiff: string;
+  structuredDiff?: ChangeImpact["structuredDiff"];
+  docUpdates: DiffDocUpdateSummary[];
 }
 
 export interface DiffSiteMetadata {
@@ -32,7 +48,9 @@ export interface DiffSiteMetadata {
   changedFiles: string[];
   impacts: DiffImpactSummary[];
   docUpdates: DiffDocUpdateSummary[];
+  previews: DiffCodeToSitePreview[];
   docGuard: DocGuardResult;
+  review?: DiffReviewSummary;
 }
 
 export interface BuildDiffSiteMetadataOptions {
@@ -43,6 +61,7 @@ export interface BuildDiffSiteMetadataOptions {
   impacts: ChangeImpact[];
   docUpdates: UpdateResult[];
   docGuard: DocGuardResult;
+  review?: DiffReviewSummary;
 }
 
 export interface FilterSiteDataForDiffOptions {
@@ -67,6 +86,7 @@ function summarizeImpact(impact: ChangeImpact): DiffImpactSummary {
     changeType: impact.changeType,
     docUpdateRequired: impact.docUpdateRequired,
     diff: impact.diff,
+    structuredDiff: impact.structuredDiff,
   };
 }
 
@@ -77,18 +97,57 @@ function summarizeDocUpdate(update: UpdateResult): DiffDocUpdateSummary {
     action: update.action,
     sectionHeading: update.sectionHeading,
     diff: update.diff,
+    structuredDiff: update.structuredDiff,
+  };
+}
+
+function groupDocUpdatesBySymbol(
+  updates: DiffDocUpdateSummary[],
+): Map<string, DiffDocUpdateSummary[]> {
+  const grouped = new Map<string, DiffDocUpdateSummary[]>();
+
+  for (const update of updates) {
+    const values = grouped.get(update.symbolName) ?? [];
+    values.push(update);
+    grouped.set(update.symbolName, values);
+  }
+
+  return grouped;
+}
+
+function summarizePreview(
+  impact: ChangeImpact,
+  docUpdatesBySymbol: Map<string, DiffDocUpdateSummary[]>,
+): DiffCodeToSitePreview {
+  return {
+    symbolId: impact.symbol.id,
+    symbolName: impact.symbol.name,
+    qualifiedName: impact.symbol.qualifiedName,
+    kind: impact.symbol.kind,
+    file: impact.symbol.file,
+    changeType: impact.changeType,
+    docUpdateRequired: impact.docUpdateRequired,
+    codeDiff: impact.diff,
+    structuredDiff: impact.structuredDiff,
+    docUpdates: docUpdatesBySymbol.get(impact.symbol.name) ?? [],
   };
 }
 
 export function buildDiffSiteMetadata(options: BuildDiffSiteMetadataOptions): DiffSiteMetadata {
+  const impacts = options.impacts.map(summarizeImpact);
+  const docUpdates = options.docUpdates.map(summarizeDocUpdate);
+  const docUpdatesBySymbol = groupDocUpdatesBySymbol(docUpdates);
+
   return {
     base: options.base,
     head: options.head ?? "HEAD",
     range: options.range,
     changedFiles: uniqueSorted(options.changedFiles),
-    impacts: options.impacts.map(summarizeImpact),
-    docUpdates: options.docUpdates.map(summarizeDocUpdate),
+    impacts,
+    docUpdates,
+    previews: options.impacts.map((impact) => summarizePreview(impact, docUpdatesBySymbol)),
     docGuard: options.docGuard,
+    review: options.review,
   };
 }
 
@@ -176,8 +235,19 @@ export function filterSiteDataForDiff(
         symbols: pattern.symbols.filter((symbolId) => includedIds.has(symbolId)),
       })),
     files,
-    archViolations: [],
-    reaperFindings: [],
+    archViolations: data.archViolations.filter(
+      (violation) =>
+        (violation.symbol_id && includedIds.has(violation.symbol_id)) ||
+        changedCodeFiles.has(violation.file),
+    ),
+    reaperFindings: data.reaperFindings.filter(
+      (finding) =>
+        includedIds.has(finding.target) ||
+        files.includes(finding.target) ||
+        symbols.some(
+          (symbol) => finding.reason.includes(symbol.name) || finding.reason.includes(symbol.file),
+        ),
+    ),
     docEntries: data.docEntries.filter((entry) => docPaths.has(entry.path)),
     docsConfigDir: data.docsConfigDir,
   };

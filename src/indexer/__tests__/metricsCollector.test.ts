@@ -1,5 +1,6 @@
 import Parser from "tree-sitter";
 import TypeScript from "tree-sitter-typescript";
+import PHP from "tree-sitter-php";
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -8,14 +9,15 @@ import { collectMetrics } from "../metricsCollector.js";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const FIXTURES = resolve(__dirname, "fixtures");
+const PHP_LANGUAGE = (PHP as { php?: unknown }).php ?? PHP;
 
 /**
  * Create a fresh parser for each test to avoid state corruption issues
  * with tree-sitter in Jest test environment.
  */
-function createFreshParser(): Parser {
+function createFreshParser(language: unknown = TypeScript.typescript): Parser {
   const parser = new Parser();
-  (parser as { setLanguage: (l: unknown) => void }).setLanguage(TypeScript.typescript);
+  (parser as { setLanguage: (language: unknown) => void }).setLanguage(language);
   return parser;
 }
 
@@ -28,6 +30,16 @@ function parseFixtureWithTree(name: string) {
 
   const symbolParser = createFreshParser();
   const symbols = indexFile(name, source, symbolParser);
+
+  return { symbols, tree };
+}
+
+function parseSourceWithTree(fileName: string, source: string, language: unknown) {
+  const treeParser = createFreshParser(language);
+  const tree = treeParser.parse(source);
+
+  const symbolParser = new Parser();
+  const symbols = indexFile(fileName, source, symbolParser);
 
   return { symbols, tree };
 }
@@ -86,6 +98,50 @@ describe("collectMetrics", () => {
     expect(classify!.metrics!.cyclomaticComplexity).toBe(6);
     expect(classify!.metrics!.cognitiveComplexity).toBe(8);
     expect(classify!.metrics!.maxNestingDepth).toBe(3);
+  });
+
+  it("computes PHP cyclomatic complexity without counting null coalescing as a branch", () => {
+    const fileName = "MarginAggregationAdapter.php";
+    const source = `<?php
+  class MarginAggregationAdapter
+  {
+    public function buildResponse($apiResponse): Response
+    {
+      if ($apiResponse->status() != 200) {
+        return new Response(false);
+      }
+
+      $payload = $apiResponse->json();
+
+      if ($payload['success'] ?? false) {
+        return new Response(true);
+      }
+
+      $errors = $payload['errors'] ?? [];
+      $values = [];
+
+      foreach ($errors as $error) {
+        if (isset($error['value'])) {
+          $values[] = $error['value'];
+        }
+      }
+
+      if ($values) {
+        return new Response(false, $values);
+      }
+
+      return new Response(false);
+    }
+  }
+  `;
+    const { symbols, tree } = parseSourceWithTree(fileName, source, PHP_LANGUAGE);
+    const trees = new Map([[fileName, tree]]);
+
+    const result = collectMetrics({ symbols, trees });
+
+    const buildResponse = result.find((symbol) => symbol.name === "buildResponse");
+    expect(buildResponse).toBeDefined();
+    expect(buildResponse!.metrics!.cyclomaticComplexity).toBe(6);
   });
 
   it("returns metrics for all symbols", () => {

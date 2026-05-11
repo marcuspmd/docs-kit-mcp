@@ -129,6 +129,7 @@ Gera um preview de documentação e site limitado ao diff Git da branch atual co
 - `--db <path>`: Database path (padrão: `.docs-kit/index.db`)
 - `--docs <dir>`: Diretório de documentação (padrão: `docs`)
 - `--strict`: Retorna exit code 1 se o Docs-Guard encontrar violações
+- `--ai-review`: Gera resumo de code review por IA quando houver provider LLM configurado
 
 **Fluxo:**
 
@@ -137,6 +138,8 @@ Gera um preview de documentação e site limitado ao diff Git da branch atual co
 3. Gera preview dry-run das mudanças de documentação sem escrever arquivos `.md`
 4. Avalia Docs-Guard para encontrar símbolos alterados sem documentação atualizada
 5. Gera site v2 filtrado em `docs-site-diff/` com painel de Diff Preview
+6. Mostra preview PR-style por símbolo, pareando o diff do código com o diff dry-run que entraria na documentação/site
+7. Exibe diff lado a lado com números de linha, findings por símbolo e, com `--ai-review`, um resumo de code review por IA
 
 **Exemplo:**
 
@@ -145,6 +148,9 @@ docs-kit diff master
 
 # Em CI, falha quando houver violações de Docs-Guard
 docs-kit diff master --strict
+
+# Gera resumo de code review por IA se um provider LLM estiver configurado
+docs-kit diff master --ai-review
 ```
 
 ### `docs-kit generate-docs`

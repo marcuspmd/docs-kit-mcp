@@ -79,12 +79,13 @@ async function runDiff(args: string[]) {
     db: ".docs-kit/index.db",
     docs: "docs",
     root: "",
+    "ai-review": "false",
   });
 
   const base = positional[0];
   if (!base) {
     console.error(
-      "Usage: docs-kit diff <base> [--head ref] [--out dir] [--db path] [--docs dir] [--strict]",
+      "Usage: docs-kit diff <base> [--head ref] [--out dir] [--db path] [--docs dir] [--strict] [--ai-review]",
     );
     process.exit(1);
   }
@@ -97,6 +98,7 @@ async function runDiff(args: string[]) {
     docsDir: flags.docs,
     rootDir: flags.root || undefined,
     strict: flags.strict === "true" || flags.ci === "true",
+    aiReview: flags["ai-review"] === "true",
   });
 }
 

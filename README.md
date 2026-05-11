@@ -119,11 +119,11 @@ Após `npm run build`, use `docs-kit` (se instalado/linkado) ou `node dist/cli.j
 
 ### DIFF PREVIEW
 
-| Comando                | Opções                                          | Descrição                                                            |
-| ---------------------- | ----------------------------------------------- | -------------------------------------------------------------------- |
-| `docs-kit diff <base>` | `--head`, `--out`, `--db`, `--docs`, `--strict` | Gera site v2 em `docs-site-diff/` para o diff PR-style `base...HEAD` |
+| Comando                | Opções                                                         | Descrição                                                            |
+| ---------------------- | -------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `docs-kit diff <base>` | `--head`, `--out`, `--db`, `--docs`, `--strict`, `--ai-review` | Gera site v2 em `docs-site-diff/` para o diff PR-style `base...HEAD` |
 
-`docs-kit diff master` roda em modo preview: analisa os símbolos impactados pelo Git diff, calcula sugestões dry-run de documentação, avalia Docs-Guard e grava um site filtrado em `docs-site-diff/`. O comando não altera arquivos `.md`; use `--strict` em CI para retornar exit code 1 quando houver violações de Docs-Guard.
+`docs-kit diff master` roda em modo preview: analisa os símbolos impactados pelo Git diff, calcula sugestões dry-run de documentação, avalia Docs-Guard e grava um site filtrado em `docs-site-diff/`. O painel de diff mostra um preview PR-style por símbolo, pareando o que mudou no código com o que entraria na documentação/site, com diff lado a lado, números de linha e problemas encontrados por símbolo. Use `--ai-review` para gerar um resumo de code review via LLM quando houver provider configurado. O comando não altera arquivos `.md`; use `--strict` em CI para retornar exit code 1 quando houver violações de Docs-Guard.
 
 ### ANALYZE
 

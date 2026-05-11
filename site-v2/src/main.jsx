@@ -15,6 +15,10 @@ function scoreClass(entry) {
   return "score-warn";
 }
 
+function riskMetric(value) {
+  return `Risk ${metric(value)}`;
+}
+
 function normalize(value) {
   return String(value ?? "").toLowerCase();
 }
@@ -514,7 +518,7 @@ function SearchResults({ data, query, complexityById, onSelect }) {
             <small>
               {symbol.kind} · {symbol.file}
             </small>
-            <span className={scoreClass(complexity)}>{metric(complexity?.riskScore)}</span>
+            <span className={scoreClass(complexity)}>{riskMetric(complexity?.riskScore)}</span>
           </button>
         ))}
       </div>
@@ -549,7 +553,7 @@ function TreeSymbol({ symbol, childrenByParent, complexityById, selected, onSele
         <span>{symbol.name}</span>
         <small>{symbol.kind}</small>
         {complexity ? (
-          <em className={scoreClass(complexity)}>{metric(complexity.riskScore)}</em>
+          <em className={scoreClass(complexity)}>{riskMetric(complexity.riskScore)}</em>
         ) : null}
       </button>
       {children.length > 0 ? (
@@ -732,7 +736,7 @@ function ClassMembers({ classSymbol, childrenByParent, complexityById, onSelect 
             >
               <strong>{member.name}</strong>
               <small>{member.kind}</small>
-              <span className={scoreClass(entry)}>{metric(entry?.riskScore)}</span>
+              <span className={scoreClass(entry)}>{riskMetric(entry?.riskScore)}</span>
             </button>
           );
         })}
@@ -806,7 +810,7 @@ function SymbolDetail({ data, symbol, symbolsById, childrenByParent, complexityB
             </span>
           </div>
           {symbolEntry ? (
-            <span className={scoreClass(symbolEntry)}>{metric(symbolEntry.riskScore)}</span>
+            <span className={scoreClass(symbolEntry)}>{riskMetric(symbolEntry.riskScore)}</span>
           ) : null}
         </section>
       ) : null}
@@ -1318,12 +1322,345 @@ function HealthDonut({ score, size = 140 }) {
   );
 }
 
+const MAX_DIFF_PREVIEW_LINES = 120;
+
+function classifyDiffLine(line) {
+  if (line.startsWith("+") && !line.startsWith("+++")) return "added";
+  if (line.startsWith("-") && !line.startsWith("---")) return "removed";
+  if (line.startsWith("@@")) return "hunk";
+  if (
+    line.startsWith("diff --git") ||
+    line.startsWith("index ") ||
+    line.startsWith("---") ||
+    line.startsWith("+++")
+  ) {
+    return "meta";
+  }
+  return "context";
+}
+
+function diffLineGutter(tone) {
+  if (tone === "added") return "+";
+  if (tone === "removed") return "-";
+  if (tone === "hunk") return "@";
+  return " ";
+}
+
+function diffLineText(line, tone) {
+  if ((tone === "added" || tone === "removed") && /^[+-] /.test(line)) return line.slice(2);
+  if ((tone === "added" || tone === "removed") && /^[+-]/.test(line)) return line.slice(1);
+  if (tone === "context" && line.startsWith(" ")) return line.slice(1);
+  return line || " ";
+}
+
+function buildDiffLines(diff) {
+  if (!diff) return [];
+  return String(diff)
+    .split("\n")
+    .map((line, index) => {
+      const tone = classifyDiffLine(line);
+      return {
+        key: `${index}:${line}`,
+        tone,
+        gutter: diffLineGutter(tone),
+        text: diffLineText(line, tone) || " ",
+      };
+    });
+}
+
+function diffCounts(diff) {
+  const counts = { added: 0, removed: 0 };
+  for (const line of String(diff ?? "").split("\n")) {
+    const tone = classifyDiffLine(line);
+    if (tone === "added") counts.added += 1;
+    if (tone === "removed") counts.removed += 1;
+  }
+  return counts;
+}
+
+function hasStructuredDiff(structuredDiff) {
+  return (
+    Array.isArray(structuredDiff?.hunks) &&
+    structuredDiff.hunks.some((hunk) => hunk.lines?.length > 0)
+  );
+}
+
+function structuredDiffCounts(structuredDiff, fallbackDiff) {
+  if (!hasStructuredDiff(structuredDiff)) return diffCounts(fallbackDiff);
+  return {
+    added: structuredDiff.addedLines ?? 0,
+    removed: structuredDiff.removedLines ?? 0,
+  };
+}
+
+function formatHunkHeader(hunk) {
+  return `@@ -${hunk.oldStart},${hunk.oldLines} +${hunk.newStart},${hunk.newLines} @@`;
+}
+
+function buildStructuredDiffRows(structuredDiff) {
+  if (!hasStructuredDiff(structuredDiff)) return [];
+  const rows = [];
+
+  structuredDiff.hunks.forEach((hunk, hunkIndex) => {
+    rows.push({
+      key: `hunk:${hunkIndex}:${hunk.oldStart}:${hunk.newStart}`,
+      type: "hunk",
+      header: formatHunkHeader(hunk),
+    });
+
+    (hunk.lines ?? []).forEach((line, lineIndex) => {
+      rows.push({
+        key: `line:${hunkIndex}:${lineIndex}:${line.oldLineNumber ?? ""}:${line.newLineNumber ?? ""}`,
+        type: "line",
+        ...line,
+      });
+    });
+  });
+
+  return rows;
+}
+
+function reviewStatusTone(status) {
+  if (status === "generated") return "good";
+  if (status === "failed") return "danger";
+  if (status === "skipped") return "warning";
+  return "accent";
+}
+
+function findingTone(severity) {
+  if (severity === "critical" || severity === "error") return "danger";
+  if (severity === "warning") return "warning";
+  return "accent";
+}
+
+function reviewItemBySymbolMap(review) {
+  const map = new Map();
+  for (const item of review?.items ?? []) {
+    map.set(item.symbolId, item);
+  }
+  return map;
+}
+
+function buildCodeToSitePreviews(diff, docUpdates) {
+  if (Array.isArray(diff.previews) && diff.previews.length > 0) {
+    return diff.previews.map((preview) => ({
+      ...preview,
+      docUpdates: (preview.docUpdates ?? []).filter((update) => update.action !== "skipped"),
+    }));
+  }
+
+  return (diff.impacts ?? []).map((impact) => ({
+    symbolId: impact.symbolId,
+    symbolName: impact.symbolName,
+    qualifiedName: impact.qualifiedName,
+    kind: impact.kind,
+    file: impact.file,
+    changeType: impact.changeType,
+    docUpdateRequired: impact.docUpdateRequired,
+    codeDiff: impact.diff,
+    structuredDiff: impact.structuredDiff,
+    docUpdates: docUpdates.filter((update) => update.symbolName === impact.symbolName),
+  }));
+}
+
+function previewSiteStatus(preview) {
+  if (preview.docUpdates.length > 0) {
+    return { tone: "good", label: `${preview.docUpdates.length} site update(s)` };
+  }
+  if (preview.docUpdateRequired) return { tone: "warning", label: "no site update" };
+  return { tone: undefined, label: "not required" };
+}
+
+function DiffCodeBlock({ title, path, diff, emptyText }) {
+  const lines = buildDiffLines(diff);
+  const visibleLines = lines.slice(0, MAX_DIFF_PREVIEW_LINES);
+  const hiddenCount = Math.max(0, lines.length - visibleLines.length);
+  const counts = diffCounts(diff);
+
+  return (
+    <div className="diff-code-block">
+      <div className="diff-code-block-head">
+        <div>
+          <strong>{title}</strong>
+          {path ? <span>{path}</span> : null}
+        </div>
+        <div className="diff-counts" aria-label="Diff line counts">
+          <span className="removed">-{counts.removed}</span>
+          <span className="added">+{counts.added}</span>
+        </div>
+      </div>
+      <pre className="diff-code-preview">
+        {visibleLines.length > 0 ? (
+          visibleLines.map((line) => (
+            <span key={line.key} className={`diff-code-line ${line.tone}`}>
+              <span className="diff-code-gutter">{line.gutter}</span>
+              <span className="diff-code-text">{line.text}</span>
+            </span>
+          ))
+        ) : (
+          <span className="diff-code-line muted">
+            <span className="diff-code-gutter"> </span>
+            <span className="diff-code-text">{emptyText}</span>
+          </span>
+        )}
+        {hiddenCount > 0 ? (
+          <span className="diff-code-line muted">
+            <span className="diff-code-gutter"> </span>
+            <span className="diff-code-text">... {hiddenCount} more lines</span>
+          </span>
+        ) : null}
+      </pre>
+    </div>
+  );
+}
+
+function SideBySideDiffBlock({ title, path, diff, structuredDiff, emptyText }) {
+  if (!hasStructuredDiff(structuredDiff)) {
+    return <DiffCodeBlock title={title} path={path} diff={diff} emptyText={emptyText} />;
+  }
+
+  const rows = buildStructuredDiffRows(structuredDiff);
+  const visibleRows = rows.slice(0, MAX_DIFF_PREVIEW_LINES);
+  const hiddenCount = Math.max(0, rows.length - visibleRows.length);
+  const counts = structuredDiffCounts(structuredDiff, diff);
+
+  const renderRows = (side) =>
+    visibleRows.length > 0 ? (
+      visibleRows.map((row) =>
+        row.type === "hunk" ? (
+          <div key={`${side}:${row.key}`} className="diff-side-hunk">
+            {row.header}
+          </div>
+        ) : (
+          <div key={`${side}:${row.key}`} className={`diff-side-row-single ${row.tone}`}>
+            <span className="diff-side-line-number">
+              {side === "old" ? (row.oldLineNumber ?? "") : (row.newLineNumber ?? "")}
+            </span>
+            <code className="diff-side-code">
+              {side === "old" ? (row.oldText ?? "") : (row.newText ?? "")}
+            </code>
+          </div>
+        ),
+      )
+    ) : (
+      <div className="diff-side-row-single muted">
+        <span className="diff-side-line-number"> </span>
+        <code className="diff-side-code">{side === "old" ? emptyText : " "}</code>
+      </div>
+    );
+
+  return (
+    <div className="diff-code-block diff-side-by-side-block">
+      <div className="diff-code-block-head">
+        <div>
+          <strong>{title}</strong>
+          {path ? <span>{path}</span> : null}
+        </div>
+        <div className="diff-counts" aria-label="Diff line counts">
+          <span className="removed">-{counts.removed}</span>
+          <span className="added">+{counts.added}</span>
+        </div>
+      </div>
+      <div className="diff-side-by-side">
+        <div className="diff-side-pane">
+          <div className="diff-side-pane-header">Old</div>
+          <div className="diff-side-pane-body">
+            {renderRows("old")}
+            {hiddenCount > 0 ? (
+              <div className="diff-side-hunk">... {hiddenCount} more lines</div>
+            ) : null}
+          </div>
+        </div>
+        <div className="diff-side-pane new">
+          <div className="diff-side-pane-header">New</div>
+          <div className="diff-side-pane-body">
+            {renderRows("new")}
+            {hiddenCount > 0 ? (
+              <div className="diff-side-hunk">... {hiddenCount} more lines</div>
+            ) : null}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DiffReviewOverview({ review }) {
+  if (!review) return null;
+
+  return (
+    <section className="diff-review-overview">
+      <div className="section-head compact">
+        <h3>Code Review Summary</h3>
+        <Badge tone={reviewStatusTone(review.status)}>{review.status}</Badge>
+      </div>
+      <p>{review.summary}</p>
+      <div className="diff-finding-counts">
+        {Object.entries(review.findingsBySeverity ?? {}).map(([severity, count]) => (
+          <Badge key={severity} tone={findingTone(severity)}>
+            {count} {severity}
+          </Badge>
+        ))}
+      </div>
+      {review.error ? <small>{review.error}</small> : null}
+    </section>
+  );
+}
+
+function DiffReviewPanel({ item }) {
+  if (!item || item.status === "not_requested") return null;
+
+  return (
+    <section className="diff-review-panel">
+      <div className="section-head compact">
+        <h3>AI Review</h3>
+        <Badge tone={reviewStatusTone(item.status)}>{item.status}</Badge>
+      </div>
+      <p>{item.aiSummary || item.error || "AI review did not return a note for this change."}</p>
+    </section>
+  );
+}
+
+function DiffFindingsPanel({ findings }) {
+  const visibleFindings = findings ?? [];
+
+  return (
+    <section className="diff-findings-panel">
+      <div className="section-head compact">
+        <h3>Anti-patterns & Problems</h3>
+        <span>{visibleFindings.length}</span>
+      </div>
+      {visibleFindings.length === 0 ? (
+        <p>No anti-patterns or code problems detected for this diff.</p>
+      ) : (
+        <div className="diff-finding-list">
+          {visibleFindings.slice(0, 8).map((finding) => (
+            <div key={finding.id} className={`diff-finding-item ${findingTone(finding.severity)}`}>
+              <div>
+                <strong>{finding.title}</strong>
+                <span>{finding.message}</span>
+                {finding.suggestion ? <small>{finding.suggestion}</small> : null}
+              </div>
+              <Badge tone={findingTone(finding.severity)}>
+                {finding.source} · {finding.severity}
+                {finding.line ? ` · L${finding.line}` : ""}
+              </Badge>
+            </div>
+          ))}
+        </div>
+      )}
+    </section>
+  );
+}
+
 function DiffPreviewSection({ data, onSelect }) {
   const diff = data.diff;
   if (!diff) return null;
 
   const symbolsById = symbolByIdMap(data.symbols);
   const docUpdates = (diff.docUpdates ?? []).filter((update) => update.action !== "skipped");
+  const previews = buildCodeToSitePreviews(diff, docUpdates);
+  const reviewItemsBySymbol = reviewItemBySymbolMap(diff.review);
   const violations = diff.docGuard?.uncoveredChanges ?? [];
   const docsGuardTone = violations.length > 0 ? "danger" : "good";
 
@@ -1400,6 +1737,78 @@ function DiffPreviewSection({ data, onSelect }) {
         </section>
       </div>
 
+      <DiffReviewOverview review={diff.review} />
+
+      {previews.length > 0 ? (
+        <section className="diff-list-panel diff-wide-panel">
+          <div className="section-head">
+            <h3>Code -&gt; Site Preview</h3>
+            <span>{previews.length}</span>
+          </div>
+          <div className="diff-change-preview-list">
+            {previews.slice(0, 12).map((preview, index) => {
+              const status = previewSiteStatus(preview);
+              const reviewItem = reviewItemsBySymbol.get(preview.symbolId);
+              return (
+                <details
+                  key={`${preview.symbolId}:${preview.changeType}:${index}`}
+                  className="diff-change-preview"
+                  open={index === 0}
+                >
+                  <summary>
+                    <span className="diff-change-title">
+                      <strong>{preview.qualifiedName || preview.symbolName}</strong>
+                      <small>
+                        {preview.changeType} · {preview.kind} · {preview.file}
+                      </small>
+                    </span>
+                    <Badge tone={status.tone}>{status.label}</Badge>
+                  </summary>
+                  <div className="diff-compare-grid diff-compare-grid-stacked">
+                    <SideBySideDiffBlock
+                      title="Code change"
+                      path={preview.file}
+                      diff={preview.codeDiff}
+                      structuredDiff={preview.structuredDiff}
+                      emptyText="No code diff captured for this symbol."
+                    />
+                    <div className="diff-site-preview-stack">
+                      {preview.docUpdates.length > 0 ? (
+                        preview.docUpdates.map((update, updateIndex) => (
+                          <SideBySideDiffBlock
+                            key={`${update.docPath}:${update.symbolName}:${updateIndex}`}
+                            title={update.action === "removed" ? "Site removal" : "Site update"}
+                            path={update.docPath || update.sectionHeading}
+                            diff={update.diff}
+                            structuredDiff={update.structuredDiff}
+                            emptyText="No generated site diff for this doc."
+                          />
+                        ))
+                      ) : (
+                        <div className="diff-no-site-update">
+                          <strong>
+                            {preview.docUpdateRequired
+                              ? "No site update generated"
+                              : "No site update needed"}
+                          </strong>
+                          <span>
+                            {preview.docUpdateRequired
+                              ? "Docs-Guard will flag this because documentation is required."
+                              : "This change is tracked for review, but does not require documentation."}
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                  <DiffReviewPanel item={reviewItem} />
+                  <DiffFindingsPanel findings={reviewItem?.findings ?? []} />
+                </details>
+              );
+            })}
+          </div>
+        </section>
+      ) : null}
+
       {violations.length > 0 ? (
         <section className="diff-list-panel diff-wide-panel">
           <div className="section-head">
@@ -1437,7 +1846,12 @@ function DiffPreviewSection({ data, onSelect }) {
                     {update.action} · {update.docPath}
                   </span>
                 </summary>
-                <pre>{update.diff || "No textual diff"}</pre>
+                <DiffCodeBlock
+                  title={update.sectionHeading || "Documentation diff"}
+                  path={update.docPath}
+                  diff={update.diff}
+                  emptyText="No textual diff"
+                />
               </details>
             ))}
           </div>
@@ -1613,7 +2027,7 @@ function Dashboard({ data, symbolsById, onSelect }) {
             style={{ padding: "12px 14px", borderBottom: "1px solid #edf1f6" }}
           >
             <h3 style={{ margin: 0 }}>Top Risk Hotspots</h3>
-            <span>highest complexity symbols</span>
+            <span>highest composite risk score</span>
           </div>
           <div className="hotspot-list">
             {hotspots.map((h) => {
@@ -1632,7 +2046,7 @@ function Dashboard({ data, symbolsById, onSelect }) {
                   <strong>{sym.qualifiedName || sym.name}</strong>
                   <span className="hotspot-kind">{sym.kind}</span>
                   <small className="hotspot-file">{sym.file}</small>
-                  <em className={tone}>{metric(risk)}</em>
+                  <em className={tone}>{riskMetric(risk)}</em>
                 </button>
               );
             })}

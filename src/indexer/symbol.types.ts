@@ -218,10 +218,41 @@ export const ChangeTypeSchema = z.enum([
 
 export type ChangeType = z.infer<typeof ChangeTypeSchema>;
 
+/* ================== Structured Diff ================== */
+
+export const StructuredDiffLineSchema = z.object({
+  oldLineNumber: z.number().int().nonnegative().optional(),
+  newLineNumber: z.number().int().nonnegative().optional(),
+  oldText: z.string().optional(),
+  newText: z.string().optional(),
+  tone: z.enum(["context", "added", "removed", "changed"]),
+});
+
+export type StructuredDiffLine = z.infer<typeof StructuredDiffLineSchema>;
+
+export const StructuredDiffHunkSchema = z.object({
+  oldStart: z.number().int().nonnegative(),
+  oldLines: z.number().int().nonnegative(),
+  newStart: z.number().int().nonnegative(),
+  newLines: z.number().int().nonnegative(),
+  lines: z.array(StructuredDiffLineSchema),
+});
+
+export type StructuredDiffHunk = z.infer<typeof StructuredDiffHunkSchema>;
+
+export const StructuredDiffSchema = z.object({
+  hunks: z.array(StructuredDiffHunkSchema),
+  addedLines: z.number().int().nonnegative(),
+  removedLines: z.number().int().nonnegative(),
+});
+
+export type StructuredDiff = z.infer<typeof StructuredDiffSchema>;
+
 export const ChangeImpactSchema = z.object({
   symbol: CodeSymbolSchema,
   changeType: ChangeTypeSchema,
   diff: z.string(),
+  structuredDiff: StructuredDiffSchema.optional(),
   breakingChange: z.boolean().optional(),
   severity: z.enum(["low", "medium", "high", "critical"]).optional(),
   docUpdateRequired: z.boolean(),

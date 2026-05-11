@@ -8,8 +8,10 @@ import { loadConfig } from "../../configLoader.js";
 import type { DocRegistry } from "../../docs/docRegistry.js";
 import { createDocUpdater } from "../../docs/docUpdater.js";
 import { setupContainer, resolve } from "../../di/container.js";
-import { DATABASE_TOKEN, DOC_REGISTRY_TOKEN } from "../../di/tokens.js";
+import { DATABASE_TOKEN, DOC_REGISTRY_TOKEN, LLM_PROVIDER_TOKEN } from "../../di/tokens.js";
 import { evaluateDocGuard, formatResult } from "../../governance/docGuardCli.js";
+import { buildDiffReview } from "../../governance/diffReview.js";
+import type { LlmProvider } from "../../llm/provider.js";
 import { buildDiffSiteMetadata, filterSiteDataForDiff } from "../../site/diffData.js";
 import { loadSiteData } from "../../site/dataLoader.js";
 import { generateSiteV2 } from "../../site/v2Generator.js";
@@ -24,6 +26,7 @@ export interface DiffUseCaseParams {
   docsDir?: string;
   rootDir?: string;
   strict?: boolean;
+  aiReview?: boolean;
 }
 
 export async function diffUseCase(params: DiffUseCaseParams): Promise<void> {
@@ -99,6 +102,24 @@ export async function diffUseCase(params: DiffUseCaseParams): Promise<void> {
       changedFiles,
       docUpdates,
     });
+    const llmProviderName = config.llm.provider ?? "none";
+    const llm =
+      params.aiReview && llmProviderName !== "none"
+        ? resolve<LlmProvider>(LLM_PROVIDER_TOKEN)
+        : undefined;
+    done(`${filteredData.symbols.length} symbol(s)`);
+
+    step("Building diff review summary");
+    const review = await buildDiffReview({
+      impacts,
+      data: filteredData,
+      docGuard,
+      aiReview: Boolean(params.aiReview),
+      llm,
+      provider: llmProviderName,
+    });
+    done(review.status);
+
     const diff = buildDiffSiteMetadata({
       base,
       head,
@@ -107,8 +128,8 @@ export async function diffUseCase(params: DiffUseCaseParams): Promise<void> {
       impacts,
       docUpdates,
       docGuard,
+      review,
     });
-    done(`${filteredData.symbols.length} symbol(s)`);
 
     step("Generating React v2 diff site");
     const result = await generateSiteV2({
@@ -128,6 +149,7 @@ export async function diffUseCase(params: DiffUseCaseParams): Promise<void> {
       ["Doc updates", docUpdates.filter((update) => update.action !== "skipped").length],
       ["Docs-Guard", docGuard.passed ? "passed" : "failed"],
       ["Violations", docGuard.uncoveredChanges.length],
+      ["AI Review", review.status],
       ["Output", path.resolve(outDir)],
       ["Data", result.dataFile],
     ]);

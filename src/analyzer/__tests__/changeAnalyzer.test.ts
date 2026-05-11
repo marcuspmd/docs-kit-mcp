@@ -111,6 +111,11 @@ describe("analyzeChanges", () => {
     expect(impacts).toHaveLength(1);
     expect(impacts[0].changeType).toBe("added");
     expect(impacts[0].docUpdateRequired).toBe(true);
+    expect(impacts[0].structuredDiff?.hunks[0].lines[0]).toMatchObject({
+      newLineNumber: 1,
+      newText: "code",
+      tone: "added",
+    });
   });
 
   it("marks removed symbols with docUpdateRequired=true", async () => {
@@ -138,6 +143,12 @@ describe("analyzeChanges", () => {
     expect(impacts).toHaveLength(1);
     expect(impacts[0].changeType).toBe("removed");
     expect(impacts[0].docUpdateRequired).toBe(true);
+    expect(impacts[0].diff).toBe("-code");
+    expect(impacts[0].structuredDiff?.hunks[0].lines[0]).toMatchObject({
+      oldLineNumber: 1,
+      oldText: "code",
+      tone: "removed",
+    });
   });
 
   it("detects body_changed with docUpdateRequired=false", async () => {

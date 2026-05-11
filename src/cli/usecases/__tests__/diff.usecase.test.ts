@@ -4,9 +4,26 @@ import type { ChangeImpact, CodeSymbol } from "../../../indexer/symbol.types.js"
 
 const mockDb = { close: jest.fn() };
 const mockRegistry = { rebuild: jest.fn() };
+const mockLlm = {
+  chat: jest.fn(),
+  embed: jest.fn(),
+  estimateTokens: jest.fn(),
+};
+const mockConfig = {
+  projectRoot: "/repo",
+  rootDir: "src",
+  output: { site: "docs-site", docs: "docs-output" },
+  dbPath: ".docs-kit/index.db",
+  docs: [],
+  llm: { provider: "none", maxTokens: 2000, temperature: 0.7 },
+};
 const mockSetupContainer = jest.fn();
 const mockResolve = jest.fn((token: symbol) =>
-  token === Symbol.for("DATABASE") ? mockDb : mockRegistry,
+  token === Symbol.for("DATABASE")
+    ? mockDb
+    : token === Symbol.for("LLM_PROVIDER")
+      ? mockLlm
+      : mockRegistry,
 );
 const mockGetGitChangedFiles = jest.fn();
 const mockAnalyzeChanges = jest.fn();
@@ -17,14 +34,7 @@ const mockLoadSiteData = jest.fn();
 const mockGenerateSiteV2 = jest.fn();
 
 jest.unstable_mockModule("../../../configLoader.js", () => ({
-  loadConfig: jest.fn(async () => ({
-    projectRoot: "/repo",
-    rootDir: "src",
-    output: { site: "docs-site", docs: "docs-output" },
-    dbPath: ".docs-kit/index.db",
-    docs: [],
-    llm: { maxTokens: 2000, temperature: 0.7 },
-  })),
+  loadConfig: jest.fn(async () => mockConfig),
 }));
 
 jest.unstable_mockModule("../../../di/container.js", () => ({
@@ -92,6 +102,10 @@ describe("diffUseCase", () => {
     stdoutWriteSpy = jest.spyOn(process.stdout, "write").mockImplementation(() => true);
     processExitSpy = jest.spyOn(process, "exit").mockImplementation((() => {}) as never);
     jest.spyOn(fs, "existsSync").mockReturnValue(true);
+    mockConfig.llm.provider = "none";
+    mockLlm.chat.mockResolvedValue("AI review summary" as never);
+    mockLlm.embed.mockResolvedValue([] as never);
+    mockLlm.estimateTokens.mockReturnValue(10 as never);
 
     const impact = makeImpact();
     mockGetGitChangedFiles.mockResolvedValue(["src/changed.ts"] as never);
@@ -158,6 +172,24 @@ describe("diffUseCase", () => {
     );
     expect(processExitSpy).not.toHaveBeenCalled();
     expect(mockDb.close).toHaveBeenCalled();
+  });
+
+  it("generates AI review metadata when requested and an LLM provider is configured", async () => {
+    mockConfig.llm.provider = "openai";
+
+    await diffUseCase({ base: "master", dbPath: "index.db", aiReview: true });
+
+    expect(mockLlm.chat).toHaveBeenCalled();
+    expect(mockGenerateSiteV2).toHaveBeenCalledWith(
+      expect.objectContaining({
+        diff: expect.objectContaining({
+          review: expect.objectContaining({
+            status: "generated",
+            provider: "openai",
+          }),
+        }),
+      }),
+    );
   });
 
   it("exits after generating the site when strict mode fails", async () => {

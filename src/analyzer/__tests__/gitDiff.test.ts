@@ -1,4 +1,4 @@
-import { parseGitDiff, getGitDiff, buildGitDiffArgs } from "../gitDiff.js";
+import { parseGitDiff, getGitDiff, buildGitDiffArgs, buildStructuredDiff } from "../gitDiff.js";
 
 describe("parseGitDiff", () => {
   it("returns empty array for empty input", () => {
@@ -240,6 +240,44 @@ some metadata line
     const diffs = parseGitDiff(raw);
     expect(diffs).toHaveLength(1);
     expect(diffs[0].hunks).toHaveLength(1);
+  });
+});
+
+describe("buildStructuredDiff", () => {
+  it("builds side-by-side rows with old and new line numbers", () => {
+    const structured = buildStructuredDiff([
+      {
+        oldStart: 10,
+        oldLines: 3,
+        newStart: 10,
+        newLines: 4,
+        content: " context\n-old value\n+new value\n+extra value",
+      },
+    ]);
+
+    expect(structured.addedLines).toBe(2);
+    expect(structured.removedLines).toBe(1);
+    expect(structured.hunks[0].lines).toEqual([
+      expect.objectContaining({
+        oldLineNumber: 10,
+        newLineNumber: 10,
+        oldText: "context",
+        newText: "context",
+        tone: "context",
+      }),
+      expect.objectContaining({
+        oldLineNumber: 11,
+        newLineNumber: 11,
+        oldText: "old value",
+        newText: "new value",
+        tone: "changed",
+      }),
+      expect.objectContaining({
+        newLineNumber: 12,
+        newText: "extra value",
+        tone: "added",
+      }),
+    ]);
   });
 });
 

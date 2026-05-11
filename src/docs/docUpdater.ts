@@ -1,6 +1,10 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { ChangeImpact } from "../indexer/symbol.types.js";
+import {
+  ChangeImpact,
+  type StructuredDiff,
+  type StructuredDiffLine,
+} from "../indexer/symbol.types.js";
 import { DocRegistry } from "./docRegistry.js";
 import { updateFrontmatter } from "./frontmatter.js";
 import { buildUpdateSectionPrompt } from "../prompts/updateSection.prompt.js";
@@ -21,6 +25,7 @@ export interface UpdateResult {
   action: "updated" | "removed" | "skipped";
   sectionHeading?: string;
   diff?: string;
+  structuredDiff?: StructuredDiff;
 }
 
 export interface DocUpdater {
@@ -199,6 +204,7 @@ export function createDocUpdater(options?: { dryRun?: boolean; llm?: LlmProvider
               action: "removed",
               sectionHeading: heading ? `## ${heading}` : undefined,
               diff: dryRun ? diff : undefined,
+              structuredDiff: dryRun ? diffStructuredText(markdown, updated) : undefined,
             });
           } else {
             const { result: updated, heading } = await updateSection(
@@ -222,6 +228,7 @@ export function createDocUpdater(options?: { dryRun?: boolean; llm?: LlmProvider
               action: "updated",
               sectionHeading: heading ? `## ${heading}` : undefined,
               diff: dryRun ? diff : undefined,
+              structuredDiff: dryRun ? diffStructuredText(markdown, updated) : undefined,
             });
           }
         }
@@ -258,4 +265,75 @@ function diffText(before: string, after: string): string {
     }
   }
   return out.join("\n");
+}
+
+function diffStructuredText(before: string, after: string): StructuredDiff {
+  const bLines = before.split("\n");
+  const aLines = after.split("\n");
+  const lines: StructuredDiffLine[] = [];
+  let addedLines = 0;
+  let removedLines = 0;
+  const max = Math.max(bLines.length, aLines.length);
+
+  for (let index = 0; index < max; index++) {
+    const oldText = bLines[index];
+    const newText = aLines[index];
+
+    if (oldText === newText && oldText !== undefined) {
+      lines.push({
+        oldLineNumber: index + 1,
+        newLineNumber: index + 1,
+        oldText,
+        newText,
+        tone: "context",
+      });
+      continue;
+    }
+
+    if (oldText !== undefined && newText !== undefined) {
+      lines.push({
+        oldLineNumber: index + 1,
+        newLineNumber: index + 1,
+        oldText,
+        newText,
+        tone: "changed",
+      });
+      addedLines++;
+      removedLines++;
+      continue;
+    }
+
+    if (oldText !== undefined) {
+      lines.push({
+        oldLineNumber: index + 1,
+        oldText,
+        tone: "removed",
+      });
+      removedLines++;
+      continue;
+    }
+
+    if (newText !== undefined) {
+      lines.push({
+        newLineNumber: index + 1,
+        newText,
+        tone: "added",
+      });
+      addedLines++;
+    }
+  }
+
+  return {
+    hunks: [
+      {
+        oldStart: bLines.length > 0 ? 1 : 0,
+        oldLines: bLines.length,
+        newStart: aLines.length > 0 ? 1 : 0,
+        newLines: aLines.length,
+        lines,
+      },
+    ],
+    addedLines,
+    removedLines,
+  };
 }

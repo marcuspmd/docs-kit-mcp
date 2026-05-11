@@ -103,4 +103,38 @@ describe("buildComplexityModel", () => {
     expect(ordersModule?.functionCount).toBe(2);
     expect(ordersModule?.hotspotSymbolIds[0]).toBe("method:validate");
   });
+
+  it("keeps cyclomatic complexity separate from the composite risk score", () => {
+    const symbol = makeSymbol({
+      id: "method:buildResponse",
+      name: "buildResponse",
+      kind: "method",
+      file: "src/MarginAggregationAdapter.php",
+      metrics: {
+        linesOfCode: 50,
+        cyclomaticComplexity: 6,
+        cognitiveComplexity: 8,
+        maxNestingDepth: 2,
+        parameterCount: 1,
+        testCoverage: {
+          hitCount: 1,
+          linesHit: 38,
+          linesCovered: 50,
+          coveragePercent: 75,
+        },
+      },
+    });
+
+    const model = buildComplexityModel([symbol], [symbol.file]);
+    const entry = model.symbols[0];
+
+    expect(entry.cyclomaticComplexity).toBe(6);
+    expect(entry.riskScore).toBe(23.1);
+    expect(entry.riskScore).not.toBe(entry.cyclomaticComplexity);
+    expect(model.topSymbols[0]).toMatchObject({
+      id: "method:buildResponse",
+      cyclomaticComplexity: 6,
+      riskScore: 23.1,
+    });
+  });
 });
