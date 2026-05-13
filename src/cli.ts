@@ -19,6 +19,7 @@ import {
 } from "./cli/usecases/index.js";
 import { serveUseCase } from "./cli/usecases/serve.usecase.js";
 import { inspectUseCase } from "./cli/usecases/inspect.usecase.js";
+import { serveSite } from "./cli/usecases/openSite.usecase.js";
 
 /* ================== Command Handlers ================== */
 
@@ -32,6 +33,8 @@ async function runIndex(args: string[]) {
     db: "",
     docs: "",
     full: undefined as unknown as string,
+    port: "3000",
+    out: "docs-site-v2",
   });
 
   await indexUseCase({
@@ -40,6 +43,26 @@ async function runIndex(args: string[]) {
     docsDir: flags.docs,
     fullRebuild: "full" in flags,
   });
+
+  if ("site" in flags) {
+    const { buildSiteUseCase } = await import("./cli/usecases/buildSite.usecase.js");
+    const outDir = flags.out ?? "docs-site-v2";
+    const dbPath = flags.db || ".docs-kit/index.db";
+    const port = parseInt(flags.port ?? "3000", 10) || 3000;
+    console.log("\n  Building docs site…");
+    await buildSiteUseCase({ outDir, dbPath, rootDir: positional[0] || "." });
+    await serveSite(outDir, port);
+    const url = `http://localhost:${port}`;
+    console.log(`\n  docs-kit site running at ${url}`);
+    console.log("  Press Ctrl+C to stop.\n");
+    const { exec } = await import("child_process");
+    const opener =
+      process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+    exec(`${opener} ${url}`);
+    process.on("SIGINT", () => process.exit(0));
+    process.on("SIGTERM", () => process.exit(0));
+    await new Promise(() => {});
+  }
 }
 
 async function runBuildSite(args: string[]) {
@@ -78,12 +101,13 @@ async function runDiff(args: string[]) {
     docs: "docs",
     root: "",
     "ai-review": "false",
+    port: "3001",
   });
 
   const base = positional[0];
   if (!base) {
     console.error(
-      "Usage: docs-kit diff <base> [--head ref] [--out dir] [--db path] [--docs dir] [--strict] [--ai-review]",
+      "Usage: docs-kit diff <base> [--head ref] [--out dir] [--db path] [--docs dir] [--strict] [--ai-review] [--site] [--port n]",
     );
     process.exit(1);
   }
@@ -98,6 +122,22 @@ async function runDiff(args: string[]) {
     strict: flags.strict === "true" || flags.ci === "true",
     aiReview: flags["ai-review"] === "true",
   });
+
+  if ("site" in flags) {
+    const outDir = flags.out ?? "docs-site-diff";
+    const port = parseInt(flags.port ?? "3001", 10) || 3001;
+    await serveSite(outDir, port);
+    const url = `http://localhost:${port}`;
+    console.log(`\n  Diff site running at ${url}`);
+    console.log("  Press Ctrl+C to stop.\n");
+    const { exec } = await import("child_process");
+    const opener =
+      process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+    exec(`${opener} ${url}`);
+    process.on("SIGINT", () => process.exit(0));
+    process.on("SIGTERM", () => process.exit(0));
+    await new Promise(() => {});
+  }
 }
 
 async function runImpactAnalysis(args: string[]) {

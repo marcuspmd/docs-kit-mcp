@@ -25,6 +25,10 @@ const MIME_TYPES: Record<string, string> = {
   ".woff2": "font/woff2",
 };
 
+export function serveSite(dir: string, port: number): Promise<http.Server> {
+  return serveStatic(dir, port);
+}
+
 function serveStatic(dir: string, port: number): Promise<http.Server> {
   const server = http.createServer((req, res) => {
     const urlPath = req.url?.split("?")[0] ?? "/";
