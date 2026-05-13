@@ -1244,34 +1244,43 @@ function Dashboard({ data, onSelect }) {
             </button>
           </div>
           <div className="card-body" style={{ padding: 0 }}>
-            {(data.diff.impacts || []).slice(0, 2).map((imp, i) => (
-              <div key={i} style={{ borderBottom: i === 0 ? "1px solid var(--border)" : "none" }}>
-                <div
-                  style={{
-                    padding: "8px 14px",
-                    display: "flex",
-                    gap: 10,
-                    alignItems: "center",
-                    fontSize: 12.5,
-                  }}
-                >
-                  <SymIcon kind={imp.kind} />
-                  <strong>{imp.qualifiedName || imp.symbolName}</strong>
-                  <span
+            {Array.from(
+              (data.diff.impacts || [])
+                .reduce((map, imp) => {
+                  if (!map.has(imp.file)) map.set(imp.file, imp);
+                  return map;
+                }, new Map())
+                .values(),
+            )
+              .slice(0, 2)
+              .map((imp, i) => (
+                <div key={i} style={{ borderBottom: i === 0 ? "1px solid var(--border)" : "none" }}>
+                  <div
                     style={{
-                      color: "var(--text-faint)",
-                      fontFamily: "var(--font-mono)",
-                      fontSize: 11,
+                      padding: "8px 14px",
+                      display: "flex",
+                      gap: 10,
+                      alignItems: "center",
+                      fontSize: 12.5,
                     }}
                   >
-                    {imp.file}
-                  </span>
-                  <span className="tag accent">{imp.changeType}</span>
-                  {imp.docUpdateRequired ? <span className="tag warn">docs required</span> : null}
+                    <SymIcon kind={imp.kind} />
+                    <strong>{imp.qualifiedName || imp.symbolName}</strong>
+                    <span
+                      style={{
+                        color: "var(--text-faint)",
+                        fontFamily: "var(--font-mono)",
+                        fontSize: 11,
+                      }}
+                    >
+                      {imp.file}
+                    </span>
+                    <span className="tag accent">{imp.changeType}</span>
+                    {imp.docUpdateRequired ? <span className="tag warn">docs required</span> : null}
+                  </div>
+                  {imp.diff ? <InlineDiff text={imp.diff} /> : null}
                 </div>
-                {imp.diff ? <InlineDiff text={imp.diff} /> : null}
-              </div>
-            ))}
+              ))}
           </div>
         </div>
       ) : null}
@@ -1702,7 +1711,8 @@ function DiffReview({ data, onSelect }) {
             {diff.base} ← {diff.head}
           </h1>
           <p className="page-sub">
-            {diff.changedFiles.length} files changed · {diff.impacts.length} semantic impacts
+            {diff.changedFiles.length} files changed · {diff.impacts.length} symbol
+            {diff.impacts.length !== 1 ? "s" : ""} impacted
           </p>
         </div>
         <div className="page-head-actions">
@@ -1712,7 +1722,7 @@ function DiffReview({ data, onSelect }) {
 
       <div className="grid-4">
         <StatTile label="Changed files" value={diff.changedFiles.length} />
-        <StatTile label="Impacts" value={diff.impacts.length} />
+        <StatTile label="Symbols" value={diff.impacts.length} />
         <StatTile label="Doc updates" value={diff.docUpdates?.length || 0} tone="good" />
         <StatTile
           label="Docs-guard"
@@ -1745,32 +1755,72 @@ function DiffReview({ data, onSelect }) {
         </div>
       ) : null}
 
-      {diff.impacts.map((imp, i) => (
-        <div className="card" key={i} style={{ marginTop: 14 }}>
-          <div className="card-head">
-            <SymIcon kind={imp.kind} />
-            <h3 style={{ marginLeft: 6 }}>{imp.qualifiedName || imp.symbolName}</h3>
-            <span className="count">
-              {imp.changeType} · {imp.file}
-            </span>
-            <div className="card-head-spacer" />
-            {imp.docUpdateRequired ? (
-              <span className="tag warn">docs required</span>
-            ) : (
-              <span className="tag good">no docs needed</span>
-            )}
-            {imp.symbolId ? (
-              <button
-                className="btn ghost"
-                onClick={() => onSelect({ type: "symbol", id: imp.symbolId })}
-              >
-                Open symbol →
-              </button>
-            ) : null}
-          </div>
-          {imp.diff ? <SideBySideDiff data={data} text={imp.diff} /> : null}
-        </div>
-      ))}
+      {(() => {
+        const fileGroups = new Map();
+        for (const imp of diff.impacts) {
+          if (!fileGroups.has(imp.file)) fileGroups.set(imp.file, []);
+          fileGroups.get(imp.file).push(imp);
+        }
+        return Array.from(fileGroups.entries()).map(([file, imps], i) => {
+          const representative = imps[0];
+          const hasDocsRequired = imps.some((imp) => imp.docUpdateRequired);
+          const changeTypes = [...new Set(imps.map((imp) => imp.changeType))];
+          return (
+            <div className="card" key={i} style={{ marginTop: 14 }}>
+              <div className="card-head">
+                <h3 style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 500 }}>
+                  {file}
+                </h3>
+                <span className="count">
+                  {changeTypes.join(", ")} · {imps.length} symbol{imps.length !== 1 ? "s" : ""}
+                </span>
+                <div className="card-head-spacer" />
+                {hasDocsRequired ? (
+                  <span className="tag warn">docs required</span>
+                ) : (
+                  <span className="tag good">no docs needed</span>
+                )}
+              </div>
+              <div className="card-body flush">
+                {imps.map((imp, j) => (
+                  <div key={j} className="hotspot-row">
+                    <SymIcon kind={imp.kind} />
+                    <div className="name trunc">
+                      <strong>{imp.qualifiedName || imp.symbolName}</strong>
+                      <small>{imp.kind}</small>
+                    </div>
+                    <span
+                      className={`tag ${
+                        imp.changeType === "added"
+                          ? "good"
+                          : imp.changeType === "removed"
+                            ? "danger"
+                            : "accent"
+                      }`}
+                    >
+                      {imp.changeType}
+                    </span>
+                    {imp.docUpdateRequired ? <span className="tag warn">docs</span> : <span />}
+                    {imp.symbolId ? (
+                      <button
+                        className="btn ghost"
+                        onClick={() => onSelect({ type: "symbol", id: imp.symbolId })}
+                      >
+                        →
+                      </button>
+                    ) : (
+                      <span />
+                    )}
+                  </div>
+                ))}
+              </div>
+              {representative.diff ? (
+                <SideBySideDiff data={data} text={representative.diff} />
+              ) : null}
+            </div>
+          );
+        });
+      })()}
 
       {uncovered.length > 0 ? (
         <div
