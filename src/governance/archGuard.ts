@@ -320,11 +320,24 @@ function hasReturnTypeInSignature(signature: string | undefined): boolean {
   return suffix.length > 0 && !/^\s*[{[]?\s*$/.test(suffix);
 }
 
+/** Extract the declared return type name from a signature, e.g. "foo(): mixed" → "mixed". */
+function extractReturnTypeFromSignature(signature: string | undefined): string | undefined {
+  if (!signature) return undefined;
+  const match = signature.match(/\):\s*(\S+)\s*$/);
+  return match?.[1]?.toLowerCase();
+}
+
 function checkMissingReturnType(rule: ArchRule, symbols: CodeSymbol[]): ArchViolation[] {
   const scope = (rule.config.scope as string | undefined) ?? "all";
   const kind = rule.config.kind as string | undefined;
   const fileGlob = rule.config.file as string | undefined;
   const ignore = (rule.config.ignore as string[] | undefined) ?? [];
+  const allowNames = new Set(
+    ((rule.config.allowNames as string[] | undefined) ?? []).map((n) => n.toLowerCase()),
+  );
+  const allowedReturnTypes = new Set(
+    ((rule.config.allowedReturnTypes as string[] | undefined) ?? []).map((t) => t.toLowerCase()),
+  );
   const severity = rule.severity ?? "warning";
   const violations: ArchViolation[] = [];
 
@@ -335,8 +348,16 @@ function checkMissingReturnType(rule: ArchRule, symbols: CodeSymbol[]): ArchViol
     if (!isMethodOrFunction) continue;
     if (kind && sym.kind !== kind) continue;
     if (fileGlob && !matchGlob(fileGlob, sym.file)) continue;
+    if (allowNames.size > 0 && allowNames.has(sym.name.toLowerCase())) continue;
     if (scope === "public" && sym.visibility && sym.visibility !== "public") continue;
-    if (hasReturnTypeInSignature(sym.signature)) continue;
+    if (hasReturnTypeInSignature(sym.signature)) {
+      if (allowedReturnTypes.size === 0) continue;
+      const retType = extractReturnTypeFromSignature(sym.signature);
+      if (!retType || allowedReturnTypes.has(retType)) continue;
+      // Has a return type but it's in the disallowed-loose list — still a violation
+    } else {
+      // No return type declared at all
+    }
     violations.push({
       rule: rule.name,
       file: sym.file,

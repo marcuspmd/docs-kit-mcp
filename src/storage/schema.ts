@@ -1,6 +1,131 @@
 import type Database from "better-sqlite3";
 
-export const CURRENT_SCHEMA_VERSION = 3;
+export const CURRENT_SCHEMA_VERSION = 4;
+
+const PR_REVIEW_TABLES_SQL = `
+CREATE TABLE IF NOT EXISTS pr_pull_requests (
+  id          TEXT PRIMARY KEY,
+  provider    TEXT NOT NULL,
+  repository  TEXT NOT NULL,
+  number      TEXT NOT NULL,
+  title       TEXT,
+  url         TEXT,
+  author      TEXT,
+  state       TEXT NOT NULL,
+  base_ref    TEXT NOT NULL,
+  head_ref    TEXT NOT NULL,
+  base_sha    TEXT,
+  head_sha    TEXT,
+  created_at  TEXT,
+  updated_at  TEXT,
+  synced_at   TEXT,
+  UNIQUE (provider, repository, number)
+);
+
+CREATE TABLE IF NOT EXISTS pr_review_runs (
+  id                 TEXT PRIMARY KEY,
+  pr_id              TEXT NOT NULL,
+  status             TEXT NOT NULL,
+  base_sha           TEXT,
+  head_sha           TEXT,
+  generated_at       TEXT NOT NULL,
+  provider_review_id TEXT,
+  summary            TEXT,
+  error              TEXT,
+  metadata           TEXT
+);
+
+CREATE TABLE IF NOT EXISTS pr_review_files (
+  pr_id     TEXT NOT NULL,
+  file_path TEXT NOT NULL,
+  status    TEXT NOT NULL DEFAULT 'unviewed',
+  viewer    TEXT,
+  viewed_at TEXT,
+  PRIMARY KEY (pr_id, file_path)
+);
+
+CREATE TABLE IF NOT EXISTS pr_review_threads (
+  id                 TEXT PRIMARY KEY,
+  pr_id              TEXT NOT NULL,
+  run_id             TEXT,
+  provider_thread_id TEXT,
+  status             TEXT NOT NULL,
+  file_path          TEXT NOT NULL,
+  side               TEXT NOT NULL,
+  line               INTEGER,
+  original_line      INTEGER,
+  start_line         INTEGER,
+  end_line           INTEGER,
+  diff_hunk          TEXT,
+  symbol_id          TEXT,
+  finding_id         TEXT,
+  dedupe_key         TEXT,
+  title              TEXT,
+  created_at         TEXT NOT NULL,
+  updated_at         TEXT NOT NULL,
+  resolved_at        TEXT,
+  resolved_by        TEXT
+);
+
+CREATE TABLE IF NOT EXISTS pr_review_comments (
+  id                  TEXT PRIMARY KEY,
+  thread_id           TEXT NOT NULL,
+  pr_id               TEXT NOT NULL,
+  provider_comment_id TEXT,
+  author              TEXT NOT NULL,
+  body                TEXT NOT NULL,
+  state               TEXT NOT NULL,
+  is_draft            INTEGER NOT NULL DEFAULT 0,
+  created_at          TEXT NOT NULL,
+  updated_at          TEXT
+);
+
+CREATE TABLE IF NOT EXISTS pr_review_submissions (
+  id                 TEXT PRIMARY KEY,
+  pr_id              TEXT NOT NULL,
+  run_id             TEXT,
+  provider_review_id TEXT,
+  author             TEXT NOT NULL,
+  verdict            TEXT NOT NULL,
+  body               TEXT,
+  state              TEXT NOT NULL,
+  created_at         TEXT NOT NULL,
+  submitted_at       TEXT,
+  updated_at         TEXT,
+  error              TEXT
+);
+
+CREATE TABLE IF NOT EXISTS pr_reviewers (
+  pr_id       TEXT NOT NULL,
+  username    TEXT NOT NULL,
+  role        TEXT NOT NULL,
+  status      TEXT NOT NULL,
+  reviewed_at TEXT,
+  PRIMARY KEY (pr_id, username)
+);
+
+CREATE TABLE IF NOT EXISTS pr_review_suggestions (
+  id         TEXT PRIMARY KEY,
+  thread_id  TEXT NOT NULL,
+  comment_id TEXT,
+  body       TEXT NOT NULL,
+  state      TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  applied_at TEXT
+);
+
+CREATE TABLE IF NOT EXISTS pr_review_history (
+  id          TEXT PRIMARY KEY,
+  entity_type TEXT NOT NULL,
+  entity_id   TEXT NOT NULL,
+  pr_id       TEXT NOT NULL,
+  changed_at  TEXT NOT NULL DEFAULT (datetime('now')),
+  field       TEXT NOT NULL,
+  old_value   TEXT,
+  new_value   TEXT NOT NULL,
+  source      TEXT NOT NULL DEFAULT 'user'
+);
+`;
 
 const CREATE_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS symbols (
@@ -107,6 +232,8 @@ CREATE TABLE IF NOT EXISTS reaper_finding_history (
   new_value   TEXT NOT NULL,
   source      TEXT NOT NULL DEFAULT 'user'
 );
+
+${PR_REVIEW_TABLES_SQL}
 `;
 
 const INDEX_SQL = `
@@ -118,6 +245,15 @@ CREATE INDEX IF NOT EXISTS idx_symbols_layer ON symbols(layer);
 CREATE INDEX IF NOT EXISTS idx_doc_mappings_path ON doc_mappings(doc_path);
 CREATE INDEX IF NOT EXISTS idx_reaper_findings_status ON reaper_findings(status);
 CREATE INDEX IF NOT EXISTS idx_reaper_history_finding ON reaper_finding_history(finding_id);
+CREATE INDEX IF NOT EXISTS idx_pr_pull_requests_lookup ON pr_pull_requests(provider, repository, number);
+CREATE INDEX IF NOT EXISTS idx_pr_review_runs_pr ON pr_review_runs(pr_id);
+CREATE INDEX IF NOT EXISTS idx_pr_review_files_pr ON pr_review_files(pr_id);
+CREATE INDEX IF NOT EXISTS idx_pr_review_threads_pr ON pr_review_threads(pr_id);
+CREATE INDEX IF NOT EXISTS idx_pr_review_threads_dedupe ON pr_review_threads(pr_id, dedupe_key);
+CREATE INDEX IF NOT EXISTS idx_pr_review_comments_thread ON pr_review_comments(thread_id);
+CREATE INDEX IF NOT EXISTS idx_pr_review_submissions_pr ON pr_review_submissions(pr_id);
+CREATE INDEX IF NOT EXISTS idx_pr_review_history_entity ON pr_review_history(entity_type, entity_id);
+CREATE INDEX IF NOT EXISTS idx_pr_review_history_pr ON pr_review_history(pr_id);
 `;
 
 export const SCHEMA_SQL = `${CREATE_TABLES_SQL}\n${INDEX_SQL}`;
@@ -210,6 +346,12 @@ const MIGRATIONS: SchemaMigration[] = [
       db.exec(
         "CREATE INDEX IF NOT EXISTS idx_reaper_history_finding ON reaper_finding_history(finding_id)",
       );
+    },
+  },
+  {
+    version: 4,
+    up(db) {
+      db.exec(PR_REVIEW_TABLES_SQL);
     },
   },
 ];

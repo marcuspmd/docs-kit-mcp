@@ -275,7 +275,10 @@ export function buildArchGuardBaseRules(options: ArchGuardBaseOptions = {}): Arc
         description: "Public functions/methods should declare return type",
         type: "missing_return_type",
         severity: "warning",
-        config: { scope: "public" },
+        config: {
+          scope: "public",
+          allowNames: reservedNames.length > 0 ? reservedNames : undefined,
+        },
       });
     }
   }

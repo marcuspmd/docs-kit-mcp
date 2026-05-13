@@ -666,8 +666,18 @@ function InlineDiff({ text }) {
   );
 }
 
-function SideBySideDiff({ data, text }) {
+function SideBySideDiff({ data, text, findings = [] }) {
   if (!text) return null;
+  const findingsByLine = new Map();
+  for (const finding of findings) {
+    const lines = finding.lines?.length ? finding.lines : finding.line ? [finding.line] : [];
+    for (const line of lines) {
+      const values = findingsByLine.get(line) || [];
+      values.push(finding);
+      findingsByLine.set(line, values);
+    }
+  }
+  const lineFindings = (lineNumber) => findingsByLine.get(Number(lineNumber)) || [];
   const lines = text
     .split("\n")
     .filter(
@@ -718,6 +728,7 @@ function SideBySideDiff({ data, text }) {
           ) : (
             <div key={i} className={`side-row ${r.kind}`}>
               <span className="ln">{r.ln || ""}</span>
+              <span className="review-gutter" />
               <pre>{r.line || " "}</pre>
             </div>
           ),
@@ -735,12 +746,298 @@ function SideBySideDiff({ data, text }) {
           ) : (
             <div key={i} className={`side-row ${r.kind}`}>
               <span className="ln">{r.ln || ""}</span>
+              <span className="review-gutter">
+                {lineFindings(r.ln).length ? (
+                  <span
+                    className={`review-dot ${severityTone(lineFindings(r.ln)[0].severity)}`}
+                    title={`${lineFindings(r.ln).length} review finding(s)`}
+                  >
+                    {lineFindings(r.ln).length}
+                  </span>
+                ) : null}
+              </span>
               <pre>{r.line || " "}</pre>
             </div>
           ),
         )}
       </div>
     </div>
+  );
+}
+
+function severityTone(severity) {
+  if (severity === "critical" || severity === "error") return "danger";
+  if (severity === "warning") return "warn";
+  return "accent";
+}
+
+function changeTone(changeType) {
+  if (changeType === "added") return "good";
+  if (changeType === "removed") return "danger";
+  if (changeType === "signature_changed" || changeType === "visibility_changed") return "warn";
+  return "accent";
+}
+
+function compactFileName(filePath) {
+  const parts = String(filePath || "").split("/");
+  return parts[parts.length - 1] || filePath;
+}
+
+function uniquePush(values, value) {
+  if (value == null || values.includes(value)) return;
+  values.push(value);
+}
+
+function mergeReviewFindings(findings) {
+  const merged = [];
+  const docsGuardGroups = new Map();
+
+  for (const finding of findings) {
+    if (finding.source !== "docs_guard") {
+      merged.push(finding);
+      continue;
+    }
+
+    const key = [
+      finding.source,
+      finding.file,
+      finding.title,
+      finding.message,
+      finding.suggestion,
+    ].join("\u0000");
+    const existing = docsGuardGroups.get(key);
+
+    if (!existing) {
+      const group = {
+        ...finding,
+        symbolIds: [],
+        symbolNames: [],
+        lines: [],
+        originalMessage: finding.message,
+      };
+      uniquePush(group.symbolIds, finding.symbolId);
+      uniquePush(group.symbolNames, finding.symbolName);
+      uniquePush(group.lines, finding.line);
+      docsGuardGroups.set(key, group);
+      merged.push(group);
+      continue;
+    }
+
+    uniquePush(existing.symbolIds, finding.symbolId);
+    uniquePush(existing.symbolNames, finding.symbolName);
+    uniquePush(existing.lines, finding.line);
+  }
+
+  for (const finding of docsGuardGroups.values()) {
+    const affectedSymbols = Math.max(finding.symbolNames.length, finding.symbolIds.length);
+    if (affectedSymbols > 1) {
+      finding.message = `${finding.originalMessage} (${affectedSymbols} symbols in this file)`;
+      finding.id = `${finding.id}:grouped-${affectedSymbols}`;
+    }
+    delete finding.originalMessage;
+  }
+
+  return merged;
+}
+
+function impactDiffKey(impact) {
+  const text = impact.diff || "";
+  const structured = impact.structuredDiff ? JSON.stringify(impact.structuredDiff) : "";
+  if (text || structured) return [impact.file, text, structured].join("\u0000");
+  return (
+    impact.symbolId || `${impact.file}:${impact.symbolName}:${impact.startLine}:${impact.endLine}`
+  );
+}
+
+function collectImpactDiffBlocks(impacts) {
+  const blocks = [];
+  const seen = new Map();
+
+  for (const impact of impacts) {
+    const key = impactDiffKey(impact);
+    let block = seen.get(key);
+    if (!block) {
+      block = {
+        key,
+        impact,
+        impacts: [],
+      };
+      seen.set(key, block);
+      blocks.push(block);
+    }
+    block.impacts.push(impact);
+  }
+
+  return blocks;
+}
+
+function summarizeDiffBlockTitle(block) {
+  const primary =
+    block.impacts.find((impact) => impact.kind === "class" || impact.kind === "interface") ||
+    block.impact;
+  const label = primary.qualifiedName || primary.symbolName || compactFileName(primary.file);
+  if (block.impacts.length <= 1) return label;
+  return `${label} and ${block.impacts.length - 1} more`;
+}
+
+function findingMatchesDiffBlock(finding, block) {
+  const symbolIds = new Set(block.impacts.map((impact) => impact.symbolId).filter(Boolean));
+  if (finding.symbolIds?.some((symbolId) => symbolIds.has(symbolId))) return true;
+  if (finding.symbolId && symbolIds.has(finding.symbolId)) return true;
+  return !finding.symbolId && !finding.symbolIds?.length && finding.file === block.impact.file;
+}
+
+function groupDocGuardViolations(violations) {
+  const groups = new Map();
+
+  for (const violation of violations) {
+    const key = [violation.file, violation.reason, violation.docPath || ""].join("\u0000");
+    const group = groups.get(key);
+    if (!group) {
+      groups.set(key, { ...violation, symbolNames: [violation.symbolName] });
+      continue;
+    }
+    uniquePush(group.symbolNames, violation.symbolName);
+  }
+
+  return Array.from(groups.values());
+}
+
+function collectReviewFindings(diff) {
+  if (diff?.review?.items?.length) {
+    return mergeReviewFindings(
+      diff.review.items.flatMap((item) =>
+        (item.findings || []).map((finding) => ({
+          ...finding,
+          file: finding.file || item.file,
+          symbolId: finding.symbolId || item.symbolId,
+          symbolName: item.qualifiedName || item.symbolName,
+          changeType: item.changeType,
+        })),
+      ),
+    );
+  }
+
+  return mergeReviewFindings(
+    (diff?.docGuard?.uncoveredChanges || []).map((violation, index) => ({
+      id: `docs-guard-${index}`,
+      source: "docs_guard",
+      severity: "warning",
+      title: "Documentation coverage gap",
+      message: violation.reason,
+      file: violation.file,
+      symbolName: violation.symbolName,
+      suggestion: violation.docPath ? `Update ${violation.docPath}` : "Link documentation",
+    })),
+  );
+}
+
+function summarizeDiffStats(diffBlocks) {
+  return diffBlocks.reduce(
+    (stats, block) => {
+      stats.added += block.impact.structuredDiff?.addedLines || 0;
+      stats.removed += block.impact.structuredDiff?.removedLines || 0;
+      return stats;
+    },
+    { added: 0, removed: 0 },
+  );
+}
+
+function buildReviewFiles(diff, allFindings) {
+  if (!diff) return [];
+  const groups = new Map();
+  for (const file of diff.changedFiles || []) {
+    groups.set(file, { file, impacts: [], findings: [], diffBlocks: [] });
+  }
+  const seenImpacts = new Set();
+  for (const impact of diff.impacts || []) {
+    if (!groups.has(impact.file))
+      groups.set(impact.file, { file: impact.file, impacts: [], findings: [], diffBlocks: [] });
+    const key = impact.symbolId || `${impact.file}:${impact.symbolName}:${impact.changeType}`;
+    if (!seenImpacts.has(key)) {
+      seenImpacts.add(key);
+      groups.get(impact.file).impacts.push(impact);
+    }
+  }
+  for (const finding of allFindings) {
+    if (!finding.file) continue;
+    if (!groups.has(finding.file))
+      groups.set(finding.file, { file: finding.file, impacts: [], findings: [], diffBlocks: [] });
+    groups.get(finding.file).findings.push(finding);
+  }
+  for (const group of groups.values()) {
+    group.diffBlocks = collectImpactDiffBlocks(group.impacts);
+  }
+  return Array.from(groups.values()).sort((left, right) => left.file.localeCompare(right.file));
+}
+
+function ReviewFindingList({ findings, onSelect }) {
+  if (!findings.length) return null;
+  return (
+    <div className="review-findings">
+      {findings.map((finding) => {
+        const lines = finding.lines?.length ? finding.lines : finding.line ? [finding.line] : [];
+        const lineMeta = lines.length
+          ? `L${lines.slice(0, 3).join(", L")}${lines.length > 3 ? ` +${lines.length - 3}` : ""}`
+          : finding.source;
+
+        return (
+          <button
+            key={finding.id}
+            className="review-finding"
+            onClick={() => finding.symbolId && onSelect({ type: "symbol", id: finding.symbolId })}
+          >
+            <span className={`tag ${severityTone(finding.severity)}`}>{finding.severity}</span>
+            <span className="review-finding-body">
+              <strong>{finding.title}</strong>
+              <small>{finding.message}</small>
+              {finding.suggestion ? (
+                <small className="suggestion">{finding.suggestion}</small>
+              ) : null}
+            </span>
+            <span className="review-finding-meta">{lineMeta}</span>
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function ReviewFileSidebar({ files, activeFile, onSelectFile }) {
+  return (
+    <aside className="review-sidebar" aria-label="Changed files">
+      <div className="review-sidebar-head">
+        <strong>Files changed</strong>
+        <span>{files.length}</span>
+      </div>
+      <div className="review-file-list">
+        {files.map((fileGroup) => {
+          const stats = summarizeDiffStats(fileGroup.diffBlocks);
+          const hasDocsRequired = fileGroup.impacts.some((impact) => impact.docUpdateRequired);
+          const hasBlocking = fileGroup.findings.some(
+            (finding) => finding.severity === "error" || finding.severity === "critical",
+          );
+          return (
+            <button
+              key={fileGroup.file}
+              className={`review-file-nav ${activeFile === fileGroup.file ? "active" : ""}`}
+              onClick={() => onSelectFile(fileGroup.file)}
+            >
+              <span
+                className={`review-file-state ${hasBlocking ? "danger" : hasDocsRequired ? "warn" : "good"}`}
+              />
+              <span className="review-file-name trunc">{compactFileName(fileGroup.file)}</span>
+              <span className="review-file-path trunc">{fileGroup.file}</span>
+              <span className="review-file-counts">
+                {stats.added ? <span className="added">+{stats.added}</span> : null}
+                {stats.removed ? <span className="removed">-{stats.removed}</span> : null}
+                {fileGroup.findings.length ? <span>{fileGroup.findings.length} notes</span> : null}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+    </aside>
   );
 }
 
@@ -1685,7 +1982,57 @@ function FileDetail({ data, filePath, onSelect, showMinimap, showHeatmap }) {
 }
 
 function DiffReview({ data, onSelect }) {
+  const [activeFile, setActiveFile] = useState("");
+  const [viewMode, setViewMode] = useState("split");
+  const mainRef = useRef(null);
+  const fileRefs = useRef({});
   const diff = data.diff;
+  const allFindings = useMemo(() => collectReviewFindings(diff), [diff]);
+  const reviewFiles = useMemo(() => buildReviewFiles(diff, allFindings), [diff, allFindings]);
+  const preferredFile = useMemo(
+    () =>
+      reviewFiles.find((fileGroup) => fileGroup.impacts.length || fileGroup.findings.length) ||
+      reviewFiles[0],
+    [reviewFiles],
+  );
+
+  useEffect(() => {
+    if (!reviewFiles.length) return;
+    if (!reviewFiles.some((fg) => fg.file === activeFile)) {
+      setActiveFile(preferredFile?.file ?? "");
+    }
+  }, [activeFile, preferredFile, reviewFiles]);
+
+  // Update sidebar highlight based on scroll position inside review-main
+  useEffect(() => {
+    const el = mainRef.current;
+    if (!el || !reviewFiles.length) return;
+    const handleScroll = () => {
+      const containerTop = el.scrollTop;
+      let current = reviewFiles[0]?.file;
+      for (const fg of reviewFiles) {
+        const ref = fileRefs.current[fg.file];
+        if (ref && ref.offsetTop - el.offsetTop <= containerTop + 100) {
+          current = fg.file;
+        }
+      }
+      setActiveFile(current);
+    };
+    el.addEventListener("scroll", handleScroll, { passive: true });
+    return () => el.removeEventListener("scroll", handleScroll);
+  }, [reviewFiles]);
+
+  const handleSelectFile = useCallback((file) => {
+    setActiveFile(file);
+    const el = fileRefs.current[file];
+    if (el && mainRef.current) {
+      mainRef.current.scrollTo({
+        top: el.offsetTop - mainRef.current.offsetTop,
+        behavior: "smooth",
+      });
+    }
+  }, []);
+
   if (!diff) {
     return (
       <div className="page">
@@ -1701,7 +2048,26 @@ function DiffReview({ data, onSelect }) {
       </div>
     );
   }
+
   const uncovered = diff.docGuard?.uncoveredChanges || [];
+  const groupedUncovered = groupDocGuardViolations(uncovered);
+  const blockingFindings = allFindings.filter(
+    (finding) => finding.severity === "critical" || finding.severity === "error",
+  ).length;
+  const warningFindings = allFindings.filter((finding) => finding.severity === "warning").length;
+  const findingsBySeverity = allFindings.reduce((counts, finding) => {
+    counts[finding.severity] = (counts[finding.severity] || 0) + 1;
+    return counts;
+  }, {});
+  const reviewTone =
+    blockingFindings || uncovered.length ? "danger" : warningFindings ? "warn" : "good";
+  const reviewLabel =
+    blockingFindings || uncovered.length
+      ? "Changes requested"
+      : warningFindings
+        ? "Needs review"
+        : "Ready to approve";
+
   return (
     <div className="page">
       <div className="page-head">
@@ -1716,14 +2082,21 @@ function DiffReview({ data, onSelect }) {
           </p>
         </div>
         <div className="page-head-actions">
-          {diff.review?.status ? <span className="tag good">{diff.review.status}</span> : null}
+          <span className={`tag ${reviewTone}`}>{reviewLabel}</span>
+          {diff.review?.status ? <span className="tag accent">{diff.review.status}</span> : null}
         </div>
+      </div>
+
+      <div className="review-tabs" role="tablist" aria-label="Pull request sections">
+        <button className="review-tab">Conversation</button>
+        <button className="review-tab active">Files changed</button>
+        <button className="review-tab">Checks</button>
       </div>
 
       <div className="grid-4">
         <StatTile label="Changed files" value={diff.changedFiles.length} />
         <StatTile label="Symbols" value={diff.impacts.length} />
-        <StatTile label="Doc updates" value={diff.docUpdates?.length || 0} tone="good" />
+        <StatTile label="Findings" value={allFindings.length} tone={reviewTone} />
         <StatTile
           label="Docs-guard"
           value={`${diff.docGuard?.coveredChanges ?? 0}/${diff.docGuard?.totalChanges ?? 0}`}
@@ -1731,98 +2104,163 @@ function DiffReview({ data, onSelect }) {
         />
       </div>
 
-      {diff.review ? (
-        <div className="card" style={{ marginTop: 14 }}>
-          <div className="card-head">
-            <h3>AI review summary</h3>
-            <span className="count">{diff.review.status}</span>
-          </div>
-          <div className="card-body" style={{ lineHeight: 1.6 }}>
-            {diff.review.summary}
-            {diff.review.findingsBySeverity ? (
-              <div style={{ marginTop: 10, display: "flex", gap: 6, flexWrap: "wrap" }}>
-                {Object.entries(diff.review.findingsBySeverity).map(([s, n]) => (
-                  <span
-                    key={s}
-                    className={`tag ${s === "error" ? "danger" : s === "warning" ? "warn" : "accent"}`}
-                  >
-                    {n} {s}
-                  </span>
-                ))}
-              </div>
-            ) : null}
-          </div>
+      <div className="review-summary-bar">
+        <div>
+          <strong>{diff.review?.summary || "Semantic review summary"}</strong>
+          <span>
+            {diff.docUpdates?.length || 0} doc update
+            {(diff.docUpdates?.length || 0) !== 1 ? "s" : ""} · {warningFindings} warning
+            {warningFindings !== 1 ? "s" : ""} · {blockingFindings} blocking
+          </span>
         </div>
-      ) : null}
+        <div className="review-actions">
+          {Object.entries(findingsBySeverity).map(([severity, count]) =>
+            count ? (
+              <span key={severity} className={`tag ${severityTone(severity)}`}>
+                {count} {severity}
+              </span>
+            ) : null,
+          )}
+        </div>
+      </div>
 
-      {(() => {
-        const fileGroups = new Map();
-        for (const imp of diff.impacts) {
-          if (!fileGroups.has(imp.file)) fileGroups.set(imp.file, []);
-          fileGroups.get(imp.file).push(imp);
-        }
-        return Array.from(fileGroups.entries()).map(([file, imps], i) => {
-          const representative = imps[0];
-          const hasDocsRequired = imps.some((imp) => imp.docUpdateRequired);
-          const changeTypes = [...new Set(imps.map((imp) => imp.changeType))];
-          return (
-            <div className="card" key={i} style={{ marginTop: 14 }}>
-              <div className="card-head">
-                <h3 style={{ fontFamily: "var(--font-mono)", fontSize: 13, fontWeight: 500 }}>
-                  {file}
-                </h3>
-                <span className="count">
-                  {changeTypes.join(", ")} · {imps.length} symbol{imps.length !== 1 ? "s" : ""}
-                </span>
-                <div className="card-head-spacer" />
-                {hasDocsRequired ? (
-                  <span className="tag warn">docs required</span>
-                ) : (
-                  <span className="tag good">no docs needed</span>
-                )}
-              </div>
-              <div className="card-body flush">
-                {imps.map((imp, j) => (
-                  <div key={j} className="hotspot-row">
-                    <SymIcon kind={imp.kind} />
-                    <div className="name trunc">
-                      <strong>{imp.qualifiedName || imp.symbolName}</strong>
-                      <small>{imp.kind}</small>
+      <div className="review-toolbar">
+        <div className="segmented" aria-label="Diff view mode">
+          <button
+            className={viewMode === "split" ? "active" : ""}
+            onClick={() => setViewMode("split")}
+          >
+            Split
+          </button>
+          <button
+            className={viewMode === "unified" ? "active" : ""}
+            onClick={() => setViewMode("unified")}
+          >
+            Unified
+          </button>
+        </div>
+        <span className="review-toolbar-meta trunc">
+          {activeFile || reviewFiles[0]?.file || "No file selected"}
+        </span>
+        <div className="review-toolbar-spacer" />
+        <button className="btn ghost" disabled>
+          Viewed
+        </button>
+        <button className="btn primary" disabled>
+          Submit review
+        </button>
+      </div>
+
+      <div className="review-shell">
+        <ReviewFileSidebar
+          files={reviewFiles}
+          activeFile={activeFile}
+          onSelectFile={handleSelectFile}
+        />
+        <section className="review-main" ref={mainRef}>
+          {reviewFiles.length ? (
+            reviewFiles.map((fg) => {
+              const fileStats = summarizeDiffStats(fg.diffBlocks);
+              return (
+                <div
+                  key={fg.file}
+                  className="review-file-panel"
+                  ref={(el) => {
+                    if (el) fileRefs.current[fg.file] = el;
+                  }}
+                  data-file={fg.file}
+                >
+                  <div className="review-file-head">
+                    <div>
+                      <h3>{fg.file}</h3>
+                      <span>
+                        {fg.impacts.length} impacted symbol
+                        {fg.impacts.length !== 1 ? "s" : ""} ·{" "}
+                        <span className="added">+{fileStats.added}</span>{" "}
+                        <span className="removed">-{fileStats.removed}</span>
+                      </span>
                     </div>
-                    <span
-                      className={`tag ${
-                        imp.changeType === "added"
-                          ? "good"
-                          : imp.changeType === "removed"
-                            ? "danger"
-                            : "accent"
-                      }`}
-                    >
-                      {imp.changeType}
-                    </span>
-                    {imp.docUpdateRequired ? <span className="tag warn">docs</span> : <span />}
-                    {imp.symbolId ? (
-                      <button
-                        className="btn ghost"
-                        onClick={() => onSelect({ type: "symbol", id: imp.symbolId })}
-                      >
-                        →
-                      </button>
-                    ) : (
-                      <span />
-                    )}
+                    <div className="review-file-tags">
+                      {[...new Set(fg.impacts.map((i) => i.changeType))].map((ct) => (
+                        <span key={ct} className={`tag ${changeTone(ct)}`}>
+                          {ct}
+                        </span>
+                      ))}
+                      {fg.impacts.some((i) => i.docUpdateRequired) ? (
+                        <span className="tag warn">docs required</span>
+                      ) : null}
+                    </div>
                   </div>
-                ))}
-              </div>
-              {representative.diff ? (
-                <SideBySideDiff data={data} text={representative.diff} />
-              ) : null}
-            </div>
-          );
-        });
-      })()}
 
-      {uncovered.length > 0 ? (
+                  {fg.impacts.length ? (
+                    <div className="review-symbol-strip">
+                      {fg.impacts.map((impact) => (
+                        <button
+                          key={impact.symbolId || impact.symbolName}
+                          className="review-symbol-chip"
+                          onClick={() =>
+                            impact.symbolId && onSelect({ type: "symbol", id: impact.symbolId })
+                          }
+                        >
+                          <SymIcon kind={impact.kind} />
+                          <span className="trunc">{impact.qualifiedName || impact.symbolName}</span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
+
+                  <ReviewFindingList findings={fg.findings} onSelect={onSelect} />
+
+                  {fg.diffBlocks.length ? (
+                    fg.diffBlocks.map((block) => {
+                      const impact = block.impact;
+                      const blockFindings = fg.findings.filter((finding) =>
+                        findingMatchesDiffBlock(finding, block),
+                      );
+                      const changeTypes = [
+                        ...new Set(block.impacts.map((item) => item.changeType)),
+                      ];
+
+                      return (
+                        <div key={block.key} className="review-diff-block">
+                          <div className="review-diff-head">
+                            <strong>{summarizeDiffBlockTitle(block)}</strong>
+                            {block.impacts.length > 1 ? (
+                              <span className="tag accent">{block.impacts.length} symbols</span>
+                            ) : null}
+                            {changeTypes.map((changeType) => (
+                              <span key={changeType} className={`tag ${changeTone(changeType)}`}>
+                                {changeType}
+                              </span>
+                            ))}
+                          </div>
+                          {viewMode === "split" ? (
+                            <SideBySideDiff
+                              data={data}
+                              text={impact.diff}
+                              findings={blockFindings}
+                            />
+                          ) : (
+                            <InlineDiff text={impact.diff} />
+                          )}
+                        </div>
+                      );
+                    })
+                  ) : (
+                    <div className="review-empty-file">
+                      This file changed, but no indexed symbol diff was captured.
+                    </div>
+                  )}
+                </div>
+              );
+            })
+          ) : (
+            <div className="empty">No changed files.</div>
+          )}
+        </section>
+      </div>
+
+      {groupedUncovered.length > 0 ? (
         <div
           className="card"
           style={{
@@ -1832,15 +2270,23 @@ function DiffReview({ data, onSelect }) {
         >
           <div className="card-head">
             <h3>Docs-guard violations</h3>
-            <span className="count">{uncovered.length}</span>
+            <span className="count">{groupedUncovered.length}</span>
           </div>
           <div className="card-body flush">
-            {uncovered.map((u, i) => (
+            {groupedUncovered.map((u, i) => (
               <div key={i} className="hotspot-row">
                 <span className="tag danger">block</span>
                 <div className="name trunc">
-                  <strong>{u.symbolName}</strong>
-                  <small>{u.reason}</small>
+                  <strong>
+                    {u.symbolNames.length > 1
+                      ? `${u.symbolNames[0]} and ${u.symbolNames.length - 1} more`
+                      : u.symbolName}
+                  </strong>
+                  <small>
+                    {u.symbolNames.length > 1
+                      ? `${u.reason} (${u.symbolNames.length} symbols in this file)`
+                      : u.reason}
+                  </small>
                 </div>
                 <span className="metric">{u.docPath}</span>
                 <span />

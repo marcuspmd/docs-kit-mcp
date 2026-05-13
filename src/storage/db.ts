@@ -7,6 +7,7 @@ export {
   type SymbolRow,
 } from "./symbolRepository.js";
 export { createFileHashRepository, type FileHashRepository } from "./fileHashRepository.js";
+export { createPrReviewRepository, type PrReviewRepository } from "./prReviewRepository.js";
 export {
   createRelationshipRepository,
   relationshipRowsToSymbolRelationships,

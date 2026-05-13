@@ -4,6 +4,7 @@ import {
   createSymbolRepository,
   createRelationshipRepository,
   createFileHashRepository,
+  createPrReviewRepository,
   CURRENT_SCHEMA_VERSION,
 } from "../db.js";
 import type { CodeSymbol } from "../../indexer/symbol.types.js";
@@ -47,6 +48,9 @@ describe("Storage Layer", () => {
       expect(names).toContain("symbols");
       expect(names).toContain("relationships");
       expect(names).toContain("doc_mappings");
+      expect(names).toContain("pr_pull_requests");
+      expect(names).toContain("pr_review_threads");
+      expect(names).toContain("pr_review_comments");
     });
 
     it("tracks the current schema version", () => {
@@ -445,6 +449,177 @@ describe("Storage Layer", () => {
 
       const result = repo.get("src/a.ts");
       expect(result!.contentHash).toBe("new-hash");
+    });
+  });
+
+  describe("PrReviewRepository", () => {
+    const createdAt = "2026-05-12 10:00:00";
+
+    function seedPullRequest() {
+      const repo = createPrReviewRepository(db);
+      repo.upsertPullRequest({
+        id: "github:marcuspmd/docs-kit-mcp:42",
+        provider: "github",
+        repository: "marcuspmd/docs-kit-mcp",
+        number: "42",
+        title: "Add PR review flow",
+        url: "https://github.com/marcuspmd/docs-kit-mcp/pull/42",
+        author: "marcus",
+        state: "open",
+        baseRef: "master",
+        headRef: "feature/pr-review",
+        baseSha: "base-sha",
+        headSha: "head-sha",
+        createdAt,
+        updatedAt: createdAt,
+        syncedAt: createdAt,
+      });
+      return repo;
+    }
+
+    it("upserts and finds pull requests by provider identity", () => {
+      const repo = seedPullRequest();
+
+      const found = repo.findPullRequestByProvider("github", "marcuspmd/docs-kit-mcp", "42");
+
+      expect(found).toMatchObject({
+        id: "github:marcuspmd/docs-kit-mcp:42",
+        provider: "github",
+        repository: "marcuspmd/docs-kit-mcp",
+        number: "42",
+        baseRef: "master",
+        headRef: "feature/pr-review",
+      });
+    });
+
+    it("stores review runs with metadata and viewed files", () => {
+      const repo = seedPullRequest();
+      repo.upsertReviewRun({
+        id: "run-1",
+        prId: "github:marcuspmd/docs-kit-mcp:42",
+        status: "generated",
+        baseSha: "base-sha",
+        headSha: "head-sha",
+        generatedAt: createdAt,
+        providerReviewId: "review-remote-1",
+        summary: "2 files changed",
+        metadata: { mode: "dry-run" },
+      });
+      repo.markFileViewed(
+        "github:marcuspmd/docs-kit-mcp:42",
+        "src/storage/prReviewRepository.ts",
+        "marcus",
+        createdAt,
+      );
+
+      expect(repo.findReviewRun("run-1")).toMatchObject({
+        id: "run-1",
+        status: "generated",
+        metadata: { mode: "dry-run" },
+      });
+      expect(repo.listFileStates("github:marcuspmd/docs-kit-mcp:42")).toEqual([
+        {
+          prId: "github:marcuspmd/docs-kit-mcp:42",
+          file: "src/storage/prReviewRepository.ts",
+          status: "viewed",
+          viewer: "marcus",
+          viewedAt: createdAt,
+        },
+      ]);
+    });
+
+    it("stores threads, comments, suggestions, submissions, reviewers, and history", () => {
+      const repo = seedPullRequest();
+      repo.upsertThread({
+        id: "thread-1",
+        prId: "github:marcuspmd/docs-kit-mcp:42",
+        runId: "run-1",
+        providerThreadId: "provider-thread-1",
+        status: "open",
+        anchor: {
+          file: "src/server/http.ts",
+          side: "right",
+          line: 120,
+          originalLine: 115,
+          startLine: 120,
+          endLine: 122,
+          diffHunk: "@@ -115,1 +120,3 @@",
+          symbolId: "symbol-1",
+          findingId: "finding-1",
+          dedupeKey: "finding:finding-1",
+        },
+        title: "Missing persistence",
+        createdAt,
+        updatedAt: createdAt,
+      });
+      repo.upsertComment({
+        id: "comment-1",
+        threadId: "thread-1",
+        prId: "github:marcuspmd/docs-kit-mcp:42",
+        providerCommentId: "provider-comment-1",
+        author: "reviewer",
+        body: "Please persist this thread before submit.",
+        state: "published",
+        createdAt,
+      });
+      repo.upsertSuggestion({
+        id: "suggestion-1",
+        threadId: "thread-1",
+        commentId: "comment-1",
+        body: "return repo.save(thread);",
+        state: "pending",
+        createdAt,
+      });
+      repo.upsertSubmission({
+        id: "submission-1",
+        prId: "github:marcuspmd/docs-kit-mcp:42",
+        runId: "run-1",
+        author: "reviewer",
+        verdict: "request_changes",
+        body: "Please address the inline thread.",
+        state: "submitted",
+        createdAt,
+        submittedAt: createdAt,
+      });
+      repo.upsertReviewer({
+        prId: "github:marcuspmd/docs-kit-mcp:42",
+        username: "reviewer",
+        role: "reviewer",
+        status: "changes_requested",
+        reviewedAt: createdAt,
+      });
+
+      expect(repo.listThreads("github:marcuspmd/docs-kit-mcp:42")).toHaveLength(1);
+      expect(repo.listComments("thread-1")).toEqual([
+        expect.objectContaining({
+          id: "comment-1",
+          body: "Please persist this thread before submit.",
+        }),
+      ]);
+      expect(repo.listSuggestions("thread-1")).toEqual([
+        expect.objectContaining({ id: "suggestion-1", state: "pending" }),
+      ]);
+      expect(repo.listSubmissions("github:marcuspmd/docs-kit-mcp:42")).toEqual([
+        expect.objectContaining({ verdict: "request_changes", state: "submitted" }),
+      ]);
+      expect(repo.listReviewers("github:marcuspmd/docs-kit-mcp:42")).toEqual([
+        expect.objectContaining({ username: "reviewer", status: "changes_requested" }),
+      ]);
+
+      expect(repo.updateThreadStatus("thread-1", "resolved", "reviewer")).toBe(true);
+      expect(repo.findThread("thread-1")).toMatchObject({
+        status: "resolved",
+        resolvedBy: "reviewer",
+      });
+      expect(repo.listHistory("github:marcuspmd/docs-kit-mcp:42")).toEqual([
+        expect.objectContaining({
+          entityType: "thread",
+          entityId: "thread-1",
+          field: "status",
+          oldValue: "open",
+          newValue: "resolved",
+        }),
+      ]);
     });
   });
 });
