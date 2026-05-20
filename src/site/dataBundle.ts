@@ -5,6 +5,7 @@ import type { CodeSymbol } from "../indexer/symbol.types.js";
 import type { DetectedPattern } from "../patterns/patternAnalyzer.js";
 import type { ArchViolationRow, ReaperFindingRow, RelationshipRow } from "../storage/db.js";
 import { normalizePath, parseLcov } from "../indexer/lcovCollector.js";
+import { minimatch } from "../config.js";
 import { buildSearchIndex, type SearchIndex } from "./searchIndex.js";
 import type { DocEntry } from "./types.js";
 import { buildComplexityModel, type ComplexityModel } from "./complexityAggregates.js";
@@ -229,6 +230,7 @@ async function buildCoverageByLine(
   sourceFiles: Record<string, SourceFileContext>,
   rootDir: string | undefined,
   lcovPath: string | undefined,
+  ignore: string[] = [],
 ): Promise<CoverageByLine> {
   if (!lcovPath) return {};
   const resolved = path.isAbsolute(lcovPath)
@@ -236,10 +238,15 @@ async function buildCoverageByLine(
     : path.resolve(rootDir ?? process.cwd(), lcovPath);
   if (!fs.existsSync(resolved)) return {};
 
-  const records = await parseLcov(resolved);
-  if (records.length === 0) return {};
-
   const projectRoot = path.resolve(rootDir ?? process.cwd());
+  let records = await parseLcov(resolved);
+  if (records.length === 0) return {};
+  if (ignore.length > 0) {
+    records = records.filter(
+      (f) => !ignore.some((pattern) => minimatch(normalizePath(f.file, projectRoot), pattern)),
+    );
+  }
+
   // Build lookup: normalized path -> Map<line, hit>
   const byPath = new Map<string, Map<number, number>>();
   for (const rec of records) {
@@ -272,6 +279,8 @@ export interface CreateSiteDataBundleOptions {
   diff?: DiffSiteMetadata;
   /** Path to lcov.info (relative to rootDir or absolute). Defaults to "coverage/lcov.info". */
   lcovPath?: string;
+  /** Glob patterns for files to exclude from coverage metrics (e.g. "src/test-utils/**"). */
+  coverageIgnore?: string[];
 }
 
 export async function createSiteDataBundle(
@@ -283,7 +292,12 @@ export async function createSiteDataBundle(
   const complexity = buildComplexityModel(data.symbols, data.files);
   const sourceFiles = buildSourceFiles(data.files, rootDir);
   const lcovPath = options?.lcovPath ?? "coverage/lcov.info";
-  const coverageByLine = await buildCoverageByLine(sourceFiles, rootDir, lcovPath);
+  const coverageByLine = await buildCoverageByLine(
+    sourceFiles,
+    rootDir,
+    lcovPath,
+    options?.coverageIgnore ?? [],
+  );
 
   return {
     schemaVersion: SITE_DATA_BUNDLE_SCHEMA_VERSION,

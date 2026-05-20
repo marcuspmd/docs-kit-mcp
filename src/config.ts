@@ -102,6 +102,7 @@ export const ConfigSchema = z.object({
     .object({
       lcovPath: z.string().default("coverage/lcov.info"),
       enabled: z.boolean().default(false),
+      ignore: z.array(z.string()).default([]),
     })
     .optional(),
 

@@ -1,5 +1,4 @@
 import "reflect-metadata";
-import fs from "node:fs";
 import path from "node:path";
 import type Database from "better-sqlite3";
 import { analyzeChanges } from "../../analyzer/changeAnalyzer.js";
@@ -15,7 +14,7 @@ import type { LlmProvider } from "../../llm/provider.js";
 import { buildDiffSiteMetadata, filterSiteDataForDiff } from "../../site/diffData.js";
 import { loadSiteData } from "../../site/dataLoader.js";
 import { generateSiteV2 } from "../../site/v2Generator.js";
-import { done, header, step, summary } from "../utils/index.js";
+import { done, header, step, summary, assertDatabaseExists } from "../utils/index.js";
 import { resolveConfigPath } from "../utils/index.js";
 
 export interface DiffUseCaseParams {
@@ -40,12 +39,7 @@ export async function diffUseCase(params: DiffUseCaseParams): Promise<void> {
   const rootDir = params.rootDir ? path.resolve(configDir, params.rootDir) : config.projectRoot;
   const range = "merge-base" as const;
 
-  if (!fs.existsSync(dbPath)) {
-    console.error(`Error: Database not found at ${dbPath}`);
-    console.error(`Run "docs-kit index" first to create the index.`);
-    process.exit(1);
-    return;
-  }
+  assertDatabaseExists(dbPath);
 
   await setupContainer({ dbPath });
 

@@ -68,6 +68,10 @@ export class ClaudeProvider implements LlmProvider {
       },
       body: JSON.stringify({ model, input: texts }),
     });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Voyage embeddings API error ${res.status}: ${body}`);
+    }
     const json = (await res.json()) as {
       data?: Array<{ embedding?: number[] }>;
     };

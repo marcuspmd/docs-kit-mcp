@@ -7,11 +7,17 @@ import "./styles.css";
    Loads /site-data.json at runtime and renders the SPA.
    ============================================================ */
 
+// ─── Thresholds ─────────────────────────────────────────────
+const RISK_HIGH = 50;
+const RISK_WARN = 25;
+const SCORE_GOOD = 80;
+const SCORE_WARN = 50;
+
 // ─── Helpers ────────────────────────────────────────────────
 const fmt = (v) => (v == null ? "—" : Number.isInteger(v) ? String(v) : Number(v).toFixed(1));
 
-const riskCls = (r) => (r == null ? "" : r > 50 ? "r-high" : r > 25 ? "r-warn" : "r-ok");
-const toneOfScore = (s) => (s == null ? "" : s >= 80 ? "good" : s >= 50 ? "warn" : "danger");
+const riskCls = (r) => (r == null ? "" : r > RISK_HIGH ? "r-high" : r > RISK_WARN ? "r-warn" : "r-ok");
+const toneOfScore = (s) => (s == null ? "" : s >= SCORE_GOOD ? "good" : s >= SCORE_WARN ? "warn" : "danger");
 
 const KIND_LABEL = {
   class: "C",
@@ -479,7 +485,7 @@ function Treemap({ items, getValue, getColor, getLabel, onClick, height = 260 })
     <div className="treemap-wrap" ref={ref} style={{ height }}>
       {rects.map((r, i) => (
         <div
-          key={i}
+          key={r.item.path || r.item.label || i}
           className="cell"
           style={{ left: r.x, top: r.y, width: r.w, height: r.h, background: getColor(r.item) }}
           onClick={() => onClick && onClick(r.item)}
@@ -650,24 +656,40 @@ function InlineDiff({ text }) {
     return { kind, line: l, idx: i, ln };
   });
   return (
-    <div className="inline-diff">
-      {rows.map((r) =>
-        r.kind === "meta" ? null : (
-          <div key={r.idx} className={`diff-row ${r.kind}`}>
-            <span className="ln">{r.idx}</span>
-            <span className="gut">{r.ln}</span>
-            <span className="code">
-              {r.kind === "hunk" ? r.line : r.line.replace(/^[+\- ]/, "")}
-            </span>
-          </div>
-        ),
-      )}
+    <div className="inline-scroll">
+      <table className="diff-table">
+        <tbody>
+          {rows.map((r) =>
+            r.kind === "meta" ? null : r.kind === "hunk" ? (
+              <tr key={r.idx} className="diff-row hunk">
+                <td colSpan={3}>{r.line}</td>
+              </tr>
+            ) : (
+              <tr key={r.idx} className={`diff-row ${r.kind}`}>
+                <td className="ln">{r.idx}</td>
+                <td className="gut">{r.ln}</td>
+                <td className="code">{r.line.replace(/^[+\- ]/, "") || " "}</td>
+              </tr>
+            ),
+          )}
+        </tbody>
+      </table>
     </div>
   );
 }
 
 function SideBySideDiff({ data, text, findings = [] }) {
   if (!text) return null;
+  const leftRef = useRef(null);
+  const rightRef = useRef(null);
+
+  const handleLeftScroll = () => {
+    if (rightRef.current) rightRef.current.scrollLeft = leftRef.current.scrollLeft;
+  };
+  const handleRightScroll = () => {
+    if (leftRef.current) leftRef.current.scrollLeft = rightRef.current.scrollLeft;
+  };
+
   const findingsByLine = new Map();
   for (const finding of findings) {
     const lines = finding.lines?.length ? finding.lines : finding.line ? [finding.line] : [];
@@ -718,48 +740,56 @@ function SideBySideDiff({ data, text, findings = [] }) {
     <div className="diff-split">
       <div className="side old">
         <div className="side-h">before · {data.diff?.base || "main"}</div>
-        {left.map((r, i) =>
-          r.kind === "hunk" ? (
-            <div key={i} className="diff-row hunk">
-              <span />
-              <span />
-              <pre style={{ margin: 0, padding: "2px 8px" }}>{r.line}</pre>
-            </div>
-          ) : (
-            <div key={i} className={`side-row ${r.kind}`}>
-              <span className="ln">{r.ln || ""}</span>
-              <span className="review-gutter" />
-              <pre>{r.line || " "}</pre>
-            </div>
-          ),
-        )}
+        <div className="side-scroll" ref={leftRef} onScroll={handleLeftScroll}>
+          <table className="diff-table">
+            <tbody>
+              {left.map((r, i) =>
+                r.kind === "hunk" ? (
+                  <tr key={`hunk-l-${i}`} className="diff-row hunk">
+                    <td colSpan={3}>{r.line}</td>
+                  </tr>
+                ) : (
+                  <tr key={`line-l-${r.ln ?? i}`} className={`diff-row ${r.kind}`}>
+                    <td className="ln">{r.ln || ""}</td>
+                    <td className="gut" />
+                    <td className="code">{r.line || " "}</td>
+                  </tr>
+                ),
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
       <div className="side new">
         <div className="side-h">after · {data.diff?.head || "head"}</div>
-        {right.map((r, i) =>
-          r.kind === "hunk" ? (
-            <div key={i} className="diff-row hunk">
-              <span />
-              <span />
-              <pre style={{ margin: 0, padding: "2px 8px" }}>{r.line}</pre>
-            </div>
-          ) : (
-            <div key={i} className={`side-row ${r.kind}`}>
-              <span className="ln">{r.ln || ""}</span>
-              <span className="review-gutter">
-                {lineFindings(r.ln).length ? (
-                  <span
-                    className={`review-dot ${severityTone(lineFindings(r.ln)[0].severity)}`}
-                    title={`${lineFindings(r.ln).length} review finding(s)`}
-                  >
-                    {lineFindings(r.ln).length}
-                  </span>
-                ) : null}
-              </span>
-              <pre>{r.line || " "}</pre>
-            </div>
-          ),
-        )}
+        <div className="side-scroll" ref={rightRef} onScroll={handleRightScroll}>
+          <table className="diff-table">
+            <tbody>
+              {right.map((r, i) =>
+                r.kind === "hunk" ? (
+                  <tr key={`hunk-r-${i}`} className="diff-row hunk">
+                    <td colSpan={3}>{r.line}</td>
+                  </tr>
+                ) : (
+                  <tr key={`line-r-${r.ln ?? i}`} className={`diff-row ${r.kind}`}>
+                    <td className="ln">{r.ln || ""}</td>
+                    <td className="gut">
+                      {lineFindings(r.ln).length ? (
+                        <span
+                          className={`review-dot ${severityTone(lineFindings(r.ln)[0].severity)}`}
+                          title={`${lineFindings(r.ln).length} review finding(s)`}
+                        >
+                          {lineFindings(r.ln).length}
+                        </span>
+                      ) : null}
+                    </td>
+                    <td className="code">{r.line || " "}</td>
+                  </tr>
+                ),
+              )}
+            </tbody>
+          </table>
+        </div>
       </div>
     </div>
   );
@@ -1024,7 +1054,7 @@ function ReviewFileSidebar({ files, activeFile, onSelectFile }) {
               onClick={() => onSelectFile(fileGroup.file)}
             >
               <span
-                className={`review-file-state ${hasBlocking ? "danger" : hasDocsRequired ? "warn" : "good"}`}
+                className={`review-file-state ${hasBlocking ? "danger" : "good"}`}
               />
               <span className="review-file-name trunc">{compactFileName(fileGroup.file)}</span>
               <span className="review-file-path trunc">{fileGroup.file}</span>
@@ -1042,7 +1072,7 @@ function ReviewFileSidebar({ files, activeFile, onSelectFile }) {
 }
 
 // ─── Pages ──────────────────────────────────────────────────
-function Pillar({ title, weight, score, suffix = "", meta = [] }) {
+function Pillar({ title, weight, score, suffix = "", meta = [], metaActions = [] }) {
   const tone = toneOfScore(score);
   return (
     <div className="pillar">
@@ -1058,10 +1088,18 @@ function Pillar({ title, weight, score, suffix = "", meta = [] }) {
         <div className={tone} style={{ width: `${Math.max(0, Math.min(100, score))}%` }} />
       </div>
       <div className="meta">
-        <span className={tone === "good" ? "good" : tone === "danger" ? "danger" : ""}>
-          {meta[0]}
-        </span>
-        <span>{meta[1]}</span>
+        {metaActions[0] ? (
+          <button className="meta-link" onClick={metaActions[0]}>{meta[0]}</button>
+        ) : (
+          <span className={tone === "good" ? "good" : tone === "danger" ? "danger" : ""}>
+            {meta[0]}
+          </span>
+        )}
+        {metaActions[1] ? (
+          <button className="meta-link" onClick={metaActions[1]}>{meta[1]}</button>
+        ) : (
+          <span>{meta[1]}</span>
+        )}
       </div>
     </div>
   );
@@ -1209,7 +1247,7 @@ function PathOverview({ data, path, onSelect }) {
         <StatTile
           label="Risk (max)"
           value={maxRisk}
-          tone={maxRisk > 50 ? "danger" : maxRisk > 25 ? "warn" : ""}
+          tone={maxRisk > RISK_HIGH ? "danger" : maxRisk > RISK_WARN ? "warn" : ""}
         />
       </div>
 
@@ -1317,9 +1355,9 @@ function PathOverview({ data, path, onSelect }) {
                               style={{
                                 width: `${row.avgCoverage}%`,
                                 background:
-                                  row.avgCoverage >= 80
+                                  row.avgCoverage >= SCORE_GOOD
                                     ? "var(--ok)"
-                                    : row.avgCoverage >= 50
+                                    : row.avgCoverage >= SCORE_WARN
                                       ? "var(--warn)"
                                       : "var(--danger)",
                               }}
@@ -1335,7 +1373,7 @@ function PathOverview({ data, path, onSelect }) {
                       {row.violationCount}
                     </td>
                     <td
-                      className={`num right ${row.maxRisk > 50 ? "danger" : row.maxRisk > 25 ? "warn" : "good"}`}
+                      className={`num right ${row.maxRisk > RISK_HIGH ? "danger" : row.maxRisk > RISK_WARN ? "warn" : "good"}`}
                     >
                       {fmt(row.maxRisk)}
                     </td>
@@ -1349,7 +1387,59 @@ function PathOverview({ data, path, onSelect }) {
   );
 }
 
+function LowCoverageModal({ symbols, onSelect, onClose }) {
+  const covTone = (c) => (c < 30 ? "danger" : "warn");
+  const items = symbols
+    .filter((s) => {
+      const c = s.metrics?.testCoverage?.coveragePercent;
+      return c != null && c < 60;
+    })
+    .sort(
+      (a, b) =>
+        a.metrics.testCoverage.coveragePercent - b.metrics.testCoverage.coveragePercent,
+    );
+  return (
+    <div className="palette-back" onClick={onClose}>
+      <div className="palette" onClick={(e) => e.stopPropagation()}>
+        <div className="low-cov-head">
+          <span>Below 60% coverage</span>
+          <span className="count">{items.length} symbols</span>
+          <div style={{ flex: 1 }} />
+          <button className="icon-btn" onClick={onClose} title="Close">✕</button>
+        </div>
+        <div className="palette-list">
+          {items.length === 0 ? (
+            <div className="palette-group-label">No symbols below 60% coverage.</div>
+          ) : (
+            items.map((s) => {
+              const cov = Math.round(s.metrics.testCoverage.coveragePercent);
+              return (
+                <div
+                  key={s.id}
+                  className="hotspot-row"
+                  onClick={() => {
+                    onSelect({ type: "symbol", id: s.id });
+                    onClose();
+                  }}
+                >
+                  <SymIcon kind={s.kind} />
+                  <div className="name trunc">
+                    <strong>{s.qualifiedName || s.name}</strong>
+                    <small>{s.file}</small>
+                  </div>
+                  <span className={`metric ${covTone(cov)}`}>{cov}%</span>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function Dashboard({ data, onSelect }) {
+  const [showLowCov, setShowLowCov] = useState(false);
   const proj = data.complexity.project;
   const cov = data.health.coverage;
   const totalSyms = Math.max(1, proj.symbolCount);
@@ -1396,8 +1486,8 @@ function Dashboard({ data, onSelect }) {
             <Donut score={overall} />
             <div className="label">Code Quality</div>
             <div className="grade">
-              Grade {overall >= 80 ? "A" : overall >= 60 ? "B" : overall >= 40 ? "C" : "D"} ·{" "}
-              {overall >= 80 ? "Healthy" : overall >= 50 ? "Needs attention" : "Critical"}
+              Grade {overall >= SCORE_GOOD ? "A" : overall >= 60 ? "B" : overall >= 40 ? "C" : "D"} ·{" "}
+              {overall >= SCORE_GOOD ? "Healthy" : overall >= SCORE_WARN ? "Needs attention" : "Critical"}
             </div>
           </div>
           <div className="pillars">
@@ -1416,6 +1506,7 @@ function Dashboard({ data, onSelect }) {
               score={cover}
               suffix="%"
               meta={[`${cov.coveredSymbolCount} covered`, `${cov.uncoveredSymbolCount} below 60%`]}
+              metaActions={[null, () => setShowLowCov(true)]}
             />
             <Pillar
               title="Architecture"
@@ -1551,7 +1642,7 @@ function Dashboard({ data, onSelect }) {
             )
               .slice(0, 2)
               .map((imp, i) => (
-                <div key={i} style={{ borderBottom: i === 0 ? "1px solid var(--border)" : "none" }}>
+                <div key={imp.file} style={{ borderBottom: i === 0 ? "1px solid var(--border)" : "none" }}>
                   <div
                     style={{
                       padding: "8px 14px",
@@ -1573,7 +1664,7 @@ function Dashboard({ data, onSelect }) {
                       {imp.file}
                     </span>
                     <span className="tag accent">{imp.changeType}</span>
-                    {imp.docUpdateRequired ? <span className="tag warn">docs required</span> : null}
+                    {imp.docUpdateRequired ? <span className="tag accent">docs required</span> : null}
                   </div>
                   {imp.diff ? <InlineDiff text={imp.diff} /> : null}
                 </div>
@@ -1614,6 +1705,14 @@ function Dashboard({ data, onSelect }) {
           </div>
         </div>
       ) : null}
+
+      {showLowCov && (
+        <LowCoverageModal
+          symbols={data.symbols}
+          onSelect={onSelect}
+          onClose={() => setShowLowCov(false)}
+        />
+      )}
     </div>
   );
 }
@@ -1939,7 +2038,7 @@ function FileDetail({ data, filePath, onSelect, showMinimap, showHeatmap }) {
                               style={{
                                 width: `${c}%`,
                                 background:
-                                  c >= 80 ? "var(--ok)" : c >= 50 ? "var(--warn)" : "var(--danger)",
+                                  c >= SCORE_GOOD ? "var(--ok)" : c >= SCORE_WARN ? "var(--warn)" : "var(--danger)",
                               }}
                             />
                           </span>
@@ -1950,7 +2049,7 @@ function FileDetail({ data, filePath, onSelect, showMinimap, showHeatmap }) {
                       )}
                     </td>
                     <td
-                      className={`num right ${e?.riskScore > 50 ? "danger" : e?.riskScore > 25 ? "warn" : "good"}`}
+                      className={`num right ${e?.riskScore > RISK_HIGH ? "danger" : e?.riskScore > RISK_WARN ? "warn" : "good"}`}
                     >
                       {fmt(e?.riskScore)}
                     </td>
@@ -2187,7 +2286,7 @@ function DiffReview({ data, onSelect }) {
                         </span>
                       ))}
                       {fg.impacts.some((i) => i.docUpdateRequired) ? (
-                        <span className="tag warn">docs required</span>
+                        <span className="tag accent">docs required</span>
                       ) : null}
                     </div>
                   </div>
@@ -2273,8 +2372,8 @@ function DiffReview({ data, onSelect }) {
             <span className="count">{groupedUncovered.length}</span>
           </div>
           <div className="card-body flush">
-            {groupedUncovered.map((u, i) => (
-              <div key={i} className="hotspot-row">
+            {groupedUncovered.map((u) => (
+              <div key={`${u.file || ''}-${u.reason}`} className="hotspot-row">
                 <span className="tag danger">block</span>
                 <div className="name trunc">
                   <strong>
@@ -2665,7 +2764,7 @@ function AIPanel({ data, symbol, file, onSelect, onClose }) {
       </div>
       <div className="aside-body">
         {messages.map((m, i) => (
-          <div key={i} className={`msg ${m.role}`}>
+          <div key={`${m.role}-${i}`} className={`msg ${m.role}`}>
             <span className="avatar">{m.role === "ai" ? "AI" : "U"}</span>
             <div className="bubble">
               <p>
@@ -2687,8 +2786,8 @@ function AIPanel({ data, symbol, file, onSelect, onClose }) {
       </div>
       <div className="aside-foot">
         <div className="ai-chips">
-          {suggestions.map((s, i) => (
-            <button key={i} className="chip" onClick={() => send(s)}>
+          {suggestions.map((s) => (
+            <button key={s} className="chip" onClick={() => send(s)}>
               {s}
             </button>
           ))}

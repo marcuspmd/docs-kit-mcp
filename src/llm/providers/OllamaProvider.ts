@@ -25,6 +25,10 @@ export class OllamaProvider implements LlmProvider {
         },
       }),
     });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Ollama API error ${res.status}: ${body}`);
+    }
     const json = (await res.json()) as { message?: { content?: string } };
     return json.message?.content?.trim() ?? "";
   }
@@ -40,6 +44,10 @@ export class OllamaProvider implements LlmProvider {
           prompt: text,
         }),
       });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`Ollama embeddings API error ${res.status}: ${body}`);
+      }
       const json = (await res.json()) as { embedding?: number[] };
       results.push(json.embedding ?? []);
     }

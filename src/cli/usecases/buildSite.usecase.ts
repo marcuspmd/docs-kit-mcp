@@ -1,12 +1,11 @@
 import "reflect-metadata";
-import fs from "node:fs";
 import path from "node:path";
 import { loadConfig } from "../../configLoader.js";
 import { setupContainer, resolve } from "../../di/container.js";
 import { DATABASE_TOKEN } from "../../di/tokens.js";
 import type Database from "better-sqlite3";
 import { generateSiteV2 } from "../../site/v2Generator.js";
-import { header, step, done, summary } from "../utils/index.js";
+import { header, step, done, summary, assertDatabaseExists } from "../utils/index.js";
 import { resolveConfigPath } from "../utils/index.js";
 
 /**
@@ -26,12 +25,7 @@ export async function buildSiteUseCase(params: BuildSiteUseCaseParams): Promise<
   const dbPath = resolveConfigPath(params.dbPath, configDir, config.dbPath);
   const rootDir = params.rootDir ?? config.rootDir;
 
-  if (!fs.existsSync(dbPath)) {
-    console.error(`Error: Database not found at ${dbPath}`);
-    console.error(`Run "docs-kit index" first to create the index.`);
-    process.exit(1);
-    return;
-  }
+  assertDatabaseExists(dbPath);
 
   await setupContainer({ dbPath });
 
@@ -43,7 +37,13 @@ export async function buildSiteUseCase(params: BuildSiteUseCaseParams): Promise<
   step("Generating React v2 site");
   const db = resolve<Database.Database>(DATABASE_TOKEN);
   try {
-    const result = await generateSiteV2({ db, outDir, rootDir });
+    const result = await generateSiteV2({
+      db,
+      outDir,
+      rootDir,
+      lcovPath: config.coverage?.enabled ? path.resolve(configDir, config.coverage.lcovPath) : undefined,
+      coverageIgnore: config.coverage?.ignore ?? [],
+    });
     done();
 
     header("Site Summary");

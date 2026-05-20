@@ -15,6 +15,7 @@ export interface GenerateSiteV2Options {
   rootDir?: string;
   generatedAt?: string;
   lcovPath?: string;
+  coverageIgnore?: string[];
 }
 
 export interface GenerateSiteV2Result {
@@ -70,16 +71,20 @@ async function buildReactApp(outDir: string): Promise<void> {
 export async function generateSiteV2(
   options: GenerateSiteV2Options,
 ): Promise<GenerateSiteV2Result> {
+  if (!options.data && !options.db && !options.dbPath) {
+    throw new Error("generateSiteV2: one of dbPath, db, or data must be provided");
+  }
   const ownsDb = !options.db;
   const db = options.data
     ? undefined
-    : (options.db ?? new Database(options.dbPath!, { readonly: true }));
+    : (options.db ?? new Database(options.dbPath as string, { readonly: true }));
 
   try {
     const data = options.data ?? loadSiteData(db!, options.rootDir);
     const bundle = await createSiteDataBundle(data, options.generatedAt, options.rootDir, {
       diff: options.diff,
       lcovPath: options.lcovPath,
+      coverageIgnore: options.coverageIgnore ?? [],
     });
 
     await buildReactApp(options.outDir);
