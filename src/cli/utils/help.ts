@@ -19,10 +19,13 @@ BUILD
                        [--root dir]
 
 DIFF PREVIEW
+  docs-kit diff        [<base>]              Without a base branch, launches an
+                                             interactive branch picker (requires TTY).
   docs-kit diff <base> [--head ref]          Generate a v2 preview site scoped to
                        [--out docs-site-diff] the PR-style git diff base...HEAD
                        [--db path] [--docs dir]
                        [--strict] [--ai-review]
+                       [--site] [--port 3001] Serve diff site locally after generation
                                              Run Docs-Guard and suggested docs
                                              updates without writing docs files;
                                              preview code changes beside site diffs;
@@ -37,6 +40,12 @@ ANALYZE
                        [--db path] [--docs dir]
   docs-kit analyze-patterns [--db path]        Detect patterns & SOLID violations
 
+CHECK
+  docs-kit check       [--checks coverage,     Show coverage gaps, arch violations,
+                        architecture,          and undocumented symbols in terminal.
+                        documentation]         Runs interactive multiselect when no
+                       [--db path] [--docs dir] --checks flag is provided.
+
 INSPECT
   docs-kit inspect <symbol>                    Show context quality metrics for a
                        [--file path]           symbol (tokens, latency, coverage)
@@ -50,6 +59,7 @@ SERVER
   docs-kit serve       [--port 7337]           Start local HTTP API for the site
                        [--db path] [--docs dir] inspector (inspector.html)
 
+  docs-kit                                     Launch interactive TUI menu (requires TTY)
   docs-kit --help                              Show this help
 
 Additional tools available as MCP tools in Copilot/Claude (19 tools including

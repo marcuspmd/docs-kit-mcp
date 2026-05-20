@@ -16,6 +16,7 @@ import {
   analyzePatternsUseCase,
   explainSymbolUseCase,
   openSiteUseCase,
+  checkUseCase,
 } from "./cli/usecases/index.js";
 import { serveUseCase } from "./cli/usecases/serve.usecase.js";
 import { inspectUseCase } from "./cli/usecases/inspect.usecase.js";
@@ -106,6 +107,11 @@ async function runDiff(args: string[]) {
 
   const base = positional[0];
   if (!base) {
+    if (process.stdin.isTTY) {
+      const { interactiveDiff } = await import("./cli/usecases/interactive.usecase.js");
+      await interactiveDiff({ flags });
+      return;
+    }
     console.error(
       "Usage: docs-kit diff <base> [--head ref] [--out dir] [--db path] [--docs dir] [--strict] [--ai-review] [--site] [--port n]",
     );
@@ -228,6 +234,29 @@ async function runServe(args: string[]) {
   await serveUseCase({ port, docsDir: flags.docs });
 }
 
+async function runCheck(args: string[]) {
+  const { flags } = parseArgs(args, {
+    db: ".docs-kit/index.db",
+    docs: "docs",
+    checks: "",
+  });
+
+  type CheckType = "coverage" | "architecture" | "documentation";
+  const validChecks = new Set<CheckType>(["coverage", "architecture", "documentation"]);
+
+  const checks =
+    flags.checks
+      ?.split(",")
+      .map((s) => s.trim())
+      .filter((s): s is CheckType => validChecks.has(s as CheckType)) ?? [];
+
+  await checkUseCase({
+    dbPath: flags.db || undefined,
+    docsDir: flags.docs,
+    checks: checks.length > 0 ? checks : undefined,
+  });
+}
+
 async function runInspect(args: string[]) {
   const { positional, flags } = parseArgs(args, {
     file: "",
@@ -287,9 +316,21 @@ async function main() {
       case "inspect":
         await runInspect(args.slice(1));
         break;
+      case "check":
+        await runCheck(args.slice(1));
+        break;
       default:
+        if (command === "--help" || command === "-h") {
+          printHelp();
+          process.exit(0);
+        }
+        if (!command && process.stdin.isTTY) {
+          const { interactiveUseCase } = await import("./cli/usecases/interactive.usecase.js");
+          await interactiveUseCase();
+          break;
+        }
         printHelp();
-        process.exit(command === "--help" || command === "-h" ? 0 : 1);
+        process.exit(command ? 1 : 0);
     }
   } catch (err) {
     console.error("Error:", err instanceof Error ? err.message : String(err));

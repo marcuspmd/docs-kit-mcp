@@ -11,3 +11,5 @@ export * from "./impactAnalysis.usecase.js";
 export * from "./analyzePatterns.usecase.js";
 export * from "./explainSymbol.usecase.js";
 export * from "./openSite.usecase.js";
+export * from "./check.usecase.js";
+export * from "./interactive.usecase.js";

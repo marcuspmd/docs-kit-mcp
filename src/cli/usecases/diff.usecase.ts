@@ -10,6 +10,9 @@ import { setupContainer, resolve } from "../../di/container.js";
 import { DATABASE_TOKEN, DOC_REGISTRY_TOKEN, LLM_PROVIDER_TOKEN } from "../../di/tokens.js";
 import { evaluateDocGuard, formatResult } from "../../governance/docGuardCli.js";
 import { buildDiffReview } from "../../governance/diffReview.js";
+import type { DocGuardResult } from "../../governance/docGuardCli.js";
+import type { DiffReviewSummary } from "../../governance/diffReview.js";
+import type { ChangeImpact } from "../../indexer/symbol.types.js";
 import type { LlmProvider } from "../../llm/provider.js";
 import { buildDiffSiteMetadata, filterSiteDataForDiff } from "../../site/diffData.js";
 import { loadSiteData } from "../../site/dataLoader.js";
@@ -28,7 +31,15 @@ export interface DiffUseCaseParams {
   aiReview?: boolean;
 }
 
-export async function diffUseCase(params: DiffUseCaseParams): Promise<void> {
+export interface DiffUseCaseResult {
+  changedFiles: string[];
+  impacts: ChangeImpact[];
+  docGuard: DocGuardResult;
+  review: DiffReviewSummary;
+  outDir: string;
+}
+
+export async function diffUseCase(params: DiffUseCaseParams): Promise<DiffUseCaseResult> {
   const configDir = process.cwd();
   const config = await loadConfig(configDir);
   const base = params.base;
@@ -51,6 +62,10 @@ export async function diffUseCase(params: DiffUseCaseParams): Promise<void> {
   done(dbPath);
 
   let strictFailure = false;
+  let _changedFiles: string[] = [];
+  let _impacts: ChangeImpact[] = [];
+  let _docGuard: DocGuardResult | undefined;
+  let _review: DiffReviewSummary | undefined;
 
   try {
     step("Rebuilding doc registry");
@@ -65,6 +80,7 @@ export async function diffUseCase(params: DiffUseCaseParams): Promise<void> {
       range,
     });
     done(`${changedFiles.length} file(s)`);
+    _changedFiles = changedFiles;
 
     step("Analyzing semantic changes");
     const impacts = await analyzeChanges({
@@ -74,6 +90,7 @@ export async function diffUseCase(params: DiffUseCaseParams): Promise<void> {
       range,
     });
     done(`${impacts.length} impact(s)`);
+    _impacts = impacts;
 
     step("Generating documentation preview");
     const updater = createDocUpdater({ dryRun: true });
@@ -88,6 +105,7 @@ export async function diffUseCase(params: DiffUseCaseParams): Promise<void> {
       strict: true,
     });
     done(docGuard.passed ? "passed" : `${docGuard.uncoveredChanges.length} violation(s)`);
+    _docGuard = docGuard;
 
     step("Building diff-scoped site data");
     const fullData = loadSiteData(db, rootDir);
@@ -113,6 +131,7 @@ export async function diffUseCase(params: DiffUseCaseParams): Promise<void> {
       provider: llmProviderName,
     });
     done(review.status);
+    _review = review;
 
     const diff = buildDiffSiteMetadata({
       base,
@@ -159,4 +178,12 @@ export async function diffUseCase(params: DiffUseCaseParams): Promise<void> {
   if (strictFailure) {
     process.exit(1);
   }
+
+  return {
+    changedFiles: _changedFiles,
+    impacts: _impacts,
+    docGuard: _docGuard ?? { passed: true, totalChanges: 0, coveredChanges: 0, uncoveredChanges: [] },
+    review: _review ?? { status: "not_requested", items: [], totalFindings: 0, findingsBySeverity: {} },
+    outDir,
+  };
 }
