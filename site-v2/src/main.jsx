@@ -16,8 +16,10 @@ const SCORE_WARN = 50;
 // ─── Helpers ────────────────────────────────────────────────
 const fmt = (v) => (v == null ? "—" : Number.isInteger(v) ? String(v) : Number(v).toFixed(1));
 
-const riskCls = (r) => (r == null ? "" : r > RISK_HIGH ? "r-high" : r > RISK_WARN ? "r-warn" : "r-ok");
-const toneOfScore = (s) => (s == null ? "" : s >= SCORE_GOOD ? "good" : s >= SCORE_WARN ? "warn" : "danger");
+const riskCls = (r) =>
+  r == null ? "" : r > RISK_HIGH ? "r-high" : r > RISK_WARN ? "r-warn" : "r-ok";
+const toneOfScore = (s) =>
+  s == null ? "" : s >= SCORE_GOOD ? "good" : s >= SCORE_WARN ? "warn" : "danger";
 
 const KIND_LABEL = {
   class: "C",
@@ -1053,9 +1055,7 @@ function ReviewFileSidebar({ files, activeFile, onSelectFile }) {
               className={`review-file-nav ${activeFile === fileGroup.file ? "active" : ""}`}
               onClick={() => onSelectFile(fileGroup.file)}
             >
-              <span
-                className={`review-file-state ${hasBlocking ? "danger" : "good"}`}
-              />
+              <span className={`review-file-state ${hasBlocking ? "danger" : "good"}`} />
               <span className="review-file-name trunc">{compactFileName(fileGroup.file)}</span>
               <span className="review-file-path trunc">{fileGroup.file}</span>
               <span className="review-file-counts">
@@ -1089,14 +1089,18 @@ function Pillar({ title, weight, score, suffix = "", meta = [], metaActions = []
       </div>
       <div className="meta">
         {metaActions[0] ? (
-          <button className="meta-link" onClick={metaActions[0]}>{meta[0]}</button>
+          <button className="meta-link" onClick={metaActions[0]}>
+            {meta[0]}
+          </button>
         ) : (
           <span className={tone === "good" ? "good" : tone === "danger" ? "danger" : ""}>
             {meta[0]}
           </span>
         )}
         {metaActions[1] ? (
-          <button className="meta-link" onClick={metaActions[1]}>{meta[1]}</button>
+          <button className="meta-link" onClick={metaActions[1]}>
+            {meta[1]}
+          </button>
         ) : (
           <span>{meta[1]}</span>
         )}
@@ -1395,8 +1399,7 @@ function LowCoverageModal({ symbols, onSelect, onClose }) {
       return c != null && c < 60;
     })
     .sort(
-      (a, b) =>
-        a.metrics.testCoverage.coveragePercent - b.metrics.testCoverage.coveragePercent,
+      (a, b) => a.metrics.testCoverage.coveragePercent - b.metrics.testCoverage.coveragePercent,
     );
   return (
     <div className="palette-back" onClick={onClose}>
@@ -1405,7 +1408,9 @@ function LowCoverageModal({ symbols, onSelect, onClose }) {
           <span>Below 60% coverage</span>
           <span className="count">{items.length} symbols</span>
           <div style={{ flex: 1 }} />
-          <button className="icon-btn" onClick={onClose} title="Close">✕</button>
+          <button className="icon-btn" onClick={onClose} title="Close">
+            ✕
+          </button>
         </div>
         <div className="palette-list">
           {items.length === 0 ? (
@@ -1486,8 +1491,13 @@ function Dashboard({ data, onSelect }) {
             <Donut score={overall} />
             <div className="label">Code Quality</div>
             <div className="grade">
-              Grade {overall >= SCORE_GOOD ? "A" : overall >= 60 ? "B" : overall >= 40 ? "C" : "D"} ·{" "}
-              {overall >= SCORE_GOOD ? "Healthy" : overall >= SCORE_WARN ? "Needs attention" : "Critical"}
+              Grade {overall >= SCORE_GOOD ? "A" : overall >= 60 ? "B" : overall >= 40 ? "C" : "D"}{" "}
+              ·{" "}
+              {overall >= SCORE_GOOD
+                ? "Healthy"
+                : overall >= SCORE_WARN
+                  ? "Needs attention"
+                  : "Critical"}
             </div>
           </div>
           <div className="pillars">
@@ -1642,7 +1652,10 @@ function Dashboard({ data, onSelect }) {
             )
               .slice(0, 2)
               .map((imp, i) => (
-                <div key={imp.file} style={{ borderBottom: i === 0 ? "1px solid var(--border)" : "none" }}>
+                <div
+                  key={imp.file}
+                  style={{ borderBottom: i === 0 ? "1px solid var(--border)" : "none" }}
+                >
                   <div
                     style={{
                       padding: "8px 14px",
@@ -1664,7 +1677,9 @@ function Dashboard({ data, onSelect }) {
                       {imp.file}
                     </span>
                     <span className="tag accent">{imp.changeType}</span>
-                    {imp.docUpdateRequired ? <span className="tag accent">docs required</span> : null}
+                    {imp.docUpdateRequired ? (
+                      <span className="tag accent">docs required</span>
+                    ) : null}
                   </div>
                   {imp.diff ? <InlineDiff text={imp.diff} /> : null}
                 </div>
@@ -1717,6 +1732,364 @@ function Dashboard({ data, onSelect }) {
   );
 }
 
+// ─── Dependency Graph (SVG) ────────────────────────────────
+const MAX_GRAPH_NODES = 8;
+const NODE_W = 148;
+const NODE_H = 36;
+const COL_GAP = 180;
+
+function GraphArrow({ x1, y1, x2, y2, dir }) {
+  const cx1 = dir === "out" ? x1 + NODE_W / 2 + COL_GAP * 0.45 : x1 - COL_GAP * 0.45;
+  const cx2 = dir === "out" ? x2 - COL_GAP * 0.45 : x2 + NODE_W / 2 + COL_GAP * 0.45;
+  return (
+    <path
+      d={`M ${x1} ${y1} C ${cx1} ${y1}, ${cx2} ${y2}, ${x2} ${y2}`}
+      fill="none"
+      stroke={dir === "out" ? "var(--accent)" : "var(--text-faint)"}
+      strokeWidth={1.5}
+      strokeOpacity={0.7}
+      markerEnd={dir === "out" ? "url(#arr-out)" : undefined}
+      markerStart={dir === "in" ? "url(#arr-in)" : undefined}
+    />
+  );
+}
+
+function GraphNode({ x, y, label, sublabel, isCenter, onClick, title }) {
+  const bg = isCenter ? "var(--accent)" : "var(--surface-2)";
+  const fg = isCenter ? "var(--accent-on)" : "var(--text)";
+  const border = isCenter ? "var(--accent-strong)" : "var(--border)";
+  return (
+    <g
+      transform={`translate(${x},${y})`}
+      onClick={onClick}
+      style={{ cursor: onClick ? "pointer" : "default" }}
+    >
+      <title>{title || label}</title>
+      <rect
+        x={0}
+        y={-NODE_H / 2}
+        width={NODE_W}
+        height={NODE_H}
+        rx={6}
+        ry={6}
+        fill={bg}
+        stroke={border}
+        strokeWidth={1.5}
+      />
+      <text
+        x={NODE_W / 2}
+        y={sublabel ? -5 : 0}
+        textAnchor="middle"
+        dominantBaseline="central"
+        fill={fg}
+        fontSize={11.5}
+        fontWeight={isCenter ? 600 : 400}
+        fontFamily="var(--font-sans)"
+        style={{ userSelect: "none", pointerEvents: "none" }}
+      >
+        {label.length > 18 ? label.slice(0, 17) + "…" : label}
+      </text>
+      {sublabel ? (
+        <text
+          x={NODE_W / 2}
+          y={9}
+          textAnchor="middle"
+          dominantBaseline="central"
+          fill={isCenter ? "rgba(255,255,255,0.7)" : "var(--text-faint)"}
+          fontSize={9.5}
+          fontFamily="var(--font-sans)"
+          style={{ userSelect: "none", pointerEvents: "none" }}
+        >
+          {sublabel.length > 22 ? sublabel.slice(0, 21) + "…" : sublabel}
+        </text>
+      ) : null}
+    </g>
+  );
+}
+
+function GraphSvgDefs() {
+  return (
+    <defs>
+      <marker id="arr-out" markerWidth="8" markerHeight="8" refX="7" refY="3" orient="auto">
+        <path d="M0,0 L0,6 L8,3 Z" fill="var(--accent)" />
+      </marker>
+      <marker
+        id="arr-in"
+        markerWidth="8"
+        markerHeight="8"
+        refX="1"
+        refY="3"
+        orient="auto-start-reverse"
+      >
+        <path d="M0,3 L8,0 L8,6 Z" fill="var(--text-faint)" />
+      </marker>
+    </defs>
+  );
+}
+
+function DependencyGraph({ centerLabel, centerSub, inNodes, outNodes, onClickIn, onClickOut }) {
+  const containerRef = useRef(null);
+  const [w, setW] = useState(640);
+
+  useEffect(() => {
+    if (!containerRef.current) return;
+    const obs = new ResizeObserver(([e]) => setW(e.contentRect.width));
+    obs.observe(containerRef.current);
+    return () => obs.disconnect();
+  }, []);
+
+  const maxSide = Math.max(inNodes.length, outNodes.length, 1);
+  const rowH = 48;
+  const H = Math.max(120, maxSide * rowH + 40);
+  const cy = H / 2;
+
+  // Column positions
+  const inX = 10;
+  const centerX = Math.max(w / 2 - NODE_W / 2, inX + NODE_W + COL_GAP);
+  const outX = Math.min(w - NODE_W - 10, centerX + NODE_W + COL_GAP);
+
+  const nodeY = (idx, total) => {
+    if (total === 1) return cy;
+    const span = (total - 1) * rowH;
+    return cy - span / 2 + idx * rowH;
+  };
+
+  // Connection points on center node edges
+  const centerLeft = { x: centerX, y: cy };
+  const centerRight = { x: centerX + NODE_W, y: cy };
+
+  return (
+    <div ref={containerRef} style={{ width: "100%" }}>
+      <svg width="100%" height={H} style={{ display: "block", overflow: "visible" }}>
+        <GraphSvgDefs />
+        {inNodes.map((n, i) => {
+          const ny = nodeY(i, inNodes.length);
+          return (
+            <GraphArrow
+              key={i}
+              x1={inX + NODE_W}
+              y1={ny}
+              x2={centerLeft.x}
+              y2={centerLeft.y}
+              dir="in"
+            />
+          );
+        })}
+        {outNodes.map((n, i) => {
+          const ny = nodeY(i, outNodes.length);
+          return (
+            <GraphArrow key={i} x1={centerRight.x} y1={centerRight.y} x2={outX} y2={ny} dir="out" />
+          );
+        })}
+        {inNodes.map((n, i) => (
+          <GraphNode
+            key={i}
+            x={inX}
+            y={nodeY(i, inNodes.length)}
+            label={n.label}
+            sublabel={n.sublabel}
+            isCenter={false}
+            onClick={() => onClickIn && onClickIn(n)}
+            title={n.title || n.label}
+          />
+        ))}
+        <GraphNode x={centerX} y={cy} label={centerLabel} sublabel={centerSub} isCenter={true} />
+        {outNodes.map((n, i) => (
+          <GraphNode
+            key={i}
+            x={outX}
+            y={nodeY(i, outNodes.length)}
+            label={n.label}
+            sublabel={n.sublabel}
+            isCenter={false}
+            onClick={() => onClickOut && onClickOut(n)}
+            title={n.title || n.label}
+          />
+        ))}
+      </svg>
+      {inNodes.length > 0 || outNodes.length > 0 ? (
+        <div
+          style={{
+            display: "flex",
+            gap: 16,
+            marginTop: 8,
+            fontSize: 11.5,
+            color: "var(--text-faint)",
+            justifyContent: "center",
+          }}
+        >
+          {inNodes.length > 0 ? (
+            <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span
+                style={{
+                  display: "inline-block",
+                  width: 20,
+                  height: 2,
+                  background: "var(--text-faint)",
+                  borderRadius: 1,
+                }}
+              />
+              used by ({inNodes.length}
+              {inNodes.length === MAX_GRAPH_NODES ? "+" : ""})
+            </span>
+          ) : null}
+          {outNodes.length > 0 ? (
+            <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
+              <span
+                style={{
+                  display: "inline-block",
+                  width: 20,
+                  height: 2,
+                  background: "var(--accent)",
+                  borderRadius: 1,
+                }}
+              />
+              depends on ({outNodes.length}
+              {outNodes.length === MAX_GRAPH_NODES ? "+" : ""})
+            </span>
+          ) : null}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function FileDependencyGraph({ filePath, symIds, data, onSelect }) {
+  const outFilesMap = new Map();
+  const inFilesMap = new Map();
+
+  for (const rel of data.relationships) {
+    const srcSym = data.symbolsById.get(rel.source_id);
+    const tgtSym = data.symbolsById.get(rel.target_id);
+    if (!srcSym || !tgtSym) continue;
+
+    if (symIds.has(rel.source_id) && !symIds.has(rel.target_id) && tgtSym.file !== filePath) {
+      const key = tgtSym.file;
+      const entry = outFilesMap.get(key) || { count: 0, types: new Set() };
+      entry.count++;
+      entry.types.add(rel.type);
+      outFilesMap.set(key, entry);
+    }
+
+    if (symIds.has(rel.target_id) && !symIds.has(rel.source_id) && srcSym.file !== filePath) {
+      const key = srcSym.file;
+      const entry = inFilesMap.get(key) || { count: 0, types: new Set() };
+      entry.count++;
+      entry.types.add(rel.type);
+      inFilesMap.set(key, entry);
+    }
+  }
+
+  const inNodes = [...inFilesMap.entries()]
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, MAX_GRAPH_NODES)
+    .map(([fp, info]) => ({
+      label: fp.split("/").pop(),
+      sublabel: [...info.types].join(", "),
+      title: fp + ` (${info.count} rel${info.count !== 1 ? "s" : ""})`,
+      path: fp,
+    }));
+
+  const outNodes = [...outFilesMap.entries()]
+    .sort((a, b) => b[1].count - a[1].count)
+    .slice(0, MAX_GRAPH_NODES)
+    .map(([fp, info]) => ({
+      label: fp.split("/").pop(),
+      sublabel: [...info.types].join(", "),
+      title: fp + ` (${info.count} rel${info.count !== 1 ? "s" : ""})`,
+      path: fp,
+    }));
+
+  if (inNodes.length === 0 && outNodes.length === 0) {
+    return <div className="empty">No cross-file relationships detected.</div>;
+  }
+
+  return (
+    <DependencyGraph
+      centerLabel={filePath.split("/").pop()}
+      centerSub={filePath.replace(/\/[^/]+$/, "")}
+      inNodes={inNodes}
+      outNodes={outNodes}
+      onClickIn={(n) => onSelect({ type: "file", path: n.path })}
+      onClickOut={(n) => onSelect({ type: "file", path: n.path })}
+    />
+  );
+}
+
+function SymbolDependencyGraph({ symbol, deps, dependents, onSelect }) {
+  const inNodes = dependents.slice(0, MAX_GRAPH_NODES).map(({ sym, rel }) => ({
+    label: sym.name,
+    sublabel: rel.type,
+    title: sym.file,
+    id: sym.id,
+  }));
+  const outNodes = deps.slice(0, MAX_GRAPH_NODES).map(({ sym, rel }) => ({
+    label: sym.name,
+    sublabel: rel.type,
+    title: sym.file,
+    id: sym.id,
+  }));
+
+  if (inNodes.length === 0 && outNodes.length === 0) {
+    return <div className="empty">No relationships detected.</div>;
+  }
+
+  return (
+    <DependencyGraph
+      centerLabel={symbol.name}
+      centerSub={symbol.kind}
+      inNodes={inNodes}
+      outNodes={outNodes}
+      onClickIn={(n) => onSelect({ type: "symbol", id: n.id })}
+      onClickOut={(n) => onSelect({ type: "symbol", id: n.id })}
+    />
+  );
+}
+
+function buildLlmContext(symbol, deps, dependents) {
+  const lines = [];
+  lines.push(`## Symbol: ${symbol.qualifiedName || symbol.name}`);
+  lines.push(`- Kind: ${symbol.kind}`);
+  lines.push(`- File: ${symbol.file}:${symbol.startLine}-${symbol.endLine}`);
+  if (symbol.signature) lines.push(`- Signature: \`${symbol.signature}\``);
+  if (symbol.layer) lines.push(`- Layer: ${symbol.layer}`);
+  if (symbol.pattern) lines.push(`- Pattern: ${symbol.pattern}`);
+  if (symbol.extends) lines.push(`- Extends: ${symbol.extends}`);
+  if (symbol.implements?.length) lines.push(`- Implements: ${symbol.implements.join(", ")}`);
+  if (symbol.deprecated) lines.push(`- ⚠️ DEPRECATED`);
+  if (symbol.security?.isSensitive) {
+    lines.push(
+      `- 🔐 SECURITY-SENSITIVE (${symbol.security.categories.join(", ")}) — exercise extra care when suggesting changes`,
+    );
+  }
+  if (symbol.changeVelocity?.isHotspot) {
+    lines.push(
+      `- ⚠️ HOTSPOT: ${symbol.changeVelocity.changeCount30d} changes in the last 30 days — this symbol changes frequently`,
+    );
+  }
+  if (deps.length) {
+    lines.push("", "## Dependencies (this symbol uses):");
+    deps
+      .slice(0, 20)
+      .forEach(({ sym }) => lines.push(`- ${sym.name} (${sym.kind} in ${sym.file})`));
+    if (deps.length > 20) lines.push(`- ... and ${deps.length - 20} more`);
+  }
+  if (dependents.length) {
+    lines.push("", "## Dependents (use this symbol):");
+    dependents
+      .slice(0, 20)
+      .forEach(({ sym }) => lines.push(`- ${sym.name} (${sym.kind} in ${sym.file})`));
+    if (dependents.length > 20) lines.push(`- ... and ${dependents.length - 20} more`);
+  }
+  lines.push("", "## Instructions", "Provide:");
+  lines.push(`1. **Purpose**: What this ${symbol.kind} does and why it exists`);
+  lines.push("2. **How it works**: Key logic, algorithms, or patterns used");
+  lines.push("3. **Dependencies**: How it relates to the symbols listed above");
+  lines.push("4. **Usage**: How other code should use this symbol");
+  lines.push("5. **Gotchas**: Any non-obvious behavior, edge cases, or caveats");
+  return lines.join("\n");
+}
+
 function SymbolDetail({ data, symbol, onSelect, showMinimap, showHeatmap }) {
   if (!symbol) return <div className="empty">Symbol not found.</div>;
   const entry = data.complexityById[symbol.id];
@@ -1731,6 +2104,14 @@ function SymbolDetail({ data, symbol, onSelect, showMinimap, showHeatmap }) {
     .filter((x) => x.sym);
   const cov = symbol.metrics?.testCoverage?.coveragePercent;
   const inDiff = data.diff?.impacts?.find((i) => i.symbolId === symbol.id);
+  const [showAllDeps, setShowAllDeps] = useState(false);
+  const [depsView, setDepsView] = useState("list");
+  const [showLlmCtx, setShowLlmCtx] = useState(false);
+  const allDeps = [
+    ...deps.map((x) => ({ ...x, dir: "out" })),
+    ...dependents.map((x) => ({ ...x, dir: "in" })),
+  ];
+  const visibleDeps = showAllDeps ? allDeps : allDeps.slice(0, 12);
 
   return (
     <div className="page">
@@ -1784,6 +2165,19 @@ function SymbolDetail({ data, symbol, onSelect, showMinimap, showHeatmap }) {
           )}
           {symbol.deprecated ? <span className="tag danger">deprecated</span> : null}
           {inDiff ? <span className="tag accent">in current PR</span> : null}
+          {symbol.security?.isSensitive ? (
+            <span className="tag danger" title={symbol.security.categories.join(", ")}>
+              🔐 security
+            </span>
+          ) : null}
+          {symbol.changeVelocity?.isHotspot ? (
+            <span
+              className="tag warn"
+              title={`${symbol.changeVelocity.changeCount30d} changes in last 30 days`}
+            >
+              🔥 {symbol.changeVelocity.changeCount30d}×/30d
+            </span>
+          ) : null}
         </div>
       </div>
 
@@ -1862,6 +2256,30 @@ function SymbolDetail({ data, symbol, onSelect, showMinimap, showHeatmap }) {
               <span className="k">Tags</span>
               <span className="v">{(symbol.tags || []).join(", ") || "—"}</span>
             </div>
+            {symbol.extends ? (
+              <div>
+                <span className="k">Extends</span>
+                <span className="v trunc">{symbol.extends}</span>
+              </div>
+            ) : null}
+            {symbol.implements?.length ? (
+              <div>
+                <span className="k">Implements</span>
+                <span className="v">{symbol.implements.join(", ")}</span>
+              </div>
+            ) : null}
+            {symbol.boundedContext ? (
+              <div>
+                <span className="k">Context</span>
+                <span className="v">{symbol.boundedContext}</span>
+              </div>
+            ) : null}
+            {symbol.stability ? (
+              <div>
+                <span className="k">Stability</span>
+                <span className="v">{symbol.stability}</span>
+              </div>
+            ) : null}
           </div>
         </div>
         <div className="card">
@@ -1870,14 +2288,39 @@ function SymbolDetail({ data, symbol, onSelect, showMinimap, showHeatmap }) {
             <span className="count">
               {deps.length} out · {dependents.length} in
             </span>
+            <div style={{ marginLeft: "auto", display: "flex", gap: 4 }}>
+              {["list", "graph"].map((v) => (
+                <button
+                  key={v}
+                  onClick={() => setDepsView(v)}
+                  style={{
+                    background: depsView === v ? "var(--accent)" : "var(--surface-2)",
+                    color: depsView === v ? "var(--accent-on)" : "var(--text-dim)",
+                    border: "1px solid var(--border)",
+                    borderRadius: 4,
+                    padding: "2px 10px",
+                    fontSize: 11,
+                    cursor: "pointer",
+                    fontWeight: depsView === v ? 600 : 400,
+                  }}
+                >
+                  {v === "list" ? "List" : "Graph"}
+                </button>
+              ))}
+            </div>
           </div>
-          <div className="dep-list">
-            {[
-              ...deps.map((x) => ({ ...x, dir: "out" })),
-              ...dependents.map((x) => ({ ...x, dir: "in" })),
-            ]
-              .slice(0, 12)
-              .map((x, i) => (
+          {depsView === "graph" ? (
+            <div style={{ padding: "10px 12px" }}>
+              <SymbolDependencyGraph
+                symbol={symbol}
+                deps={deps}
+                dependents={dependents}
+                onSelect={onSelect}
+              />
+            </div>
+          ) : (
+            <div className="dep-list">
+              {visibleDeps.map((x, i) => (
                 <div
                   key={i}
                   className="dep-row"
@@ -1892,11 +2335,129 @@ function SymbolDetail({ data, symbol, onSelect, showMinimap, showHeatmap }) {
                   </span>
                 </div>
               ))}
-            {deps.length + dependents.length === 0 ? (
-              <div className="empty">No relationships detected.</div>
+              {allDeps.length === 0 ? (
+                <div className="empty">No relationships detected.</div>
+              ) : null}
+              {allDeps.length > 12 ? (
+                <div
+                  className="dep-row"
+                  style={{ justifyContent: "center", color: "var(--accent)", cursor: "pointer" }}
+                  onClick={() => setShowAllDeps((v) => !v)}
+                >
+                  {showAllDeps ? `▲ Show less` : `▼ Show all ${allDeps.length} relationships`}
+                </div>
+              ) : null}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {symbol.security?.isSensitive ? (
+        <div className="card" style={{ marginTop: 14 }}>
+          <div className="card-head">
+            <h3>🔐 Security Sensitivity</h3>
+            <span className="count">{symbol.security.categories.join(" · ")}</span>
+          </div>
+          <div className="card-body">
+            <p style={{ marginBottom: 10, color: "var(--text-dim)", fontSize: 13 }}>
+              This symbol handles security-sensitive operations. Exercise extra care when modifying
+              it — changes here may introduce vulnerabilities.
+            </p>
+            <div style={{ display: "flex", gap: 6, flexWrap: "wrap" }}>
+              {symbol.security.categories.map((cat) => (
+                <span key={cat} className="tag danger">
+                  {cat}
+                </span>
+              ))}
+            </div>
+          </div>
+        </div>
+      ) : null}
+
+      {symbol.changeVelocity ? (
+        <div className="card" style={{ marginTop: 14 }}>
+          <div className="card-head">
+            <h3>{symbol.changeVelocity.isHotspot ? "🔥 Hotspot" : "Change Velocity"}</h3>
+            <span className="count">
+              {symbol.changeVelocity.isHotspot ? "high churn" : "stable"}
+            </span>
+          </div>
+          <div className="meta-grid">
+            <div>
+              <span className="k">Changes (30d)</span>
+              <span
+                className="v"
+                style={
+                  symbol.changeVelocity.isHotspot ? { color: "var(--warn)", fontWeight: 600 } : {}
+                }
+              >
+                {symbol.changeVelocity.changeCount30d ?? "—"}
+              </span>
+            </div>
+            <div>
+              <span className="k">Changes (90d)</span>
+              <span className="v">{symbol.changeVelocity.changeCount90d ?? "—"}</span>
+            </div>
+            {symbol.changeVelocity.lastModifiedBy ? (
+              <div>
+                <span className="k">Last author</span>
+                <span className="v">{symbol.changeVelocity.lastModifiedBy}</span>
+              </div>
+            ) : null}
+            {symbol.changeVelocity.lastModifiedAt ? (
+              <div>
+                <span className="k">Last changed</span>
+                <span className="v">
+                  {new Date(symbol.changeVelocity.lastModifiedAt).toLocaleDateString()}
+                </span>
+              </div>
             ) : null}
           </div>
         </div>
+      ) : null}
+
+      <div className="card" style={{ marginTop: 14 }}>
+        <div className="card-head">
+          <h3>LLM Context Preview</h3>
+          <button
+            onClick={() => setShowLlmCtx((v) => !v)}
+            style={{
+              background: "var(--surface-2)",
+              border: "1px solid var(--border)",
+              borderRadius: 4,
+              padding: "2px 10px",
+              fontSize: 12,
+              cursor: "pointer",
+              color: "var(--text-dim)",
+            }}
+          >
+            {showLlmCtx ? "Hide" : "Show"}
+          </button>
+        </div>
+        {showLlmCtx ? (
+          <div className="card-body flush">
+            <pre
+              style={{
+                margin: 0,
+                padding: "12px 14px",
+                fontFamily: "var(--font-mono)",
+                fontSize: 11.5,
+                lineHeight: 1.6,
+                whiteSpace: "pre-wrap",
+                overflowX: "auto",
+                background: "var(--surface)",
+                color: "var(--text)",
+              }}
+            >
+              {buildLlmContext(symbol, deps, dependents)}
+            </pre>
+          </div>
+        ) : (
+          <div className="card-body" style={{ color: "var(--text-faint)", fontSize: 12 }}>
+            Preview the context sent to an LLM when calling <code>explainSymbol</code> or{" "}
+            <code>getRelevantContext</code> on this symbol.
+          </div>
+        )}
       </div>
 
       {inDiff?.diff ? (
@@ -1929,6 +2490,7 @@ function SymbolDetail({ data, symbol, onSelect, showMinimap, showHeatmap }) {
 function FileDetail({ data, filePath, onSelect, showMinimap, showHeatmap }) {
   const sf = data.sourceFiles[filePath];
   const syms = data.symbols.filter((s) => s.file === filePath);
+  const symIds = useMemo(() => new Set(syms.map((s) => s.id)), [syms]);
   const cls = syms.filter((s) => s.kind === "class" || s.kind === "interface");
   const totalLoc = syms.reduce((a, b) => a + (data.complexityById[b.id]?.linesOfCode || 0), 0);
   const covs = syms.map((s) => s.metrics?.testCoverage?.coveragePercent).filter((v) => v != null);
@@ -1987,6 +2549,54 @@ function FileDetail({ data, filePath, onSelect, showMinimap, showHeatmap }) {
         title="File violations"
       />
 
+      {(() => {
+        const inCount = data.relationships.filter((r) => {
+          const s = data.symbolsById.get(r.target_id);
+          return symIds.has(r.target_id) && s && s.file !== filePath && !symIds.has(r.source_id);
+        }).length;
+        const outCount = data.relationships.filter((r) => {
+          const s = data.symbolsById.get(r.source_id);
+          return symIds.has(r.source_id) && s && s.file !== filePath && !symIds.has(r.target_id);
+        }).length;
+        const uniqueIn = new Set(
+          data.relationships
+            .filter((r) => {
+              const s = data.symbolsById.get(r.source_id);
+              return symIds.has(r.target_id) && s && s.file !== filePath;
+            })
+            .map((r) => data.symbolsById.get(r.source_id)?.file)
+            .filter(Boolean),
+        ).size;
+        const uniqueOut = new Set(
+          data.relationships
+            .filter((r) => {
+              const s = data.symbolsById.get(r.target_id);
+              return symIds.has(r.source_id) && s && s.file !== filePath;
+            })
+            .map((r) => data.symbolsById.get(r.target_id)?.file)
+            .filter(Boolean),
+        ).size;
+        return (
+          <div className="card" style={{ marginTop: 14 }}>
+            <div className="card-head">
+              <h3>File Dependencies</h3>
+              <span className="count">
+                {uniqueIn} file{uniqueIn !== 1 ? "s" : ""} depend on this · {uniqueOut} dependenc
+                {uniqueOut !== 1 ? "ies" : "y"}
+              </span>
+            </div>
+            <div style={{ padding: "10px 12px" }}>
+              <FileDependencyGraph
+                filePath={filePath}
+                symIds={symIds}
+                data={data}
+                onSelect={onSelect}
+              />
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="card" style={{ marginTop: 14 }}>
         <div className="card-head">
           <h3>Symbols in file</h3>
@@ -2038,7 +2648,11 @@ function FileDetail({ data, filePath, onSelect, showMinimap, showHeatmap }) {
                               style={{
                                 width: `${c}%`,
                                 background:
-                                  c >= SCORE_GOOD ? "var(--ok)" : c >= SCORE_WARN ? "var(--warn)" : "var(--danger)",
+                                  c >= SCORE_GOOD
+                                    ? "var(--ok)"
+                                    : c >= SCORE_WARN
+                                      ? "var(--warn)"
+                                      : "var(--danger)",
                               }}
                             />
                           </span>
@@ -2373,7 +2987,7 @@ function DiffReview({ data, onSelect }) {
           </div>
           <div className="card-body flush">
             {groupedUncovered.map((u) => (
-              <div key={`${u.file || ''}-${u.reason}`} className="hotspot-row">
+              <div key={`${u.file || ""}-${u.reason}`} className="hotspot-row">
                 <span className="tag danger">block</span>
                 <div className="name trunc">
                   <strong>

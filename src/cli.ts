@@ -17,12 +17,28 @@ import {
   explainSymbolUseCase,
   openSiteUseCase,
   checkUseCase,
+  projectTreeUseCase,
 } from "./cli/usecases/index.js";
 import { serveUseCase } from "./cli/usecases/serve.usecase.js";
 import { inspectUseCase } from "./cli/usecases/inspect.usecase.js";
 import { serveSite } from "./cli/usecases/openSite.usecase.js";
 
 /* ================== Command Handlers ================== */
+
+function parseCsvFlag(value: string | undefined): string[] | undefined {
+  const values =
+    value
+      ?.split(",")
+      .map((item) => item.trim())
+      .filter(Boolean) ?? [];
+
+  return values.length > 0 ? values : undefined;
+}
+
+function parseIntegerFlag(value: string | undefined): number | undefined {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
 
 async function runInit(args: string[]) {
   const rootDir = args[0] || ".";
@@ -91,6 +107,27 @@ async function runBuildDocs(args: string[]) {
     outDir: flags.out,
     dbPath: flags.db,
     rootDir: flags.root,
+  });
+}
+
+async function runProjectTree(args: string[]) {
+  const { positional, flags } = parseArgs(args, {
+    out: "STRUCTURE.md",
+    depth: "4",
+    include: "",
+    exclude: "",
+    "max-entries-per-dir": "",
+  });
+
+  await projectTreeUseCase({
+    rootDir: positional[0],
+    outFile: flags.out,
+    depth: parseIntegerFlag(flags.depth),
+    include: parseCsvFlag(flags.include),
+    exclude: parseCsvFlag(flags.exclude),
+    dirsOnly: "dirs-only" in flags,
+    sourceOnly: "source-only" in flags,
+    maxEntriesPerDir: parseIntegerFlag(flags["max-entries-per-dir"]),
   });
 }
 
@@ -294,6 +331,9 @@ async function main() {
         break;
       case "build-docs":
         await runBuildDocs(args.slice(1));
+        break;
+      case "project-tree":
+        await runProjectTree(args.slice(1));
         break;
       case "diff":
         await runDiff(args.slice(1));

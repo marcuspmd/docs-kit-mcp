@@ -10,6 +10,7 @@ describe("printHelp", () => {
     expect(consoleSpy).toHaveBeenCalledWith(
       expect.stringContaining("docs-kit - Intelligent documentation agent"),
     );
+    expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining("docs-kit project-tree"));
 
     consoleSpy.mockRestore();
   });

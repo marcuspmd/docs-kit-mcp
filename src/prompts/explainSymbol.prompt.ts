@@ -45,6 +45,17 @@ export function buildExplainSymbolPrompt(input: ExplainSymbolInput): string {
   if (symbol.extends) parts.push(`- **Extends**: ${symbol.extends}`);
   if (symbol.implements?.length) parts.push(`- **Implements**: ${symbol.implements.join(", ")}`);
   if (symbol.deprecated) parts.push(`- **DEPRECATED**`);
+  if (symbol.security?.isSensitive) {
+    parts.push(
+      `- **🔐 SECURITY-SENSITIVE** (${symbol.security.categories.join(", ")}) — exercise extra care when suggesting changes`,
+    );
+  }
+  if (symbol.changeVelocity?.isHotspot) {
+    const v = symbol.changeVelocity;
+    parts.push(
+      `- **⚠️ HOTSPOT**: ${v.changeCount30d} changes in the last 30 days — this symbol changes frequently`,
+    );
+  }
 
   if (sourceCode) {
     parts.push(``, `## Source Code`, "```", truncateSourceCode(sourceCode, maxSourceLines), "```");

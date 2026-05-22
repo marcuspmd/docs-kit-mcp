@@ -30,19 +30,18 @@ O módulo Governance (`src/governance/`) oferece:
 Valida arquitetura e conventions configuráveis.
 
 **Criação:**
+
 ```typescript
-function createArchGuard(): ArchGuard
+function createArchGuard(): ArchGuard;
 ```
 
 **Interface:**
+
 ```typescript
 interface ArchGuard {
   setRules(rules: ArchRule[]): void;
   loadRules(path: string): Promise<void>;
-  analyze(
-    symbols: CodeSymbol[],
-    relationships: SymbolRelationship[]
-  ): ArchViolation[];
+  analyze(symbols: CodeSymbol[], relationships: SymbolRelationship[]): ArchViolation[];
 }
 
 interface ArchRule {
@@ -54,14 +53,14 @@ interface ArchRule {
 }
 
 type RuleType =
-  | "layer_boundary"       // Enforce layered architecture
-  | "forbidden_import"     // Forbidden dependencies
-  | "naming_convention"    // Name patterns
-  | "max_complexity"       // Complexity threshold
-  | "max_parameters"       // Parameter count
-  | "max_lines"            // Function/class size
-  | "require_tests"        // Test coverage requirement
-  | "require_docs";        // Documentation requirement
+  | "layer_boundary" // Enforce layered architecture
+  | "forbidden_import" // Forbidden dependencies
+  | "naming_convention" // Name patterns
+  | "max_complexity" // Complexity threshold
+  | "max_parameters" // Parameter count
+  | "max_lines" // Function/class size
+  | "require_tests" // Test coverage requirement
+  | "require_docs"; // Documentation requirement
 
 interface ArchViolation {
   rule: string;
@@ -75,6 +74,7 @@ interface ArchViolation {
 **Rule Examples:**
 
 **Layer Boundary:**
+
 ```json
 {
   "name": "NoDomainToPersistence",
@@ -90,6 +90,7 @@ interface ArchViolation {
 ```
 
 **Naming Convention:**
+
 ```json
 {
   "name": "ClassesArePascalCase",
@@ -104,6 +105,7 @@ interface ArchViolation {
 ```
 
 **Max Complexity:**
+
 ```json
 {
   "name": "MaxComplexity10",
@@ -117,6 +119,7 @@ interface ArchViolation {
 ```
 
 **Analysis Logic:**
+
 ```typescript
 function analyze(symbols: CodeSymbol[], relationships: SymbolRelationship[]) {
   const violations: ArchViolation[] = [];
@@ -154,11 +157,12 @@ function analyze(symbols: CodeSymbol[], relationships: SymbolRelationship[]) {
 ```
 
 **Layer Boundary Check:**
+
 ```typescript
 function checkLayerBoundary(
   rule: ArchRule,
   symbols: CodeSymbol[],
-  relationships: SymbolRelationship[]
+  relationships: SymbolRelationship[],
 ): ArchViolation[] {
   const violations: ArchViolation[] = [];
   const { from, to, allowed } = rule.config;
@@ -168,8 +172,8 @@ function checkLayerBoundary(
   const toPattern = globToRegex(to);
 
   for (const rel of relationships) {
-    const source = symbols.find(s => s.id === rel.sourceId);
-    const target = symbols.find(s => s.id === rel.targetId);
+    const source = symbols.find((s) => s.id === rel.sourceId);
+    const target = symbols.find((s) => s.id === rel.targetId);
 
     if (!source || !target) continue;
 
@@ -182,7 +186,7 @@ function checkLayerBoundary(
         file: source.file,
         symbolId: source.id,
         message: `${source.name} in ${from} imports ${target.name} from ${to}`,
-        severity: rule.severity
+        severity: rule.severity,
       });
     }
   }
@@ -192,6 +196,7 @@ function checkLayerBoundary(
 ```
 
 **Naming Convention Check:**
+
 ```typescript
 function checkNaming(rule: ArchRule, symbols: CodeSymbol[]): ArchViolation[] {
   const violations: ArchViolation[] = [];
@@ -205,7 +210,7 @@ function checkNaming(rule: ArchRule, symbols: CodeSymbol[]): ArchViolation[] {
         file: sym.file,
         symbolId: sym.id,
         message: `${sym.name} does not match pattern ${pattern}`,
-        severity: rule.severity
+        severity: rule.severity,
       });
     }
   }
@@ -215,6 +220,7 @@ function checkNaming(rule: ArchRule, symbols: CodeSymbol[]): ArchViolation[] {
 ```
 
 **Base Rules Generator:**
+
 ```typescript
 // src/governance/archGuardBase.ts
 export function buildArchGuardBaseRules(options: {
@@ -233,7 +239,7 @@ export function buildArchGuardBaseRules(options: {
       description: "Classes should be PascalCase",
       type: "naming_convention",
       severity: "warning",
-      config: { pattern: "^[A-Z][a-zA-Z0-9]*$", kind: "class" }
+      config: { pattern: "^[A-Z][a-zA-Z0-9]*$", kind: "class" },
     });
   }
 
@@ -243,7 +249,7 @@ export function buildArchGuardBaseRules(options: {
       description: "Classes should be PascalCase",
       type: "naming_convention",
       severity: "warning",
-      config: { pattern: "^[A-Z][a-zA-Z0-9]*$", kind: "class" }
+      config: { pattern: "^[A-Z][a-zA-Z0-9]*$", kind: "class" },
     });
   }
 
@@ -254,7 +260,7 @@ export function buildArchGuardBaseRules(options: {
       description: `Max complexity ${options.maxComplexity}`,
       type: "max_complexity",
       severity: "warning",
-      config: { threshold: options.maxComplexity || 10 }
+      config: { threshold: options.maxComplexity || 10 },
     });
   }
 
@@ -267,34 +273,30 @@ export function buildArchGuardBaseRules(options: {
 Detecta código e documentação mortos/órfãos.
 
 **Criação:**
+
 ```typescript
-function createReaper(): Reaper
+function createReaper(): Reaper;
 ```
 
 **Interface:**
+
 ```typescript
 interface Reaper {
-  scan(
-    symbols: CodeSymbol[],
-    graph: KnowledgeGraph,
-    docMappings: DocMapping[]
-  ): ReaperFinding[];
+  scan(symbols: CodeSymbol[], graph: KnowledgeGraph, docMappings: DocMapping[]): ReaperFinding[];
 
-  markDeadCode(
-    symbolRepo: SymbolRepository,
-    findings: ReaperFinding[]
-  ): void;
+  markDeadCode(symbolRepo: SymbolRepository, findings: ReaperFinding[]): void;
 }
 
 interface ReaperFinding {
   type: "dead_code" | "orphan_doc" | "broken_link" | "undocumented";
-  target: string;           // Symbol name or doc path
+  target: string; // Symbol name or doc path
   reason: string;
   suggestedAction: string;
 }
 ```
 
 **Scan Logic:**
+
 ```typescript
 function scan(symbols, graph, docMappings) {
   const findings: ReaperFinding[] = [];
@@ -306,7 +308,7 @@ function scan(symbols, graph, docMappings) {
       type: "dead_code",
       target: sym.name,
       reason: `Symbol ${sym.name} is not referenced by any other code`,
-      suggestedAction: "Remove if truly unused, or export if it's a public API"
+      suggestedAction: "Remove if truly unused, or export if it's a public API",
     });
   }
 
@@ -317,7 +319,7 @@ function scan(symbols, graph, docMappings) {
       type: "orphan_doc",
       target: doc.docPath,
       reason: `Documentation ${doc.docPath} references non-existent symbols`,
-      suggestedAction: "Update symbol references or remove doc"
+      suggestedAction: "Update symbol references or remove doc",
     });
   }
 
@@ -328,7 +330,7 @@ function scan(symbols, graph, docMappings) {
       type: "broken_link",
       target: link.from,
       reason: `Doc ${link.from} links to non-existent ${link.to}`,
-      suggestedAction: "Fix link target"
+      suggestedAction: "Fix link target",
     });
   }
 
@@ -339,7 +341,7 @@ function scan(symbols, graph, docMappings) {
       type: "undocumented",
       target: sym.name,
       reason: `Public symbol ${sym.name} has no documentation`,
-      suggestedAction: "Create documentation or mark as internal"
+      suggestedAction: "Create documentation or mark as internal",
     });
   }
 
@@ -348,6 +350,7 @@ function scan(symbols, graph, docMappings) {
 ```
 
 **Dead Code Detection:**
+
 ```typescript
 function findDeadCode(symbols: CodeSymbol[], graph: KnowledgeGraph): CodeSymbol[] {
   const dead: CodeSymbol[] = [];
@@ -370,13 +373,11 @@ function findDeadCode(symbols: CodeSymbol[], graph: KnowledgeGraph): CodeSymbol[
 ```
 
 **Orphan Doc Detection:**
+
 ```typescript
-function findOrphanDocs(
-  docMappings: DocMapping[],
-  symbols: CodeSymbol[]
-): DocMapping[] {
+function findOrphanDocs(docMappings: DocMapping[], symbols: CodeSymbol[]): DocMapping[] {
   const orphans: DocMapping[] = [];
-  const symbolNames = new Set(symbols.map(s => s.name));
+  const symbolNames = new Set(symbols.map((s) => s.name));
 
   for (const mapping of docMappings) {
     if (!symbolNames.has(mapping.symbolName)) {
@@ -393,6 +394,7 @@ function findOrphanDocs(
 Gera relatórios abrangentes de saúde do projeto.
 
 **Função:**
+
 ```typescript
 async function generateProjectStatus(
   options: { docsDir: string },
@@ -404,11 +406,12 @@ async function generateProjectStatus(
     archGuard: ArchGuard;
     reaper: Reaper;
     graph: KnowledgeGraph;
-  }
-): Promise<ProjectStatus>
+  },
+): Promise<ProjectStatus>;
 ```
 
 **ProjectStatus Type:**
+
 ```typescript
 interface ProjectStatus {
   timestamp: string;
@@ -420,7 +423,7 @@ interface ProjectStatus {
 
   // Documentation
   documentedSymbols: number;
-  documentationCoverage: number;  // %
+  documentationCoverage: number; // %
   totalDocs: number;
   orphanDocs: number;
 
@@ -458,6 +461,7 @@ interface ProjectStatus {
 ```
 
 **Generation Logic:**
+
 ```typescript
 async function generateProjectStatus(options, services) {
   const { symbolRepo, relRepo, registry, patternAnalyzer, archGuard, reaper, graph } = services;
@@ -474,13 +478,13 @@ async function generateProjectStatus(options, services) {
   const reaperFindings = reaper.scan(allSymbols, graph, docMappings);
 
   // Calculate metrics
-  const documentedSymbols = new Set(docMappings.map(m => m.symbolName)).size;
+  const documentedSymbols = new Set(docMappings.map((m) => m.symbolName)).size;
   const documentationCoverage = (documentedSymbols / allSymbols.length) * 100;
 
   const complexitySum = allSymbols
-    .filter(s => s.complexity)
+    .filter((s) => s.complexity)
     .reduce((sum, s) => sum + (s.complexity || 0), 0);
-  const avgComplexity = complexitySum / allSymbols.filter(s => s.complexity).length;
+  const avgComplexity = complexitySum / allSymbols.filter((s) => s.complexity).length;
 
   // Group by kind
   const symbolsByKind: Record<string, number> = {};
@@ -490,37 +494,40 @@ async function generateProjectStatus(options, services) {
 
   // Top issues
   const topComplexFunctions = allSymbols
-    .filter(s => s.complexity && s.complexity > 0)
+    .filter((s) => s.complexity && s.complexity > 0)
     .sort((a, b) => (b.complexity || 0) - (a.complexity || 0))
     .slice(0, 10)
-    .map(s => ({ name: s.name, complexity: s.complexity! }));
+    .map((s) => ({ name: s.name, complexity: s.complexity! }));
 
   return {
     timestamp: new Date().toISOString(),
     totalSymbols: allSymbols.length,
-    totalFiles: new Set(allSymbols.map(s => s.file)).size,
+    totalFiles: new Set(allSymbols.map((s) => s.file)).size,
     totalRelationships: allRels.length,
     documentedSymbols,
     documentationCoverage,
     totalDocs: registry.findAllDocs().length,
-    orphanDocs: reaperFindings.filter(f => f.type === "orphan_doc").length,
+    orphanDocs: reaperFindings.filter((f) => f.type === "orphan_doc").length,
     symbolsByKind,
-    publicSymbols: allSymbols.filter(s => s.isExported).length,
-    privateSymbols: allSymbols.filter(s => !s.isExported).length,
+    publicSymbols: allSymbols.filter((s) => s.isExported).length,
+    privateSymbols: allSymbols.filter((s) => !s.isExported).length,
     patternsDetected: patterns.length,
     patternViolations: patterns.reduce((sum, p) => sum + p.violations.length, 0),
     archViolations: {
-      error: archViolations.filter(v => v.severity === "error").length,
-      warning: archViolations.filter(v => v.severity === "warning").length,
-      info: archViolations.filter(v => v.severity === "info").length,
-      total: archViolations.length
+      error: archViolations.filter((v) => v.severity === "error").length,
+      warning: archViolations.filter((v) => v.severity === "warning").length,
+      info: archViolations.filter((v) => v.severity === "info").length,
+      total: archViolations.length,
     },
-    deadCodeSymbols: reaperFindings.filter(f => f.type === "dead_code").length,
+    deadCodeSymbols: reaperFindings.filter((f) => f.type === "dead_code").length,
     avgComplexity,
-    avgLinesOfCode: allSymbols.reduce((sum, s) => sum + (s.linesOfCode || 0), 0) / allSymbols.length,
-    avgCoverage: allSymbols.filter(s => s.coverage).reduce((sum, s) => sum + (s.coverage || 0), 0) / allSymbols.filter(s => s.coverage).length,
+    avgLinesOfCode:
+      allSymbols.reduce((sum, s) => sum + (s.linesOfCode || 0), 0) / allSymbols.length,
+    avgCoverage:
+      allSymbols.filter((s) => s.coverage).reduce((sum, s) => sum + (s.coverage || 0), 0) /
+      allSymbols.filter((s) => s.coverage).length,
     topComplexFunctions,
-    lowCoverageSymbols: []
+    lowCoverageSymbols: [],
   };
 }
 ```
@@ -530,6 +537,7 @@ async function generateProjectStatus(options, services) {
 Code review automatizado combinando múltiplas análises.
 
 **Função:**
+
 ```typescript
 async function performSmartCodeReview(
   options: { docsDir: string; includeExamples: boolean },
@@ -542,11 +550,12 @@ async function performSmartCodeReview(
     reaper: Reaper;
     graph: KnowledgeGraph;
     codeExampleValidator?: CodeExampleValidator;
-  }
-): Promise<string>
+  },
+): Promise<string>;
 ```
 
 **Report Sections:**
+
 1. Architecture violations
 2. Dead code findings
 3. Pattern violations
@@ -554,17 +563,20 @@ async function performSmartCodeReview(
 5. Code example validation (optional)
 
 **Example Output:**
+
 ```markdown
 # Smart Code Review Report
 
 ## Architecture Violations (15)
 
 ### Errors (3)
+
 - NoDomainToPersistence: OrderService in src/domain/ imports UserRepository from src/persistence/
 - ...
 
 ### Warnings (12)
-- ClassNaming: orderservice does not match pattern ^[A-Z][a-zA-Z0-9]*$
+
+- ClassNaming: orderservice does not match pattern ^[A-Z][a-zA-Z0-9]\*$
 - ...
 
 ## Dead Code (7)
@@ -594,6 +606,7 @@ async function performSmartCodeReview(
 ---
 
 **Summary:**
+
 - Total issues: 62
 - Critical: 3
 - Warnings: 47
@@ -605,16 +618,18 @@ async function performSmartCodeReview(
 Gate para CI/CD validar docs atualizadas.
 
 **Função:**
+
 ```typescript
 async function runDocGuard(options: {
   base: string;
   head?: string;
   dbPath: string;
   docsDir: string;
-}): Promise<{ passed: boolean; message: string }>
+}): Promise<{ passed: boolean; message: string }>;
 ```
 
 **CI/CD Integration:**
+
 ```yaml
 # .github/workflows/pr.yml
 - name: Check docs updated
@@ -622,6 +637,7 @@ async function runDocGuard(options: {
 ```
 
 **Logic:**
+
 ```typescript
 async function runDocGuard({ base, head, dbPath, docsDir }) {
   // 1. Analyze changes
@@ -657,13 +673,13 @@ async function runDocGuard({ base, head, dbPath, docsDir }) {
   if (missing.length > 0) {
     return {
       passed: false,
-      message: `The following symbols changed but docs were not updated:\n${missing.join("\n")}`
+      message: `The following symbols changed but docs were not updated:\n${missing.join("\n")}`,
     };
   }
 
   return {
     passed: true,
-    message: "All changed symbols have updated documentation"
+    message: "All changed symbols have updated documentation",
   };
 }
 ```
@@ -671,22 +687,25 @@ async function runDocGuard({ base, head, dbPath, docsDir }) {
 ## Best Practices
 
 **Arch Guard:**
+
 - Start with base rules, customize gradually
 - Use `warning` severity for stylistic rules
 - Reserve `error` for critical arch violations
 
 **Reaper:**
+
 - Run regularly (weekly) to keep codebase clean
 - Review findings before deleting (false positives)
 - Mark intentional "unused" symbols (e.g., future APIs)
 
 **Project Status:**
+
 - Track metrics over time (trend analysis)
 - Set coverage targets (e.g., 80% documented)
 - Include in sprint retrospectives
 
 ## Referências
 
-- [Arch Guard Rules](../examples/arch-guard.json)
+- [Arch Guard Rules](../domain/arch-guard-rules.md)
 - [CI/CD Integration](../examples/github-actions.yml)
 - [Pattern Detection](./patterns.md)

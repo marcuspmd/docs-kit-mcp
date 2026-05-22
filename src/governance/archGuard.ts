@@ -7,7 +7,8 @@ export type ArchRuleType =
   | "max_complexity"
   | "max_parameters"
   | "max_lines"
-  | "missing_return_type";
+  | "missing_return_type"
+  | "circular_dependency";
 
 export interface ArchRule {
   name: string;
@@ -370,6 +371,70 @@ function checkMissingReturnType(rule: ArchRule, symbols: CodeSymbol[]): ArchViol
   return violations;
 }
 
+function checkCircularDependency(
+  rule: ArchRule,
+  symbols: CodeSymbol[],
+  relationships: SymbolRelationship[],
+  byId: Map<string, CodeSymbol>,
+): ArchViolation[] {
+  const ignore = (rule.config.ignore as string[] | undefined) ?? [];
+  const scope = rule.config.scope as string | undefined;
+  const severity = rule.severity ?? "error";
+
+  const scopedIds = new Set(
+    symbols
+      .filter((s) => !isIgnored(s.file, ignore) && (!scope || matchGlob(scope, s.file)))
+      .map((s) => s.id),
+  );
+
+  const adj = new Map<string, string[]>();
+  for (const rel of relationships) {
+    if (!scopedIds.has(rel.sourceId) || !scopedIds.has(rel.targetId)) continue;
+    if (!adj.has(rel.sourceId)) adj.set(rel.sourceId, []);
+    adj.get(rel.sourceId)!.push(rel.targetId);
+  }
+
+  const color = new Map<string, "white" | "gray" | "black">();
+  for (const id of adj.keys()) color.set(id, "white");
+
+  const cycles: string[][] = [];
+
+  function dfs(nodeId: string, path: string[]): void {
+    color.set(nodeId, "gray");
+    path.push(nodeId);
+
+    for (const neighbor of adj.get(nodeId) ?? []) {
+      const state = color.get(neighbor);
+      if (state === "gray") {
+        const start = path.indexOf(neighbor);
+        if (start !== -1) cycles.push([...path.slice(start)]);
+      } else if (state === "white") {
+        dfs(neighbor, path);
+      }
+    }
+
+    color.set(nodeId, "black");
+    path.pop();
+  }
+
+  for (const nodeId of adj.keys()) {
+    if (color.get(nodeId) === "white") dfs(nodeId, []);
+  }
+
+  return cycles.map((cycle) => {
+    const syms = cycle.map((id) => byId.get(id)).filter(Boolean) as CodeSymbol[];
+    const names = syms.map((s) => s.name).join(" → ");
+    const first = syms[0];
+    return {
+      rule: rule.name,
+      file: first?.file ?? "unknown",
+      symbolId: first?.id,
+      message: `Circular dependency: ${names} → ${syms[0]?.name ?? "?"}`,
+      severity,
+    };
+  });
+}
+
 /**
  * Deduplicate violations where a strict variant (-strict suffix) and its regular counterpart
  * both fire for the same symbol. The strict (error) violation supersedes the regular (warning).
@@ -427,6 +492,9 @@ export function createArchGuard(): ArchGuard {
             break;
           case "missing_return_type":
             violations.push(...checkMissingReturnType(rule, symbols));
+            break;
+          case "circular_dependency":
+            violations.push(...checkCircularDependency(rule, symbols, relationships, byId));
             break;
         }
       }

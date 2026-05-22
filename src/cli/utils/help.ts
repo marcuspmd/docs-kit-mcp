@@ -17,6 +17,10 @@ BUILD
                        [--root dir] [--version v1|v2]
   docs-kit build-docs  [--out dir] [--db path] Generate structured Markdown docs
                        [--root dir]
+  docs-kit project-tree [dir] [--out file]     Generate Markdown project tree
+                       [--depth n] [--dirs-only]
+                       [--source-only] [--include glob]
+                       [--exclude glob]
 
 DIFF PREVIEW
   docs-kit diff        [<base>]              Without a base branch, launches an
@@ -62,7 +66,7 @@ SERVER
   docs-kit                                     Launch interactive TUI menu (requires TTY)
   docs-kit --help                              Show this help
 
-Additional tools available as MCP tools in Copilot/Claude (19 tools including
+Additional tools available as MCP tools in Copilot/Claude (21 tools including
 generateDocs, scanFile, askKnowledgeBase, smartCodeReview, and more).
 Run: npx docs-kit index && npx docs-kit build-site  to get started.
 `);

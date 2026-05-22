@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 
-export const CURRENT_SCHEMA_VERSION = 4;
+export const CURRENT_SCHEMA_VERSION = 5;
 
 const PR_REVIEW_TABLES_SQL = `
 CREATE TABLE IF NOT EXISTS pr_pull_requests (
@@ -163,7 +163,9 @@ CREATE TABLE IF NOT EXISTS symbols (
   last_modified     TEXT,
   signature         TEXT,
   explanation       TEXT,
-  explanation_hash  TEXT
+  explanation_hash  TEXT,
+  security          TEXT,
+  change_velocity   TEXT
 );
 
 CREATE TABLE IF NOT EXISTS relationships (
@@ -288,6 +290,8 @@ const SYMBOL_COLUMNS: Array<{ name: string; type: string }> = [
   { name: "signature", type: "TEXT" },
   { name: "explanation", type: "TEXT" },
   { name: "explanation_hash", type: "TEXT" },
+  { name: "security", type: "TEXT" },
+  { name: "change_velocity", type: "TEXT" },
 ];
 
 interface SchemaMigration {
@@ -352,6 +356,13 @@ const MIGRATIONS: SchemaMigration[] = [
     version: 4,
     up(db) {
       db.exec(PR_REVIEW_TABLES_SQL);
+    },
+  },
+  {
+    version: 5,
+    up(db) {
+      addColumnIfMissing(db, "symbols", "security", "TEXT");
+      addColumnIfMissing(db, "symbols", "change_velocity", "TEXT");
     },
   },
 ];

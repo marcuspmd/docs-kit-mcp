@@ -40,25 +40,27 @@ ChangeImpact[] (symbols + change types)
 Parseia output do `git diff` entre duas refs.
 
 **Função principal:**
+
 ```typescript
-function parseGitDiff(diffOutput: string): FileDiff[]
+function parseGitDiff(diffOutput: string): FileDiff[];
 ```
 
 **Tipos:**
+
 ```typescript
 interface FileDiff {
-  file: string;           // Path relativo
+  file: string; // Path relativo
   changeType: "added" | "modified" | "deleted" | "renamed";
-  oldFile?: string;       // Para renamed
-  hunks: DiffHunk[];      // Blocos de mudanças
+  oldFile?: string; // Para renamed
+  hunks: DiffHunk[]; // Blocos de mudanças
 }
 
 interface DiffHunk {
-  oldStart: number;       // Linha inicial no arquivo antigo
-  oldLines: number;       // Quantidade de linhas antigas
-  newStart: number;       // Linha inicial no arquivo novo
-  newLines: number;       // Quantidade de linhas novas
-  lines: DiffLine[];      // Linhas modificadas
+  oldStart: number; // Linha inicial no arquivo antigo
+  oldLines: number; // Quantidade de linhas antigas
+  newStart: number; // Linha inicial no arquivo novo
+  newLines: number; // Quantidade de linhas novas
+  lines: DiffLine[]; // Linhas modificadas
 }
 
 interface DiffLine {
@@ -70,6 +72,7 @@ interface DiffLine {
 ```
 
 **Exemplo de parsing:**
+
 ```diff
 diff --git a/src/order.ts b/src/order.ts
 index abc123..def456 100644
@@ -82,6 +85,7 @@ index abc123..def456 100644
 ```
 
 Resulta em:
+
 ```typescript
 {
   file: "src/order.ts",
@@ -101,6 +105,7 @@ Resulta em:
 ```
 
 **Casos suportados:**
+
 - Arquivos novos (`changeType: "added"`)
 - Arquivos deletados (`changeType: "deleted"`)
 - Arquivos modificados (`changeType: "modified"`)
@@ -112,11 +117,13 @@ Resulta em:
 Compara listas de símbolos extraídos de versões antigas e novas do código para detectar mudanças **semânticas**.
 
 **Função principal:**
+
 ```typescript
-function diffSymbols(oldSymbols: CodeSymbol[], newSymbols: CodeSymbol[]): AstChange[]
+function diffSymbols(oldSymbols: CodeSymbol[], newSymbols: CodeSymbol[]): AstChange[];
 ```
 
 **Tipo de retorno:**
+
 ```typescript
 interface AstChange {
   symbol: CodeSymbol;
@@ -131,25 +138,29 @@ type AstChangeType = "added" | "removed" | "signature_changed" | "body_changed" 
 **Algoritmo:**
 
 1. **Indexa símbolos por chave:**
+
    ```typescript
    const makeKey = (s: CodeSymbol) => `${s.name}:${s.kind}`;
-   const oldMap = new Map(oldSymbols.map(s => [makeKey(s), s]));
-   const newMap = new Map(newSymbols.map(s => [makeKey(s), s]));
+   const oldMap = new Map(oldSymbols.map((s) => [makeKey(s), s]));
+   const newMap = new Map(newSymbols.map((s) => [makeKey(s), s]));
    ```
 
 2. **Extract symbols from both trees:**
+
    ```typescript
    const oldSymbols = indexFile(filePath, oldSource, parser);
    const newSymbols = indexFile(filePath, newSource, parser);
    ```
 
 3. **Compare symbols by name+kind:**
+
    ```typescript
-   const oldMap = new Map(oldSymbols.map(s => [`${s.name}:${s.kind}`, s]));
-   const newMap = new Map(newSymbols.map(s => [`${s.name}:${s.kind}`, s]));
+   const oldMap = new Map(oldSymbols.map((s) => [`${s.name}:${s.kind}`, s]));
+   const newMap = new Map(newSymbols.map((s) => [`${s.name}:${s.kind}`, s]));
    ```
 
 4. **Detect adds/removes:**
+
    ```typescript
    for (const [key, sym] of newMap) {
      if (!oldMap.has(key)) {
@@ -187,6 +198,7 @@ type AstChangeType = "added" | "removed" | "signature_changed" | "body_changed" 
    ```
 
 **Vantagens sobre diff textual:**
+
 - Ignora mudanças cosméticas (whitespace, comments)
 - Detecta mudanças semânticas precisas
 - Identifica symbols afetados com linha exata
@@ -197,15 +209,17 @@ type AstChangeType = "added" | "removed" | "signature_changed" | "body_changed" 
 Orquestra o processo completo de análise.
 
 **Função principal:**
+
 ```typescript
 async function analyzeChanges(params: {
   repoPath: string;
   base: string;
   head?: string;
-}): Promise<ChangeImpact[]>
+}): Promise<ChangeImpact[]>;
 ```
 
 **Tipo de retorno:**
+
 ```typescript
 interface ChangeImpact {
   symbolName: string;
@@ -218,7 +232,7 @@ interface ChangeImpact {
     startLine: number;
     endLine: number;
   };
-  description: string;  // Human-readable description
+  description: string; // Human-readable description
 }
 ```
 
@@ -227,10 +241,9 @@ interface ChangeImpact {
 ```typescript
 async function analyzeChanges({ repoPath, base, head }) {
   // 1. Get git diff
-  const { stdout } = await execAsync(
-    `git diff ${base}${head ? ` ${head}` : ""} --unified=0`,
-    { cwd: repoPath }
-  );
+  const { stdout } = await execAsync(`git diff ${base}${head ? ` ${head}` : ""} --unified=0`, {
+    cwd: repoPath,
+  });
 
   // 2. Parse diff
   const fileDiffs = parseGitDiff(stdout);
@@ -244,29 +257,31 @@ async function analyzeChanges({ repoPath, base, head }) {
       const oldSource = await getFileContent(base, fileDiff.file);
       const oldSymbols = indexFile(fileDiff.file, oldSource, parser);
 
-      allImpacts.push(...oldSymbols.map(s => ({
-        symbolName: s.name,
-        symbolKind: s.kind,
-        file: fileDiff.file,
-        changeType: "removed" as const,
-        location: { startLine: s.startLine, endLine: s.endLine },
-        description: `Symbol ${s.name} was removed`
-      })));
-
+      allImpacts.push(
+        ...oldSymbols.map((s) => ({
+          symbolName: s.name,
+          symbolKind: s.kind,
+          file: fileDiff.file,
+          changeType: "removed" as const,
+          location: { startLine: s.startLine, endLine: s.endLine },
+          description: `Symbol ${s.name} was removed`,
+        })),
+      );
     } else if (fileDiff.changeType === "added") {
       // Símbolos foram adicionados
       const newSource = await getFileContent(head || "HEAD", fileDiff.file);
       const newSymbols = indexFile(fileDiff.file, newSource, parser);
 
-      allImpacts.push(...newSymbols.map(s => ({
-        symbolName: s.name,
-        symbolKind: s.kind,
-        file: fileDiff.file,
-        changeType: "added" as const,
-        location: { startLine: s.startLine, endLine: s.endLine },
-        description: `Symbol ${s.name} was added`
-      })));
-
+      allImpacts.push(
+        ...newSymbols.map((s) => ({
+          symbolName: s.name,
+          symbolKind: s.kind,
+          file: fileDiff.file,
+          changeType: "added" as const,
+          location: { startLine: s.startLine, endLine: s.endLine },
+          description: `Symbol ${s.name} was added`,
+        })),
+      );
     } else if (fileDiff.changeType === "modified") {
       // Compara ASTs
       const oldSource = await getFileContent(base, fileDiff.file);
@@ -276,19 +291,21 @@ async function analyzeChanges({ repoPath, base, head }) {
         oldSource,
         newSource,
         filePath: fileDiff.file,
-        parser
+        parser,
       });
 
-      allImpacts.push(...astDiff.changedSymbols.map(cs => ({
-        symbolName: cs.name,
-        symbolKind: cs.kind,
-        file: cs.location.file,
-        changeType: cs.changeType,
-        oldSignature: cs.oldSignature,
-        newSignature: cs.newSignature,
-        location: cs.location,
-        description: formatDescription(cs)
-      })));
+      allImpacts.push(
+        ...astDiff.changedSymbols.map((cs) => ({
+          symbolName: cs.name,
+          symbolKind: cs.kind,
+          file: cs.location.file,
+          changeType: cs.changeType,
+          oldSignature: cs.oldSignature,
+          newSignature: cs.newSignature,
+          location: cs.location,
+          description: formatDescription(cs),
+        })),
+      );
     }
   }
 
@@ -297,6 +314,7 @@ async function analyzeChanges({ repoPath, base, head }) {
 ```
 
 **Helper: `getFileContent(ref, file)`**
+
 ```typescript
 async function getFileContent(ref: string, file: string): Promise<string> {
   const { stdout } = await execAsync(`git show ${ref}:${file}`);
@@ -305,6 +323,7 @@ async function getFileContent(ref: string, file: string): Promise<string> {
 ```
 
 **Helper: `formatDescription(cs)`**
+
 ```typescript
 function formatDescription(cs: ChangedSymbol): string {
   switch (cs.changeType) {
@@ -326,10 +345,10 @@ function formatDescription(cs: ChangedSymbol): string {
 
 ```bash
 # No PR build
-docs-kit generate-docs --base main --head $PR_BRANCH
+docs-kit diff main --head $PR_BRANCH --strict
 ```
 
-Atualiza automaticamente docs para símbolos modificados.
+Analisa símbolos modificados, avalia Docs-Guard e gera preview dry-run de documentação sem escrever arquivos `.md`. A atualização efetiva de seções continua disponível pela tool MCP `generateDocs`.
 
 ### 2. Code Review Automation
 
@@ -337,13 +356,12 @@ Atualiza automaticamente docs para símbolos modificados.
 const impacts = await analyzeChanges({
   repoPath: ".",
   base: "main",
-  head: "feature/new-api"
+  head: "feature/new-api",
 });
 
 // Identifica breaking changes
-const breakingChanges = impacts.filter(i =>
-  i.changeType === "signature_changed" ||
-  i.changeType === "removed"
+const breakingChanges = impacts.filter(
+  (i) => i.changeType === "signature_changed" || i.changeType === "removed",
 );
 
 if (breakingChanges.length > 0) {
@@ -361,7 +379,7 @@ if (breakingChanges.length > 0) {
 const impacts = await analyzeChanges({
   repoPath: ".",
   base: "HEAD~1",
-  head: "HEAD"
+  head: "HEAD",
 });
 
 console.log(`${impacts.length} symbols affected by this commit`);
@@ -370,11 +388,13 @@ console.log(`${impacts.length} symbols affected by this commit`);
 ## Limitações e Melhorias Futuras
 
 **Limitações atuais:**
+
 - Suporta apenas TypeScript (via Tree-sitter-typescript)
 - Não detecta mudanças em comments/JSDoc
 - Não rastreia renomeações de símbolos
 
 **Melhorias planejadas:**
+
 - [ ] Multi-language support (PHP, Python, Go)
 - [ ] Detect symbol renames (via heuristics)
 - [ ] Track comment changes for re-doc
@@ -384,11 +404,13 @@ console.log(`${impacts.length} symbols affected by this commit`);
 ## Performance
 
 **Otimizações:**
+
 - Usa `--unified=0` no git diff para reduzir output
 - Parseia apenas arquivos modificados
 - Index symbols é incremental (reusa cache)
 
 **Benchmarks (exemplo):**
+
 - 100 arquivos modificados: ~5s
 - 1000 arquivos: ~45s
 - Bottleneck: `git show` I/O
@@ -426,6 +448,7 @@ await updater.applyChanges(impacts, registry, docsDir, config);
 ```
 
 O `DocUpdater` usa `ChangeImpact[]` para:
+
 1. Localizar docs relacionados via registry
 2. Atualizar seções específicas (nunca cria novos arquivos)
 3. Preservar contexto existente

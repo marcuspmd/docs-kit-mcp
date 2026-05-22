@@ -63,6 +63,10 @@ const HTTP_METHODS: HttpMethod[] = ["get", "post", "put", "delete", "patch"];
 
 const METHOD_TAG_PATTERN = /^(GET|POST|PUT|DELETE|PATCH)\s+(.+)$/i;
 
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 function endpointKey(method: string, path: string): string {
   return `${method.toUpperCase()} ${normalizePath(path)}`;
 }
@@ -77,9 +81,28 @@ function extractResponseType(op: OpenApiOperation): string | undefined {
   const json = resp200.content["application/json"];
   if (!json?.schema) return undefined;
   if (json.schema.$ref) {
-    return json.schema.$ref.split("/").pop();
+    const shortName = json.schema.$ref.split("/").pop()?.trim();
+    return shortName || undefined;
   }
   return json.schema.type;
+}
+
+function parseParameter(value: unknown): ApiEndpoint["parameters"][number] | undefined {
+  if (!isRecord(value) || typeof value.name !== "string") return undefined;
+  const schema = isRecord(value.schema) ? value.schema : undefined;
+  return {
+    name: value.name,
+    type: typeof schema?.type === "string" ? schema.type : "string",
+    required: typeof value.required === "boolean" ? value.required : false,
+  };
+}
+
+function collectParameters(value: unknown): ApiEndpoint["parameters"] {
+  if (!Array.isArray(value)) return [];
+  return value.flatMap((param) => {
+    const parsed = parseParameter(param);
+    return parsed ? [parsed] : [];
+  });
 }
 
 /* ================== Implementation ================== */
@@ -128,37 +151,36 @@ export function createApiSync(): ApiSync {
 
     async parseOpenApiSpec(specPath) {
       const content = await readFile(specPath, "utf-8");
-      const spec: OpenApiSpec = specPath.endsWith(".json")
-        ? JSON.parse(content)
-        : YAML.parse(content);
+      const spec: unknown = specPath.endsWith(".json") ? JSON.parse(content) : YAML.parse(content);
 
-      return this.parseOpenApiObject(spec);
+      if (!isRecord(spec)) {
+        throw new Error("OpenAPI spec must be an object.");
+      }
+
+      return this.parseOpenApiObject(spec as OpenApiSpec);
     },
 
     parseOpenApiObject(spec) {
       const endpoints: ApiEndpoint[] = [];
-      const paths = spec.paths ?? {};
+      const paths = isRecord(spec.paths) ? spec.paths : {};
 
       for (const [path, pathItem] of Object.entries(paths)) {
-        const sharedParams = pathItem.parameters ?? [];
+        if (!isRecord(pathItem)) continue;
+
+        const sharedParams = collectParameters(pathItem.parameters);
 
         for (const method of HTTP_METHODS) {
           const op = pathItem[method];
-          if (!op) continue;
+          if (!isRecord(op)) continue;
 
-          const allParams = [...sharedParams, ...(op.parameters ?? [])];
-          const params = allParams.map((p) => ({
-            name: p.name,
-            type: p.schema?.type ?? "string",
-            required: p.required ?? false,
-          }));
+          const params = [...sharedParams, ...collectParameters(op.parameters)];
 
           endpoints.push({
             method: method.toUpperCase(),
             path: normalizePath(path),
             parameters: params,
-            responseType: extractResponseType(op),
-            symbolId: op.operationId ?? `${method}:${path}`,
+            responseType: extractResponseType(op as OpenApiOperation),
+            symbolId: typeof op.operationId === "string" ? op.operationId : `${method}:${path}`,
           });
         }
       }

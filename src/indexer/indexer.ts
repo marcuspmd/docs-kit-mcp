@@ -15,6 +15,8 @@ import { createHash } from "node:crypto";
 import { type CodeSymbol, type SymbolKind, type Layer, generateSymbolId } from "./symbol.types.js";
 import { getStrategy } from "./languages/index.js";
 import type { FileHashRepository } from "../storage/db.js";
+import { detectSecuritySensitivity } from "./securityTagger.js";
+import { loadRepoChangeData } from "./gitBlameExtractor.js";
 
 /* ================== Types ================== */
 
@@ -436,7 +438,14 @@ export function indexFile(filePath: string, source: string, parser: Parser): Cod
   if (!tree) return [];
   const strategy = getStrategy(detectLanguage(filePath));
   const namespace = strategy.extractNamespace(tree.rootNode);
-  return walkNode(tree.rootNode, filePath, undefined, undefined, namespace);
+  const symbols = walkNode(tree.rootNode, filePath, undefined, undefined, namespace);
+
+  for (const sym of symbols) {
+    const security = detectSecuritySensitivity(sym.name, sym.signature, source);
+    if (security.isSensitive) sym.security = security;
+  }
+
+  return symbols;
 }
 
 /* ================== Project indexer ================== */
@@ -504,6 +513,14 @@ export async function indexProject(options: IndexerOptions): Promise<IndexResult
         file,
         error: err instanceof Error ? err.message : String(err),
       });
+    }
+  }
+
+  const changeData = await loadRepoChangeData(rootDir);
+  if (changeData.size > 0) {
+    for (const sym of symbols) {
+      const velocity = changeData.get(sym.file);
+      if (velocity) sym.changeVelocity = velocity;
     }
   }
 

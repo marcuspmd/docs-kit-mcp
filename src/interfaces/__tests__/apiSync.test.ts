@@ -159,6 +159,28 @@ describe("ApiSync", () => {
       expect(endpoints[0].responseType).toBe("OrderList");
     });
 
+    it("ignores empty $ref response type", () => {
+      const spec: OpenApiSpec = {
+        paths: {
+          "/orders": {
+            get: {
+              operationId: "list",
+              responses: {
+                "200": {
+                  content: {
+                    "application/json": { schema: { $ref: "#/components/schemas/" } },
+                  },
+                },
+              },
+            },
+          },
+        },
+      };
+
+      const endpoints = sync.parseOpenApiObject(spec);
+      expect(endpoints[0].responseType).toBeUndefined();
+    });
+
     it("merges path-level parameters", () => {
       const spec: OpenApiSpec = {
         paths: {
@@ -174,6 +196,35 @@ describe("ApiSync", () => {
 
       const endpoints = sync.parseOpenApiObject(spec);
       expect(endpoints[0].parameters).toHaveLength(2);
+    });
+
+    it("returns no endpoints for malformed paths", () => {
+      const spec = { paths: [] } as unknown as OpenApiSpec;
+
+      expect(sync.parseOpenApiObject(spec)).toEqual([]);
+    });
+
+    it("skips malformed path items, operations, and parameters", () => {
+      const spec = {
+        paths: {
+          "/bad-path-item": null,
+          "/bad-operation": { get: "not-object" },
+          "/users": {
+            parameters: [null, { name: "tenant", in: "header", schema: { type: "string" } }],
+            get: {
+              operationId: "listUsers",
+              parameters: [{ in: "query" }, { name: "limit", in: "query" }],
+            },
+          },
+        },
+      } as unknown as OpenApiSpec;
+
+      const endpoints = sync.parseOpenApiObject(spec);
+      expect(endpoints).toHaveLength(1);
+      expect(endpoints[0].parameters).toEqual([
+        { name: "tenant", type: "string", required: false },
+        { name: "limit", type: "string", required: false },
+      ]);
     });
   });
 
@@ -206,6 +257,18 @@ paths:
         const endpoints = await sync.parseOpenApiSpec(tmpFile);
         expect(endpoints).toHaveLength(1);
         expect(endpoints[0].symbolId).toBe("createItem");
+      } finally {
+        await unlink(tmpFile);
+      }
+    });
+
+    it("rejects non-object spec files", async () => {
+      const tmpFile = join(tmpdir(), `openapi-${Date.now()}.json`);
+      await writeFile(tmpFile, JSON.stringify([]));
+      try {
+        await expect(sync.parseOpenApiSpec(tmpFile)).rejects.toThrow(
+          "OpenAPI spec must be an object.",
+        );
       } finally {
         await unlink(tmpFile);
       }

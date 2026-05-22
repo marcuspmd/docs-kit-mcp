@@ -100,6 +100,16 @@ export async function performSmartCodeReview(
     }
   }
 
+  // Identify security-sensitive symbols without test coverage
+  const uncoveredSecuritySymbols = allSymbols.filter(
+    (s) =>
+      s.security?.isSensitive &&
+      (s.metrics?.testCoverage == null || s.metrics.testCoverage.coveragePercent < 80),
+  );
+
+  // Identify hotspot symbols (high change frequency)
+  const hotspots = allSymbols.filter((s) => s.changeVelocity?.isHotspot);
+
   // Build comprehensive report
   const report: string[] = [`# 🔍 Smart Code Review Report\n`];
 
@@ -193,6 +203,39 @@ ${Object.entries(findingsByType)
 \n`);
   }
 
+  // Security findings
+  if (uncoveredSecuritySymbols.length > 0) {
+    report.push(`## 🔐 Security Coverage Gaps (${uncoveredSecuritySymbols.length})`);
+    report.push("Security-sensitive symbols with insufficient test coverage (<80%):");
+    for (const sym of uncoveredSecuritySymbols.slice(0, 10)) {
+      const coverage = sym.metrics?.testCoverage?.coveragePercent;
+      const coverageStr = coverage != null ? `${coverage.toFixed(0)}%` : "no data";
+      const cats = sym.security!.categories.join(", ");
+      report.push(`- **${sym.name}** (${sym.file}): ${cats} — coverage: ${coverageStr}`);
+    }
+    if (uncoveredSecuritySymbols.length > 10) {
+      report.push(`- ... and ${uncoveredSecuritySymbols.length - 10} more`);
+    }
+    report.push("");
+  }
+
+  // Hotspot analysis
+  if (hotspots.length > 0) {
+    report.push(`## 🔥 Change Hotspots (${hotspots.length})`);
+    report.push("Symbols with high change frequency (≥5 changes in 30 days):");
+    const sorted = hotspots
+      .slice()
+      .sort((a, b) => (b.changeVelocity!.changeCount30d ?? 0) - (a.changeVelocity!.changeCount30d ?? 0));
+    for (const sym of sorted.slice(0, 10)) {
+      const v = sym.changeVelocity!;
+      report.push(
+        `- **${sym.name}** (${sym.file}): ${v.changeCount30d} changes/30d, ${v.changeCount90d} changes/90d`,
+      );
+    }
+    if (hotspots.length > 10) report.push(`- ... and ${hotspots.length - 10} more`);
+    report.push("");
+  }
+
   // Recommendations
   const recommendations: string[] = [];
   if (docCoverage < 50) {
@@ -208,6 +251,16 @@ ${Object.entries(findingsByType)
   }
   if (exampleResults.length > 0 && exampleResults.some((r) => !r.valid)) {
     recommendations.push("✏️ **Examples**: Update code examples in documentation");
+  }
+  if (uncoveredSecuritySymbols.length > 0) {
+    recommendations.push(
+      `🔐 **Security**: ${uncoveredSecuritySymbols.length} security-sensitive symbol(s) need better test coverage`,
+    );
+  }
+  if (hotspots.length > 0) {
+    recommendations.push(
+      `🔥 **Hotspots**: ${hotspots.length} frequently-changing symbol(s) — consider refactoring or adding documentation`,
+    );
   }
 
   if (recommendations.length > 0) {

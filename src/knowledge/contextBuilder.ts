@@ -72,6 +72,20 @@ function buildSymbolSection(symbols: CodeSymbol[]): string[] {
     if (sym.layer) parts.push(`- Layer: ${sym.layer}`);
     if (sym.pattern) parts.push(`- Pattern: ${sym.pattern}`);
     if (sym.summary) parts.push(`- Summary: ${sym.summary}`);
+    if (sym.security?.isSensitive) {
+      parts.push(`- 🔐 Security-sensitive (${sym.security.categories.join(", ")})`);
+    }
+    if (sym.changeVelocity) {
+      const v = sym.changeVelocity;
+      if (v.isHotspot) {
+        parts.push(
+          `- ⚠️ Hotspot: ${v.changeCount30d} changes in 30 days (${v.changeCount90d} in 90 days)`,
+        );
+      } else if (v.changeCount90d) {
+        parts.push(`- ${v.changeCount90d} changes in 90 days`);
+      }
+      if (v.lastModifiedBy) parts.push(`- Last modified by: ${v.lastModifiedBy}`);
+    }
     parts.push("");
   }
   return parts;

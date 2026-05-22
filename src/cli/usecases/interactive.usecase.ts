@@ -8,6 +8,7 @@ import type { DiffUseCaseResult } from "./diff.usecase.js";
 import { checkUseCase } from "./check.usecase.js";
 import { openSiteUseCase } from "./openSite.usecase.js";
 import { serveSite } from "./openSite.usecase.js";
+import { projectTreeUseCase } from "./projectTree.usecase.js";
 
 export async function interactiveUseCase(): Promise<void> {
   p.intro(colors.bold("docs-kit"));
@@ -20,6 +21,11 @@ export async function interactiveUseCase(): Promise<void> {
       { value: "arch", label: "Architecture check", hint: "violações de regras de arquitetura" },
       { value: "health", label: "Full health check", hint: "cobertura + arquitetura + docs" },
       { value: "site", label: "Open site", hint: "gerar e servir o docs site localmente" },
+      {
+        value: "project-tree",
+        label: "Project tree",
+        hint: "gerar STRUCTURE.md para contexto de LLMs",
+      },
       { value: "exit", label: "Sair" },
     ],
   });
@@ -44,11 +50,78 @@ export async function interactiveUseCase(): Promise<void> {
     } else if (action === "site") {
       p.outro("Abrindo site...");
       await openSiteUseCase({});
+    } else if (action === "project-tree") {
+      await interactiveProjectTree();
     }
   } catch (err) {
     p.log.error(err instanceof Error ? err.message : String(err));
     process.exit(1);
   }
+}
+
+async function interactiveProjectTree(): Promise<void> {
+  const rootDir = await p.text({
+    message: "Diretório raiz para mapear:",
+    defaultValue: ".",
+    validate: (value) => (!value?.trim() ? "Informe um diretório." : undefined),
+  });
+  if (p.isCancel(rootDir)) {
+    p.cancel("Cancelado.");
+    return;
+  }
+
+  const outFile = await p.text({
+    message: "Arquivo Markdown de saída:",
+    defaultValue: "STRUCTURE.md",
+    validate: (value) => (!value?.trim() ? "Informe um arquivo de saída." : undefined),
+  });
+  if (p.isCancel(outFile)) {
+    p.cancel("Cancelado.");
+    return;
+  }
+
+  const depthInput = await p.text({
+    message: "Profundidade máxima da árvore:",
+    defaultValue: "4",
+    validate: (value) => {
+      const parsed = parseInt(value ?? "", 10);
+      return Number.isNaN(parsed) || parsed < 0
+        ? "Informe um número maior ou igual a zero."
+        : undefined;
+    },
+  });
+  if (p.isCancel(depthInput)) {
+    p.cancel("Cancelado.");
+    return;
+  }
+
+  const dirsOnly = await p.confirm({
+    message: "Mostrar apenas diretórios?",
+    initialValue: false,
+  });
+  if (p.isCancel(dirsOnly)) {
+    p.cancel("Cancelado.");
+    return;
+  }
+
+  const sourceOnly = await p.confirm({
+    message: "Usar apenas os includes de código-fonte do docs.config.js?",
+    initialValue: false,
+  });
+  if (p.isCancel(sourceOnly)) {
+    p.cancel("Cancelado.");
+    return;
+  }
+
+  p.outro("");
+  const depth = parseInt(depthInput, 10);
+  await projectTreeUseCase({
+    rootDir: rootDir.trim(),
+    outFile: outFile.trim(),
+    depth: Number.isNaN(depth) ? 4 : depth,
+    dirsOnly,
+    sourceOnly,
+  });
 }
 
 export async function interactiveDiff(opts: { flags: Record<string, string> }): Promise<void> {
@@ -165,7 +238,9 @@ function renderTerminalDiff(result: DiffUseCaseResult, base: string): void {
   const line = "═".repeat(50);
 
   console.log(`\n${colors.bold(line)}`);
-  console.log(`  ${colors.bold(`Diff: ${base}...HEAD  (${changedFiles.length} arquivo(s), ${impacts.length} símbolo(s))`)}`);
+  console.log(
+    `  ${colors.bold(`Diff: ${base}...HEAD  (${changedFiles.length} arquivo(s), ${impacts.length} símbolo(s))`)}`,
+  );
   console.log(`${colors.bold(line)}\n`);
 
   if (changedFiles.length > 0) {

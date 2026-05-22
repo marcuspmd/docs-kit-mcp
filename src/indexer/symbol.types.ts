@@ -142,6 +142,23 @@ export const CodeSymbolSchema = z
 
     explanation: z.string().optional(),
     explanationHash: z.string().optional(),
+
+    security: z
+      .object({
+        isSensitive: z.boolean(),
+        categories: z.array(z.string()),
+      })
+      .optional(),
+
+    changeVelocity: z
+      .object({
+        lastModifiedBy: z.string().optional(),
+        lastModifiedAt: z.date().optional(),
+        changeCount30d: z.number().int().nonnegative().optional(),
+        changeCount90d: z.number().int().nonnegative().optional(),
+        isHotspot: z.boolean().optional(),
+      })
+      .optional(),
   })
   .refine((s) => s.endLine >= s.startLine, {
     message: "endLine must be greater than or equal to startLine",
