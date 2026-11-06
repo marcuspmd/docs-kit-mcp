@@ -338,7 +338,11 @@ function walkNode(
 ): CodeSymbol[] {
   const symbols: CodeSymbol[] = [];
   if (!node) return symbols;
-  const kind = NODE_KIND_MAP[node.type];
+  // `module` is Ruby-only; in Python it is the file root node (name would be the docstring).
+  const isForeignModule = node.type === "module" && !file.endsWith(".rb");
+  // Anonymous keyword tokens (e.g. Python `def`, `class`) share names with Ruby/JS node types
+  // but are not declarations.
+  const kind = isForeignModule || !node.isNamed ? undefined : NODE_KIND_MAP[node.type];
 
   if (kind) {
     const name = getNodeName(node) ?? "anonymous";

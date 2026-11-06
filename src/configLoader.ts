@@ -116,6 +116,15 @@ export default {
   //   temperature: 0.7,
   // },
 
+  // -- OpenRouter (any model via https://openrouter.ai) --
+  // llm: {
+  //   provider: "openrouter",
+  //   apiKey: { env: "OPENROUTER_API_KEY" },
+  //   model: "anthropic/claude-sonnet-4.5",
+  //   maxTokens: 2000,
+  //   temperature: 0.2,
+  // },
+
   // -- Claude --
   // llm: {
   //   provider: "claude",

@@ -586,6 +586,19 @@ function SourceViewer({ data, file, highlightSym, showMinimap, showHeatmap }) {
     scrollRef.current.scrollTo({ top: Math.max(0, top), behavior: "smooth" });
   }, [highlightSym?.id]);
 
+  const [covPop, setCovPop] = useState(null);
+  useEffect(() => {
+    if (!covPop) return undefined;
+    const close = () => setCovPop(null);
+    const onKey = (e) => e.key === "Escape" && close();
+    window.addEventListener("click", close);
+    window.addEventListener("keydown", onKey);
+    return () => {
+      window.removeEventListener("click", close);
+      window.removeEventListener("keydown", onKey);
+    };
+  }, [covPop]);
+
   if (!sf) return <div className="empty">Source not available.</div>;
   const lines = sf.text.split("\n");
 
@@ -597,26 +610,54 @@ function SourceViewer({ data, file, highlightSym, showMinimap, showHeatmap }) {
           const hit = showHeatmap ? cov[lineNum] : null;
           let covCls = "c-none";
           let lnCls = "";
+          let covHint;
           if (showHeatmap && hit != null) {
             if (hit === 0) {
               covCls = "c-bad";
               lnCls = "uncov";
+              covHint = "Cobertura: linha NÃO executada pelos testes (0 hits)";
             } else if (hit === 1) {
               covCls = "c-warn";
               lnCls = "partial";
-            } else covCls = "c-good";
+              covHint = "Cobertura: linha executada apenas 1 vez pelos testes (cobertura parcial)";
+            } else {
+              covCls = "c-good";
+              covHint = `Cobertura: linha executada ${hit}x pelos testes`;
+            }
           }
           const isHighlight =
             highlightSym && lineNum >= highlightSym.startLine && lineNum <= highlightSym.endLine;
           return (
             <div key={lineNum} className={`src-line ${lnCls} ${isHighlight ? "highlight" : ""}`}>
-              <span className={`cov ${covCls}`} />
+              <span
+                className={`cov ${covCls}`}
+                title={covHint}
+                onClick={
+                  covHint
+                    ? (e) => {
+                        e.stopPropagation();
+                        const r = e.currentTarget.getBoundingClientRect();
+                        setCovPop({ x: r.right + 8, y: r.top, line: lineNum, text: covHint, cls: covCls });
+                      }
+                    : undefined
+                }
+              />
               <span className="gutter">{lineNum}</span>
               <span className="code">{line || " "}</span>
             </div>
           );
         })}
       </div>
+      {covPop ? (
+        <div
+          className={`cov-pop ${covPop.cls}`}
+          style={{ left: covPop.x, top: covPop.y }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <b>Linha {covPop.line}</b>
+          <span>{covPop.text}</span>
+        </div>
+      ) : null}
       {showMinimap ? (
         <Minimap
           lines={lines}
@@ -1109,9 +1150,13 @@ function Pillar({ title, weight, score, suffix = "", meta = [], metaActions = []
   );
 }
 
-function StatTile({ label, value, tone, delta, deltaTone }) {
+function StatTile({ label, value, tone, delta, deltaTone, onClick }) {
   return (
-    <div className="stat-tile">
+    <div
+      className={`stat-tile${onClick ? " clickable" : ""}`}
+      onClick={onClick}
+      role={onClick ? "button" : undefined}
+    >
       <div className="lbl">{label}</div>
       <div className={`val ${tone || ""}`}>{value}</div>
       {delta ? <div className={`delta ${deltaTone || ""}`}>{delta}</div> : null}
@@ -1391,60 +1436,143 @@ function PathOverview({ data, path, onSelect }) {
   );
 }
 
-function LowCoverageModal({ symbols, onSelect, onClose }) {
-  const covTone = (c) => (c < 30 ? "danger" : "warn");
-  const items = symbols
-    .filter((s) => {
-      const c = s.metrics?.testCoverage?.coveragePercent;
-      return c != null && c < 60;
-    })
-    .sort(
-      (a, b) => a.metrics.testCoverage.coveragePercent - b.metrics.testCoverage.coveragePercent,
-    );
+function ListModal({ title, count, onClose, children }) {
   return (
     <div className="palette-back" onClick={onClose}>
       <div className="palette" onClick={(e) => e.stopPropagation()}>
         <div className="low-cov-head">
-          <span>Below 60% coverage</span>
-          <span className="count">{items.length} symbols</span>
+          <span>{title}</span>
+          <span className="count">{count}</span>
           <div style={{ flex: 1 }} />
           <button className="icon-btn" onClick={onClose} title="Close">
             ✕
           </button>
         </div>
-        <div className="palette-list">
-          {items.length === 0 ? (
-            <div className="palette-group-label">No symbols below 60% coverage.</div>
-          ) : (
-            items.map((s) => {
-              const cov = Math.round(s.metrics.testCoverage.coveragePercent);
-              return (
-                <div
-                  key={s.id}
-                  className="hotspot-row"
-                  onClick={() => {
-                    onSelect({ type: "symbol", id: s.id });
-                    onClose();
-                  }}
-                >
-                  <SymIcon kind={s.kind} />
-                  <div className="name trunc">
-                    <strong>{s.qualifiedName || s.name}</strong>
-                    <small>{s.file}</small>
-                  </div>
-                  <span className={`metric ${covTone(cov)}`}>{cov}%</span>
-                </div>
-              );
-            })
-          )}
-        </div>
+        <div className="palette-list">{children}</div>
       </div>
     </div>
   );
 }
 
-function Dashboard({ data, onSelect }) {
-  const [showLowCov, setShowLowCov] = useState(false);
+const covTone = (c) => (c < 30 ? "danger" : c < 60 ? "warn" : "good");
+
+function SymbolListRow({ s, onPick, children }) {
+  return (
+    <div className="hotspot-row" onClick={() => onPick(s)}>
+      <SymIcon kind={s.kind} />
+      <div className="name trunc">
+        <strong>{s.qualifiedName || s.name}</strong>
+        <small>{s.file}</small>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+function ListModals({ kind, data, onSelect, onClose }) {
+  const pick = (s) => {
+    onSelect({ type: "symbol", id: s.id });
+    onClose();
+  };
+  const covOf = (s) => s.metrics?.testCoverage?.coveragePercent;
+  const empty = (msg) => <div className="palette-group-label">{msg}</div>;
+
+  if (kind === "lowcov" || kind === "covered") {
+    const isLow = kind === "lowcov";
+    const items = data.symbols
+      .filter((s) => {
+        const c = covOf(s);
+        return c != null && (isLow ? c < 60 : c >= 60);
+      })
+      .sort((a, b) => (isLow ? covOf(a) - covOf(b) : covOf(b) - covOf(a)));
+    return (
+      <ListModal
+        title={isLow ? "Below 60% coverage" : "Covered symbols (≥ 60%)"}
+        count={`${items.length} symbols`}
+        onClose={onClose}
+      >
+        {items.length === 0
+          ? empty(isLow ? "No symbols below 60% coverage." : "No covered symbols.")
+          : items.map((s) => {
+              const c = Math.round(covOf(s));
+              return (
+                <SymbolListRow key={s.id} s={s} onPick={pick}>
+                  <span className={`metric ${covTone(c)}`}>{c}%</span>
+                </SymbolListRow>
+              );
+            })}
+      </ListModal>
+    );
+  }
+
+  if (kind === "complexity" || kind === "hotspots") {
+    const all = data.complexity.symbols || [];
+    const items =
+      kind === "complexity" ? all.filter((e) => (e.aboveThresholds || []).length > 0) : all;
+    return (
+      <ListModal
+        title={kind === "complexity" ? "High-complexity symbols" : "All hotspots"}
+        count={`${items.length} symbols`}
+        onClose={onClose}
+      >
+        {items.length === 0
+          ? empty("Nothing to show.")
+          : items.map((s) => {
+              const c = covOf(data.symbolsById.get(s.id) || {});
+              return (
+                <SymbolListRow key={s.id} s={s} onPick={pick}>
+                  <span className="metric">cyc {fmt(s.cyclomaticComplexity)}</span>
+                  <span className="metric">cov {c != null ? fmt(c) + "%" : "—"}</span>
+                  <span
+                    className={`tag ${riskCls(s.riskScore) === "r-high" ? "danger" : riskCls(s.riskScore) === "r-warn" ? "warn" : "good"}`}
+                  >
+                    risk {s.riskScore}
+                  </span>
+                </SymbolListRow>
+              );
+            })}
+      </ListModal>
+    );
+  }
+
+  if (kind === "violations") {
+    const items = data.archViolations;
+    return (
+      <ListModal title="Architecture violations" count={`${items.length}`} onClose={onClose}>
+        {items.length === 0
+          ? empty("No violations.")
+          : items.map((v, i) => (
+              <div
+                key={i}
+                className="hotspot-row"
+                onClick={() => {
+                  onSelect(
+                    v.symbol_id
+                      ? { type: "symbol", id: v.symbol_id }
+                      : { type: "file", path: v.file },
+                  );
+                  onClose();
+                }}
+              >
+                <span className={`tag ${v.severity === "error" ? "danger" : "warn"}`}>
+                  {v.severity}
+                </span>
+                <div className="name trunc">
+                  <strong>{v.rule}</strong>
+                  <small>{v.message}</small>
+                </div>
+                <span className="metric">{v.file.split("/").pop()}</span>
+                <span />
+                <span />
+              </div>
+            ))}
+      </ListModal>
+    );
+  }
+  return null;
+}
+
+function Dashboard({ data, onSelect, onOpenList }) {
   const proj = data.complexity.project;
   const cov = data.health.coverage;
   const totalSyms = Math.max(1, proj.symbolCount);
@@ -1509,6 +1637,7 @@ function Dashboard({ data, onSelect }) {
                 `${proj.highComplexitySymbolCount} high-complexity`,
                 `${highRatio.toFixed(1)}% of symbols`,
               ]}
+              metaActions={[() => onOpenList("complexity"), null]}
             />
             <Pillar
               title="Test Coverage"
@@ -1516,7 +1645,7 @@ function Dashboard({ data, onSelect }) {
               score={cover}
               suffix="%"
               meta={[`${cov.coveredSymbolCount} covered`, `${cov.uncoveredSymbolCount} below 60%`]}
-              metaActions={[null, () => setShowLowCov(true)]}
+              metaActions={[() => onOpenList("covered"), () => onOpenList("lowcov")]}
             />
             <Pillar
               title="Architecture"
@@ -1526,6 +1655,7 @@ function Dashboard({ data, onSelect }) {
                 `${data.health.governance.archViolationCount} violations`,
                 `${(data.health.governance.archViolationCount / fileCount).toFixed(2)}/file`,
               ]}
+              metaActions={[() => onOpenList("violations"), null]}
             />
           </div>
         </div>
@@ -1543,6 +1673,7 @@ function Dashboard({ data, onSelect }) {
           label="Open violations"
           value={data.health.governance.archViolationCount}
           tone={data.health.governance.archViolationCount > 0 ? "danger" : "good"}
+          onClick={() => onOpenList("violations")}
         />
       </div>
 
@@ -1593,6 +1724,10 @@ function Dashboard({ data, onSelect }) {
           <div className="card-head">
             <h3>Top hotspots</h3>
             <span className="count">{topSymbols.length}</span>
+            <div className="card-head-spacer" />
+            <button className="btn" onClick={() => onOpenList("hotspots")}>
+              View all →
+            </button>
           </div>
           <div className="card-body flush">
             {topSymbols.map((s) => {
@@ -1693,6 +1828,12 @@ function Dashboard({ data, onSelect }) {
           <div className="card-head">
             <h3>Architecture violations</h3>
             <span className="count">{data.archViolations.length}</span>
+            <div className="card-head-spacer" />
+            {data.archViolations.length > 10 ? (
+              <button className="btn" onClick={() => onOpenList("violations")}>
+                View all →
+              </button>
+            ) : null}
           </div>
           <div className="card-body flush">
             {data.archViolations.slice(0, 10).map((v, i) => (
@@ -1721,19 +1862,11 @@ function Dashboard({ data, onSelect }) {
         </div>
       ) : null}
 
-      {showLowCov && (
-        <LowCoverageModal
-          symbols={data.symbols}
-          onSelect={onSelect}
-          onClose={() => setShowLowCov(false)}
-        />
-      )}
     </div>
   );
 }
 
 // ─── Dependency Graph (SVG) ────────────────────────────────
-const MAX_GRAPH_NODES = 8;
 const NODE_W = 148;
 const NODE_H = 36;
 const COL_GAP = 180;
@@ -1827,128 +1960,253 @@ function GraphSvgDefs() {
   );
 }
 
-function DependencyGraph({ centerLabel, centerSub, inNodes, outNodes, onClickIn, onClickOut }) {
-  const containerRef = useRef(null);
-  const [w, setW] = useState(640);
+const GRAPH_ROW_H = 48;
+const GRAPH_PAD = 10;
+const graphFixedWidth = () => GRAPH_PAD * 2 + NODE_W * 3 + COL_GAP * 2;
+const graphHeight = (nIn, nOut) => Math.max(120, Math.max(nIn, nOut, 1) * GRAPH_ROW_H + 40);
 
-  useEffect(() => {
-    if (!containerRef.current) return;
-    const obs = new ResizeObserver(([e]) => setW(e.contentRect.width));
-    obs.observe(containerRef.current);
-    return () => obs.disconnect();
-  }, []);
-
-  const maxSide = Math.max(inNodes.length, outNodes.length, 1);
-  const rowH = 48;
-  const H = Math.max(120, maxSide * rowH + 40);
+/** Renders the nodes + arrows for a star graph inside an <svg> of width `w`. */
+function GraphBody({ w, centerLabel, centerSub, inNodes, outNodes, onClickIn, onClickOut }) {
+  const H = graphHeight(inNodes.length, outNodes.length);
   const cy = H / 2;
-
-  // Column positions
-  const inX = 10;
+  const inX = GRAPH_PAD;
   const centerX = Math.max(w / 2 - NODE_W / 2, inX + NODE_W + COL_GAP);
-  const outX = Math.min(w - NODE_W - 10, centerX + NODE_W + COL_GAP);
-
+  const outX = Math.min(w - NODE_W - GRAPH_PAD, centerX + NODE_W + COL_GAP);
   const nodeY = (idx, total) => {
     if (total === 1) return cy;
-    const span = (total - 1) * rowH;
-    return cy - span / 2 + idx * rowH;
+    const span = (total - 1) * GRAPH_ROW_H;
+    return cy - span / 2 + idx * GRAPH_ROW_H;
   };
+  return (
+    <>
+      <GraphSvgDefs />
+      {inNodes.map((n, i) => (
+        <GraphArrow
+          key={`ai${i}`}
+          x1={inX + NODE_W}
+          y1={nodeY(i, inNodes.length)}
+          x2={centerX}
+          y2={cy}
+          dir="in"
+        />
+      ))}
+      {outNodes.map((n, i) => (
+        <GraphArrow
+          key={`ao${i}`}
+          x1={centerX + NODE_W}
+          y1={cy}
+          x2={outX}
+          y2={nodeY(i, outNodes.length)}
+          dir="out"
+        />
+      ))}
+      {inNodes.map((n, i) => (
+        <GraphNode
+          key={`ni${i}`}
+          x={inX}
+          y={nodeY(i, inNodes.length)}
+          label={n.label}
+          sublabel={n.sublabel}
+          isCenter={false}
+          onClick={() => onClickIn && onClickIn(n)}
+          title={n.title || n.label}
+        />
+      ))}
+      <GraphNode x={centerX} y={cy} label={centerLabel} sublabel={centerSub} isCenter={true} />
+      {outNodes.map((n, i) => (
+        <GraphNode
+          key={`no${i}`}
+          x={outX}
+          y={nodeY(i, outNodes.length)}
+          label={n.label}
+          sublabel={n.sublabel}
+          isCenter={false}
+          onClick={() => onClickOut && onClickOut(n)}
+          title={n.title || n.label}
+        />
+      ))}
+    </>
+  );
+}
 
-  // Connection points on center node edges
-  const centerLeft = { x: centerX, y: cy };
-  const centerRight = { x: centerX + NODE_W, y: cy };
+/**
+ * Pan/zoom surface for the graph. Drag to pan; wheel zooms (inline: only with ⌘/Ctrl so the
+ * page can still scroll). Pointer capture starts only once a drag is detected, so plain
+ * clicks still reach the nodes.
+ */
+function PanZoomGraph({ graph, height, wheelNeedsModifier, actions, hint }) {
+  const areaRef = useRef(null);
+  const [view, setView] = useState({ x: 0, y: 0, k: 1 });
+  const drag = useRef(null);
+  const W = graphFixedWidth();
+  const H = graphHeight(graph.inNodes.length, graph.outNodes.length);
+
+  const fit = useCallback(() => {
+    const el = areaRef.current;
+    if (!el || !el.clientWidth || !el.clientHeight) return;
+    // Fit the whole graph, but never shrink below a readable scale: tall graphs are
+    // centered on the focus node and the user pans vertically.
+    const fitK = Math.min(el.clientWidth / (W + 40), el.clientHeight / (H + 40), 1.5);
+    const k = Math.max(fitK, Math.min(0.7, el.clientWidth / (W + 40)));
+    setView({ k, x: (el.clientWidth - W * k) / 2, y: (el.clientHeight - H * k) / 2 });
+  }, [W, H]);
+
+  useEffect(() => {
+    fit();
+    const el = areaRef.current;
+    if (!el) return;
+    const obs = new ResizeObserver(() => fit());
+    obs.observe(el);
+    return () => obs.disconnect();
+  }, [fit]);
+
+  const zoomAt = useCallback((factor, cx, cy) => {
+    setView((v) => {
+      const k = Math.max(0.1, Math.min(4, v.k * factor));
+      const r = k / v.k;
+      return { k, x: cx - (cx - v.x) * r, y: cy - (cy - v.y) * r };
+    });
+  }, []);
+
+  useEffect(() => {
+    const el = areaRef.current;
+    if (!el) return;
+    const onWheel = (e) => {
+      if (wheelNeedsModifier && !(e.ctrlKey || e.metaKey)) return;
+      e.preventDefault();
+      const rect = el.getBoundingClientRect();
+      zoomAt(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX - rect.left, e.clientY - rect.top);
+    };
+    el.addEventListener("wheel", onWheel, { passive: false });
+    return () => el.removeEventListener("wheel", onWheel);
+  }, [zoomAt, wheelNeedsModifier]);
+
+  const center = () => [areaRef.current.clientWidth / 2, areaRef.current.clientHeight / 2];
 
   return (
-    <div ref={containerRef} style={{ width: "100%" }}>
-      <svg width="100%" height={H} style={{ display: "block", overflow: "visible" }}>
-        <GraphSvgDefs />
-        {inNodes.map((n, i) => {
-          const ny = nodeY(i, inNodes.length);
-          return (
-            <GraphArrow
-              key={i}
-              x1={inX + NODE_W}
-              y1={ny}
-              x2={centerLeft.x}
-              y2={centerLeft.y}
-              dir="in"
-            />
-          );
-        })}
-        {outNodes.map((n, i) => {
-          const ny = nodeY(i, outNodes.length);
-          return (
-            <GraphArrow key={i} x1={centerRight.x} y1={centerRight.y} x2={outX} y2={ny} dir="out" />
-          );
-        })}
-        {inNodes.map((n, i) => (
-          <GraphNode
-            key={i}
-            x={inX}
-            y={nodeY(i, inNodes.length)}
-            label={n.label}
-            sublabel={n.sublabel}
-            isCenter={false}
-            onClick={() => onClickIn && onClickIn(n)}
-            title={n.title || n.label}
-          />
-        ))}
-        <GraphNode x={centerX} y={cy} label={centerLabel} sublabel={centerSub} isCenter={true} />
-        {outNodes.map((n, i) => (
-          <GraphNode
-            key={i}
-            x={outX}
-            y={nodeY(i, outNodes.length)}
-            label={n.label}
-            sublabel={n.sublabel}
-            isCenter={false}
-            onClick={() => onClickOut && onClickOut(n)}
-            title={n.title || n.label}
-          />
-        ))}
-      </svg>
-      {inNodes.length > 0 || outNodes.length > 0 ? (
-        <div
-          style={{
-            display: "flex",
-            gap: 16,
-            marginTop: 8,
-            fontSize: 11.5,
-            color: "var(--text-faint)",
-            justifyContent: "center",
-          }}
-        >
-          {inNodes.length > 0 ? (
-            <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <span
-                style={{
-                  display: "inline-block",
-                  width: 20,
-                  height: 2,
-                  background: "var(--text-faint)",
-                  borderRadius: 1,
-                }}
-              />
-              used by ({inNodes.length}
-              {inNodes.length === MAX_GRAPH_NODES ? "+" : ""})
-            </span>
-          ) : null}
-          {outNodes.length > 0 ? (
-            <span style={{ display: "flex", alignItems: "center", gap: 4 }}>
-              <span
-                style={{
-                  display: "inline-block",
-                  width: 20,
-                  height: 2,
-                  background: "var(--accent)",
-                  borderRadius: 1,
-                }}
-              />
-              depends on ({outNodes.length}
-              {outNodes.length === MAX_GRAPH_NODES ? "+" : ""})
-            </span>
-          ) : null}
-        </div>
+    <div className="graph-pz" style={{ height }}>
+      <div
+        ref={areaRef}
+        className="graph-pz-area"
+        onPointerDown={(e) => {
+          drag.current = { x: e.clientX, y: e.clientY, vx: view.x, vy: view.y, active: false };
+        }}
+        onPointerMove={(e) => {
+          const d = drag.current;
+          if (!d) return;
+          const dx = e.clientX - d.x;
+          const dy = e.clientY - d.y;
+          if (!d.active && Math.abs(dx) + Math.abs(dy) > 4) {
+            d.active = true;
+            e.currentTarget.setPointerCapture(e.pointerId);
+          }
+          if (d.active) setView((v) => ({ ...v, x: d.vx + dx, y: d.vy + dy }));
+        }}
+        onPointerUp={() => {
+          drag.current = null;
+        }}
+        onPointerCancel={() => {
+          drag.current = null;
+        }}
+      >
+        <svg width="100%" height="100%" style={{ display: "block" }}>
+          <g transform={`translate(${view.x},${view.y}) scale(${view.k})`}>
+            <GraphBody w={W} {...graph} />
+          </g>
+        </svg>
+      </div>
+      <div className="graph-pz-tools">
+        <button className="btn" onClick={() => zoomAt(1 / 1.25, ...center())} title="Zoom out">
+          −
+        </button>
+        <span className="graph-zoom">{Math.round(view.k * 100)}%</span>
+        <button className="btn" onClick={() => zoomAt(1.25, ...center())} title="Zoom in">
+          +
+        </button>
+        <button className="btn" onClick={fit}>
+          Fit
+        </button>
+        {actions}
+      </div>
+      {hint ? <div className="graph-viewer-hint">{hint}</div> : null}
+    </div>
+  );
+}
+
+function GraphViewer({ title, onClose, graph }) {
+  useEffect(() => {
+    const onKey = (e) => e.key === "Escape" && onClose();
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [onClose]);
+  const wrap = (fn) => (n) => {
+    onClose();
+    fn && fn(n);
+  };
+  return (
+    <div className="graph-viewer">
+      <div className="graph-viewer-head">
+        <strong className="trunc">{title}</strong>
+        <span className="count">
+          {graph.inNodes.length} used by · {graph.outNodes.length} depends on
+        </span>
+        <div style={{ flex: 1 }} />
+        <button className="icon-btn" onClick={onClose} title="Close (Esc)">
+          ✕
+        </button>
+      </div>
+      <PanZoomGraph
+        graph={{ ...graph, onClickIn: wrap(graph.onClickIn), onClickOut: wrap(graph.onClickOut) }}
+        height="auto"
+        hint="Drag to pan · scroll to zoom · click a node to open it"
+      />
+    </div>
+  );
+}
+
+function DependencyGraph({ centerLabel, centerSub, inNodes, outNodes, onClickIn, onClickOut }) {
+  const [expanded, setExpanded] = useState(false);
+  const graph = { centerLabel, centerSub, inNodes, outNodes, onClickIn, onClickOut };
+  const H = graphHeight(inNodes.length, outNodes.length);
+
+  return (
+    <div style={{ width: "100%" }}>
+      <PanZoomGraph
+        graph={graph}
+        height={Math.min(H + 20, 380)}
+        wheelNeedsModifier
+        actions={
+          <button className="btn" onClick={() => setExpanded(true)} title="Open in full screen">
+            ⤢ Expand
+          </button>
+        }
+      />
+      <div
+        style={{
+          display: "flex",
+          gap: 16,
+          marginTop: 8,
+          fontSize: 11.5,
+          color: "var(--text-faint)",
+          justifyContent: "center",
+        }}
+      >
+        {inNodes.length > 0 ? (
+          <span>
+            <span className="graph-legend-line" style={{ background: "var(--text-faint)" }} />
+            used by ({inNodes.length})
+          </span>
+        ) : null}
+        {outNodes.length > 0 ? (
+          <span>
+            <span className="graph-legend-line" style={{ background: "var(--accent)" }} />
+            depends on ({outNodes.length})
+          </span>
+        ) : null}
+        <span>drag to pan · ⌘/Ctrl + scroll to zoom</span>
+      </div>
+      {expanded ? (
+        <GraphViewer title={centerLabel} graph={graph} onClose={() => setExpanded(false)} />
       ) : null}
     </div>
   );
@@ -1982,7 +2240,6 @@ function FileDependencyGraph({ filePath, symIds, data, onSelect }) {
 
   const inNodes = [...inFilesMap.entries()]
     .sort((a, b) => b[1].count - a[1].count)
-    .slice(0, MAX_GRAPH_NODES)
     .map(([fp, info]) => ({
       label: fp.split("/").pop(),
       sublabel: [...info.types].join(", "),
@@ -1992,7 +2249,6 @@ function FileDependencyGraph({ filePath, symIds, data, onSelect }) {
 
   const outNodes = [...outFilesMap.entries()]
     .sort((a, b) => b[1].count - a[1].count)
-    .slice(0, MAX_GRAPH_NODES)
     .map(([fp, info]) => ({
       label: fp.split("/").pop(),
       sublabel: [...info.types].join(", "),
@@ -2017,13 +2273,13 @@ function FileDependencyGraph({ filePath, symIds, data, onSelect }) {
 }
 
 function SymbolDependencyGraph({ symbol, deps, dependents, onSelect }) {
-  const inNodes = dependents.slice(0, MAX_GRAPH_NODES).map(({ sym, rel }) => ({
+  const inNodes = dependents.map(({ sym, rel }) => ({
     label: sym.name,
     sublabel: rel.type,
     title: sym.file,
     id: sym.id,
   }));
-  const outNodes = deps.slice(0, MAX_GRAPH_NODES).map(({ sym, rel }) => ({
+  const outNodes = deps.map(({ sym, rel }) => ({
     label: sym.name,
     sublabel: rel.type,
     title: sym.file,
@@ -3319,7 +3575,7 @@ function TweaksPopover({ tweaks, setTweak, onClose }) {
   );
 }
 
-// ─── AI Panel (mock scaffold) ──────────────────────────────
+// ─── AI Panel ──────────────────────────────
 function AIPanel({ data, symbol, file, onSelect, onClose }) {
   const ctxLabel = symbol
     ? symbol.qualifiedName || symbol.name
@@ -3336,7 +3592,7 @@ function AIPanel({ data, symbol, file, onSelect, onClose }) {
         : file
           ? { type: "file", path: file }
           : null,
-      tail: ". This is a mock assistant — wire it to your LLM provider to enable real answers.",
+      tail: ". Ask me anything about it.",
     },
   ]);
   const [input, setInput] = useState("");
@@ -3346,19 +3602,42 @@ function AIPanel({ data, symbol, file, onSelect, onClose }) {
       ? ["What does this file do?", "Map dependencies", "Find untested branches"]
       : ["Highest-risk symbols", "Coverage gaps", "Recent regressions"];
 
-  const send = (text) => {
-    if (!text.trim()) return;
+  const [busy, setBusy] = useState(false);
+  const scope = symbol
+    ? { type: "symbol", id: symbol.id }
+    : file
+      ? { type: "file", path: file }
+      : { type: "project" };
+
+  const send = async (text) => {
+    if (!text.trim() || busy) return;
+    const history = messages
+      .filter((m) => m.role === "user" || (m.role === "ai" && m.answer))
+      .map((m) => ({ role: m.role === "ai" ? "assistant" : "user", content: m.text }));
     setMessages((m) => [...m, { role: "user", text }]);
     setInput("");
-    setTimeout(() => {
-      setMessages((m) => [
-        ...m,
-        {
-          role: "ai",
-          text: `(mock) I'd analyze "${text}" against ${ctxLabel}. Plug in an LLM provider to enable.`,
-        },
-      ]);
-    }, 250);
+    setBusy(true);
+    try {
+      const res = await fetch("./api/assistant", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ question: text, scope, history }),
+      });
+      const json = await res.json().catch(() => ({}));
+      if (!res.ok) {
+        throw new Error(
+          json.error ||
+            (res.status === 404
+              ? "Assistant needs the docs-kit server (run `docs-kit open-site`)."
+              : `Request failed (${res.status})`),
+        );
+      }
+      setMessages((m) => [...m, { role: "ai", text: json.answer || "(empty answer)", answer: true }]);
+    } catch (e) {
+      setMessages((m) => [...m, { role: "ai", text: `⚠ ${e.message || e}` }]);
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -3381,7 +3660,7 @@ function AIPanel({ data, symbol, file, onSelect, onClose }) {
           <div key={`${m.role}-${i}`} className={`msg ${m.role}`}>
             <span className="avatar">{m.role === "ai" ? "AI" : "U"}</span>
             <div className="bubble">
-              <p>
+              <p style={{ whiteSpace: "pre-wrap" }}>
                 {m.text}
                 {m.refLabel ? (
                   <a
@@ -3424,8 +3703,8 @@ function AIPanel({ data, symbol, file, onSelect, onClose }) {
           >
             ⌘↵ to send
           </span>
-          <button className="btn primary" onClick={() => send(input)}>
-            Send
+          <button className="btn primary" disabled={busy} onClick={() => send(input)}>
+            {busy ? "Thinking…" : "Send"}
           </button>
         </div>
       </div>
@@ -3638,6 +3917,7 @@ function App({ data }) {
   const [treeQuery, setTreeQuery] = useState("");
   const [paletteOpen, setPaletteOpen] = useState(false);
   const [tweaksOpen, setTweaksOpen] = useState(false);
+  const [listModal, setListModal] = useState(null);
 
   useEffect(() => {
     const h = (e) => {
@@ -3645,7 +3925,10 @@ function App({ data }) {
         e.preventDefault();
         setPaletteOpen((p) => !p);
       }
-      if (e.key === "Escape") setPaletteOpen(false);
+      if (e.key === "Escape") {
+        setPaletteOpen(false);
+        setListModal(null);
+      }
     };
     window.addEventListener("keydown", h);
     return () => window.removeEventListener("keydown", h);
@@ -3826,7 +4109,7 @@ function App({ data }) {
           </div>
 
           {selection.type === "dashboard" ? (
-            <Dashboard data={data} onSelect={onSelect} />
+            <Dashboard data={data} onSelect={onSelect} onOpenList={setListModal} />
           ) : selection.type === "symbol" ? (
             <SymbolDetail
               data={data}
@@ -3870,13 +4153,27 @@ function App({ data }) {
         </span>
         <span className="seg">{data.project.branch}</span>
         <span className="seg">avg cov {fmt(data.health.coverage.averageCoveragePercent)}%</span>
-        <span className="seg">{data.health.governance.archViolationCount} violations</span>
+        <button
+          className="seg seg-btn"
+          onClick={() => setListModal("violations")}
+          title="View all violations"
+        >
+          {data.health.governance.archViolationCount} violations
+        </button>
         <div className="grow" />
         <span className="seg">density: {tweaks.density}</span>
         <span className="seg">{tweaks.theme}</span>
         <span className="seg">⌘K palette</span>
       </div>
 
+      {listModal ? (
+        <ListModals
+          kind={listModal}
+          data={data}
+          onSelect={onSelect}
+          onClose={() => setListModal(null)}
+        />
+      ) : null}
       <CommandPalette
         data={data}
         open={paletteOpen}

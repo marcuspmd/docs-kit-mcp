@@ -54,11 +54,30 @@ describe("collectMetrics", () => {
     const cls = result.find((s) => s.name === "UserService");
     expect(cls).toBeDefined();
     expect(cls!.metrics).toBeDefined();
-    expect(cls!.metrics!.linesOfCode).toBe(16); // lines 2-17
+    expect(cls!.metrics!.linesOfCode).toBe(12); // lines 2-17 minus blank lines
 
     const findById = result.find((s) => s.name === "findById");
     expect(findById).toBeDefined();
     expect(findById!.metrics!.linesOfCode).toBeGreaterThanOrEqual(2);
+  });
+
+  it("excludes comments and blank lines from linesOfCode", () => {
+    const source = [
+      "export function sum(a: number, b: number): number {",
+      "  // line comment",
+      "",
+      "  /**",
+      "   * block comment",
+      "   */",
+      "  const r = a + b; // trailing comment keeps the line",
+      "  return r;",
+      "}",
+      "",
+    ].join("\n");
+    const { symbols, tree } = parseSourceWithTree("sum.ts", source, TypeScript.typescript);
+    const result = collectMetrics({ symbols, trees: new Map([["sum.ts", tree]]) });
+    const fn = result.find((s) => s.name === "sum");
+    expect(fn!.metrics!.linesOfCode).toBe(4);
   });
 
   it("computes parameterCount from signature", () => {

@@ -3,6 +3,7 @@ import { OpenAiProvider } from "./providers/OpenAiProvider.js";
 import { OllamaProvider } from "./providers/OllamaProvider.js";
 import { GeminiProvider } from "./providers/GeminiProvider.js";
 import { ClaudeProvider } from "./providers/ClaudeProvider.js";
+import { OpenRouterProvider } from "./providers/OpenRouterProvider.js";
 
 export interface LlmProvider {
   chat(
@@ -25,6 +26,8 @@ export function createLlmProvider(config: ResolvedConfig): LlmProvider {
       return new GeminiProvider(config);
     case "claude":
       return new ClaudeProvider(config);
+    case "openrouter":
+      return new OpenRouterProvider(config);
     default:
       return new OpenAiProvider(config);
   }

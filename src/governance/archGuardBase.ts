@@ -206,7 +206,8 @@ export function buildArchGuardBaseRules(options: ArchGuardBaseOptions = {}): Arc
       severity: "warning",
       config: {
         kind: "class",
-        pattern: "^[A-Z][a-zA-Z0-9]*$",
+        // Leading underscore marks a private/internal class (e.g. Python `_ScenarioEntry`)
+        pattern: "^_?[A-Z][a-zA-Z0-9]*$",
         allowNames: reservedNames.length > 0 ? reservedNames : undefined,
       },
     });

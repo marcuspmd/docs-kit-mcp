@@ -135,7 +135,9 @@ export const ConfigSchema = z.object({
 
   llm: z
     .object({
-      provider: z.enum(["none", "openai", "ollama", "gemini", "claude"]).default("none"),
+      provider: z
+        .enum(["none", "openai", "ollama", "gemini", "claude", "openrouter"])
+        .default("none"),
       apiKey: z
         .union([
           z.string(), // Direct API key (not recommended for production)

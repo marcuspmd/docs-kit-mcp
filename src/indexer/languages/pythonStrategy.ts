@@ -37,6 +37,89 @@ export class PythonStrategy extends DefaultStrategy implements LanguageStrategy 
     this._extractPythonDiRelationships(node, classSymbol, addRel, file, ctx);
   }
 
+  /**
+   * Map local names to `module/path::OriginalName` for `from x.y import Z [as W]`.
+   * Relative imports drop their leading dots; `from . import mod` is skipped
+   * (imports a module, not a symbol).
+   */
+  extractImports(root: Parser.SyntaxNode): Map<string, string> {
+    const imports = new Map<string, string>();
+    for (const node of root.descendantsOfType("import_from_statement")) {
+      const moduleNode = node.childForFieldName("module_name");
+      const modulePath = (moduleNode?.text ?? "").replace(/^\.+/, "").replace(/\./g, "/");
+      if (!modulePath) continue;
+      for (const nameNode of node.childrenForFieldName("name")) {
+        if (nameNode.type === "aliased_import") {
+          const original = nameNode.childForFieldName("name")?.text;
+          const alias = nameNode.childForFieldName("alias")?.text;
+          if (original && alias) imports.set(alias, `${modulePath}::${original}`);
+        } else if (nameNode.type === "dotted_name") {
+          imports.set(nameNode.text, `${modulePath}::${nameNode.text}`);
+        }
+      }
+    }
+    return imports;
+  }
+
+  /** `from x import Y` at module level: emit a `uses` edge from the file's top symbol. */
+  override extractImportRelationships(
+    node: Parser.SyntaxNode,
+    symsInFile: CodeSymbol[],
+    addRel: AddRelFn,
+    file: string,
+    ctx?: ResolutionContext,
+  ): void {
+    if (node.type !== "import_from_statement" || !ctx) return;
+    const source = symsInFile.find((s) => !s.parent) ?? { id: `module::${file}` };
+    for (const nameNode of node.childrenForFieldName("name")) {
+      const local =
+        nameNode.type === "aliased_import"
+          ? nameNode.childForFieldName("alias")?.text
+          : nameNode.text;
+      const target = local ? ctx.imports.get(local) : undefined;
+      if (target) addRel(source.id, target, "uses", file, node.startPosition.row + 1, ctx);
+    }
+  }
+
+  /**
+   * Calls to imported/local names: `XService(...)` → instantiates (PascalCase),
+   * `get_repo()` → calls. Identifier arguments that are imported names
+   * (e.g. `Depends(get_repo)`, `service=my_factory`) become `uses` edges.
+   */
+  override extractInstantiationRelationships(
+    node: Parser.SyntaxNode,
+    symsInFile: CodeSymbol[],
+    addRel: AddRelFn,
+    file: string,
+    ctx?: ResolutionContext,
+  ): void {
+    if (node.type !== "call") return;
+    const fn = node.childForFieldName("function");
+    if (fn?.type !== "identifier") return;
+    const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile) ?? {
+      id: `module::${file}`,
+    };
+    const isLocal = (name: string) =>
+      symsInFile.some((s) => s.name === name || s.name.endsWith(`.${name}`));
+    const resolveName = (name: string): string | undefined =>
+      ctx?.imports.get(name) ?? (isLocal(name) ? name : undefined);
+    const line = node.startPosition.row + 1;
+
+    const target = resolveName(fn.text);
+    if (target) {
+      const type = /^[A-Z]/.test(fn.text) ? "instantiates" : "calls";
+      addRel(enclosing.id, target, type, file, line, ctx);
+    }
+
+    const args = node.childForFieldName("arguments");
+    for (const arg of args?.namedChildren ?? []) {
+      const value = arg.type === "keyword_argument" ? arg.childForFieldName("value") : arg;
+      if (value?.type !== "identifier") continue;
+      const argTarget = ctx?.imports.get(value.text);
+      if (argTarget) addRel(enclosing.id, argTarget, "uses", file, line, ctx);
+    }
+  }
+
   override refineKind(kind: SymbolKind, name: string): SymbolKind {
     if (kind !== "class") return kind;
     const n = name.toLowerCase();
@@ -265,4 +348,14 @@ function resolveImport(name: string, ctx?: ResolutionContext): string | null {
   // ctx.imports maps short name → full module path (populated from `from X import Y`)
   if (ctx?.imports?.has(name)) return ctx.imports.get(name)!;
   return name;
+}
+
+function findEnclosingSymbol(line: number, symsInFile: CodeSymbol[]): CodeSymbol | undefined {
+  let best: CodeSymbol | undefined;
+  for (const s of symsInFile) {
+    if (s.startLine <= line + 1 && s.endLine >= line + 1) {
+      if (!best || s.endLine - s.startLine < best.endLine - best.startLine) best = s;
+    }
+  }
+  return best;
 }

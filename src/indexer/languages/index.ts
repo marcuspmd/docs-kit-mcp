@@ -21,6 +21,8 @@ const strategies: Record<string, LanguageStrategy> = {
   php: new PhpStrategy(),
 
   // Python
+  // detectLanguage() returns "python" (not the file extension), so register both
+  python: new PythonStrategy(),
   py: new PythonStrategy(),
   pyw: new PythonStrategy(),
 

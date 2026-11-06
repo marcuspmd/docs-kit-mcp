@@ -138,6 +138,44 @@ function findNodeForSymbol(
   return search(root);
 }
 
+const COMMENT_NODE_TYPES = new Set([
+  "comment",
+  "line_comment",
+  "block_comment",
+  "multiline_comment",
+]);
+
+/** Python-style docstring: a bare string expression statement that is the first statement of a body. */
+function isDocstring(node: Parser.SyntaxNode): boolean {
+  if (node.type !== "expression_statement") return false;
+  const first = node.namedChildren[0];
+  if (!first || (first.type !== "string" && first.type !== "concatenated_string")) return false;
+  if (node.namedChildren.length !== 1) return false;
+  const parent = node.parent;
+  if (!parent || (parent.type !== "block" && parent.type !== "module")) return false;
+  return parent.namedChildren[0]?.id === node.id;
+}
+
+/**
+ * Count lines of the node that contain actual code, ignoring blank lines,
+ * comments (line/block) and docstrings.
+ */
+function countCodeLines(node: Parser.SyntaxNode): number {
+  const rows = new Set<number>();
+  const stack: Parser.SyntaxNode[] = [node];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    if (COMMENT_NODE_TYPES.has(current.type) || isDocstring(current)) continue;
+    if (current.childCount === 0) {
+      if (current.text.trim().length === 0) continue;
+      for (let r = current.startPosition.row; r <= current.endPosition.row; r++) rows.add(r);
+      continue;
+    }
+    for (const child of current.children) stack.push(child);
+  }
+  return rows.size;
+}
+
 export interface MetricsCollectorOptions {
   symbols: CodeSymbol[];
   trees: Map<string, Parser.Tree>;
@@ -155,7 +193,7 @@ export function collectMetrics(options: MetricsCollectorOptions): CodeSymbol[] {
   // First, collect static metrics (LOC, complexity, parameters)
   const symbolsWithStaticMetrics = symbols.map((symbol) => {
     const tree = trees.get(symbol.file);
-    const linesOfCode = symbol.endLine - symbol.startLine + 1;
+    let linesOfCode = symbol.endLine - symbol.startLine + 1;
     const parameterCount = countParameters(symbol.signature);
 
     let cyclomaticComplexity = 1; // base complexity
@@ -167,6 +205,8 @@ export function collectMetrics(options: MetricsCollectorOptions): CodeSymbol[] {
         cyclomaticComplexity += countBranches(node);
         cognitiveComplexity = countCognitiveComplexity(node);
         maxNestingDepth = getMaxNestingDepth(node);
+        // Exclude comments, docstrings and blank lines from LOC
+        linesOfCode = Math.max(1, countCodeLines(node));
       }
     }
 

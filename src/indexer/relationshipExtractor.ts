@@ -70,7 +70,9 @@ function resolveViaImportPath(targetName: string, index: SymbolIndex): CodeSymbo
   const candidates = index.byShortName.get(symbolName) ?? [];
   for (const candidate of candidates) {
     const normalizedSource = sourcePath.replace(/^\.\//, "").replace(/\.(js|ts|tsx|jsx)$/, "");
-    const normalizedFile = candidate.file.replace(/\.(js|ts|tsx|jsx)$/, "");
+    const normalizedFile = candidate.file
+      .replace(/\.(js|ts|tsx|jsx|py)$/, "")
+      .replace(/\/__init__$/, "");
     if (
       normalizedFile.endsWith(normalizedSource) ||
       normalizedFile.endsWith(`/${normalizedSource}`)
@@ -181,7 +183,10 @@ export function extractRelationships(options: RelationshipExtractorOptions): Sym
         imports: phpStrategy.extractUseStatements(tree.rootNode),
         namespace: phpStrategy.extractNamespace(tree.rootNode),
       };
-    } else if ((language === "ts" || language === "js") && "extractImports" in strategy) {
+    } else if (
+      (language === "ts" || language === "js" || language === "python") &&
+      "extractImports" in strategy
+    ) {
       // TypeScript/JavaScript: import statements
       const tsStrategy = strategy as {
         extractImports: (root: Parser.SyntaxNode) => Map<string, string>;
@@ -225,7 +230,11 @@ function walkForRelationships(
 ) {
   if (!node) return;
 
-  if (node.type === "class_declaration" || node.type === "abstract_class_declaration") {
+  if (
+    node.type === "class_declaration" ||
+    node.type === "abstract_class_declaration" ||
+    node.type === "class_definition" // Python
+  ) {
     const className = node.childForFieldName("name")?.text;
     // Match by short name (className) against the last segment of qualified names
     const classSymbol = symsInFile.find((s) => {
