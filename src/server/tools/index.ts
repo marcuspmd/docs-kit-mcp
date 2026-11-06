@@ -15,6 +15,8 @@ import { registerGenerateEventFlowTool } from "./generateEventFlow.tool.js";
 import { registerCreateOnboardingTool } from "./createOnboarding.tool.js";
 import { registerAskKnowledgeBaseTool } from "./askKnowledgeBase.tool.js";
 import { registerScanForDeadCodeTool } from "./scanForDeadCode.tool.js";
+import { registerUpdateDeadCodeStatusTool } from "./updateDeadCodeStatus.tool.js";
+import { registerGetDeadCodeHistoryTool } from "./getDeadCodeHistory.tool.js";
 import { registerBuildTraceabilityMatrixTool } from "./buildTraceabilityMatrix.tool.js";
 import { registerDescribeInBusinessTermsTool } from "./describeInBusinessTerms.tool.js";
 import { registerValidateExamplesTool } from "./validateExamples.tool.js";
@@ -56,6 +58,8 @@ export function registerAllTools(server: McpServer, deps: ServerDependencies): v
 
   // Governance tools
   registerScanForDeadCodeTool(server, deps);
+  registerUpdateDeadCodeStatusTool(server, deps);
+  registerGetDeadCodeHistoryTool(server, deps);
   registerBuildTraceabilityMatrixTool(server, deps);
   registerProjectStatusTool(server, deps);
 }
@@ -69,6 +73,8 @@ export { impactAnalysisSchema } from "./impactAnalysis.tool.js";
 export { createOnboardingSchema } from "./createOnboarding.tool.js";
 export { askKnowledgeBaseSchema } from "./askKnowledgeBase.tool.js";
 export { scanForDeadCodeSchema } from "./scanForDeadCode.tool.js";
+export { updateDeadCodeStatusSchema } from "./updateDeadCodeStatus.tool.js";
+export { getDeadCodeHistorySchema } from "./getDeadCodeHistory.tool.js";
 export { buildTraceabilityMatrixSchema } from "./buildTraceabilityMatrix.tool.js";
 export { describeInBusinessTermsSchema } from "./describeInBusinessTerms.tool.js";
 export { validateExamplesSchema } from "./validateExamples.tool.js";

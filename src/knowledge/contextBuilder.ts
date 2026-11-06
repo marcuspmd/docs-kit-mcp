@@ -62,42 +62,9 @@ function trimSourceWindow(
   };
 }
 
-/**
- * Build comprehensive context (symbols, dependencies, docs, source) for a symbol or file.
- * Reusable by MCP server and CLI.
- */
-export async function buildRelevantContext(
-  input: BuildRelevantContextInput,
-  deps: BuildRelevantContextDeps,
-): Promise<BuildRelevantContextResult> {
-  const { projectRoot, docsDir, registry, symbolRepo, graph } = deps;
-  const {
-    symbolName,
-    filePath,
-    mode = "full",
-    maxSourceLines = DEFAULT_MAX_SOURCE_LINES,
-    maxDocChars = mode === "compact" ? COMPACT_MAX_DOC_CHARS : FULL_MAX_DOC_CHARS,
-    maxContextChars = DEFAULT_MAX_CONTEXT_CHARS,
-  } = input;
-
-  let targetSymbols: CodeSymbol[] = [];
-  const queryLabel = symbolName ?? filePath ?? "";
-
-  if (symbolName) {
-    targetSymbols = symbolRepo.findByName(symbolName);
-  } else if (filePath) {
-    targetSymbols = symbolRepo.findByFile(filePath);
-  }
-
-  if (targetSymbols.length === 0) {
-    return { text: `No symbols found for: ${queryLabel}`, found: false };
-  }
-
-  const parts: string[] = [];
-
-  parts.push(`# Context for ${queryLabel}\n`);
-  parts.push(`## Symbols (${targetSymbols.length})\n`);
-  for (const sym of targetSymbols) {
+function buildSymbolSection(symbols: CodeSymbol[]): string[] {
+  const parts: string[] = [`## Symbols (${symbols.length})\n`];
+  for (const sym of symbols) {
     parts.push(`### ${sym.qualifiedName ?? sym.name}`);
     parts.push(`- Kind: ${sym.kind}`);
     parts.push(`- File: ${sym.file}:${sym.startLine}-${sym.endLine}`);
@@ -105,20 +72,41 @@ export async function buildRelevantContext(
     if (sym.layer) parts.push(`- Layer: ${sym.layer}`);
     if (sym.pattern) parts.push(`- Pattern: ${sym.pattern}`);
     if (sym.summary) parts.push(`- Summary: ${sym.summary}`);
+    if (sym.security?.isSensitive) {
+      parts.push(`- 🔐 Security-sensitive (${sym.security.categories.join(", ")})`);
+    }
+    if (sym.changeVelocity) {
+      const v = sym.changeVelocity;
+      if (v.isHotspot) {
+        parts.push(
+          `- ⚠️ Hotspot: ${v.changeCount30d} changes in 30 days (${v.changeCount90d} in 90 days)`,
+        );
+      } else if (v.changeCount90d) {
+        parts.push(`- ${v.changeCount90d} changes in 90 days`);
+      }
+      if (v.lastModifiedBy) parts.push(`- Last modified by: ${v.lastModifiedBy}`);
+    }
     parts.push("");
   }
+  return parts;
+}
 
+function buildDependencySections(
+  targetSymbols: CodeSymbol[],
+  graph: KnowledgeGraph,
+  symbolRepo: SymbolRepository,
+  mode: string,
+): string[] {
   const allDepIds = new Set<string>();
   const allDependentIds = new Set<string>();
   for (const sym of targetSymbols) {
-    const depsRels = graph.getDependencies(sym.id);
-    for (const d of depsRels) allDepIds.add(d.targetId);
-    const depByRels = graph.getDependents(sym.id);
-    for (const d of depByRels) allDependentIds.add(d.sourceId);
+    for (const d of graph.getDependencies(sym.id)) allDepIds.add(d.targetId);
+    for (const d of graph.getDependents(sym.id)) allDependentIds.add(d.sourceId);
   }
 
   const depSymbols = symbolRepo.findByIds([...allDepIds]);
   const dependentSymbols = symbolRepo.findByIds([...allDependentIds]);
+  const parts: string[] = [];
 
   if (depSymbols.length > 0) {
     parts.push(`## Dependencies (${depSymbols.length})\n`);
@@ -144,6 +132,15 @@ export async function buildRelevantContext(
     parts.push("");
   }
 
+  return parts;
+}
+
+async function buildDocSection(
+  targetSymbols: CodeSymbol[],
+  registry: DocRegistry,
+  docsDir: string,
+  maxDocChars: number,
+): Promise<string[]> {
   const docParts: string[] = [];
   for (const sym of targetSymbols) {
     const mappings = await registry.findDocBySymbol(sym.name);
@@ -158,35 +155,70 @@ export async function buildRelevantContext(
       }
     }
   }
-  if (docParts.length > 0) {
-    parts.push(`## Documentation\n`);
-    parts.push(...docParts);
-    parts.push("");
+  if (docParts.length === 0) return [];
+  return [`## Documentation\n`, ...docParts, ""];
+}
+
+async function buildSourceSection(
+  targetSymbols: CodeSymbol[],
+  projectRoot: string,
+  maxSourceLines: number,
+): Promise<string[]> {
+  const relevantFiles = new Set(targetSymbols.map((s) => s.file));
+  const parts: string[] = [`## Source Code\n`];
+  for (const file of relevantFiles) {
+    try {
+      const source = await readFile(resolve(projectRoot, file), "utf-8");
+      const lines = source.split("\n");
+      const fileSymbols = targetSymbols.filter((s) => s.file === file);
+      const startLine = Math.min(...fileSymbols.map((s) => s.startLine));
+      const endLine = Math.max(...fileSymbols.map((s) => s.endLine));
+      const window = trimSourceWindow(lines, startLine, endLine, maxSourceLines);
+      parts.push(`### ${file}:${window.start + 1}-${window.end}`, "```", window.text);
+      if (window.omitted > 0) parts.push(`... (${window.omitted} lines omitted)`);
+      parts.push("```\n");
+    } catch {
+      /* skip */
+    }
+  }
+  return parts;
+}
+
+/**
+ * Build comprehensive context (symbols, dependencies, docs, source) for a symbol or file.
+ * Reusable by MCP server and CLI.
+ */
+export async function buildRelevantContext(
+  input: BuildRelevantContextInput,
+  deps: BuildRelevantContextDeps,
+): Promise<BuildRelevantContextResult> {
+  const { projectRoot, docsDir, registry, symbolRepo, graph } = deps;
+  const {
+    symbolName,
+    filePath,
+    mode = "full",
+    maxSourceLines = DEFAULT_MAX_SOURCE_LINES,
+    maxDocChars = mode === "compact" ? COMPACT_MAX_DOC_CHARS : FULL_MAX_DOC_CHARS,
+    maxContextChars = DEFAULT_MAX_CONTEXT_CHARS,
+  } = input;
+
+  const queryLabel = symbolName ?? filePath ?? "";
+  const targetSymbols = symbolName
+    ? symbolRepo.findByName(symbolName)
+    : filePath
+      ? symbolRepo.findByFile(filePath)
+      : [];
+
+  if (targetSymbols.length === 0) {
+    return { text: `No symbols found for: ${queryLabel}`, found: false };
   }
 
+  const parts: string[] = [`# Context for ${queryLabel}\n`];
+  parts.push(...buildSymbolSection(targetSymbols));
+  parts.push(...buildDependencySections(targetSymbols, graph, symbolRepo, mode));
+  parts.push(...(await buildDocSection(targetSymbols, registry, docsDir, maxDocChars)));
   if (mode === "full") {
-    const relevantFiles = new Set(targetSymbols.map((s) => s.file));
-    parts.push(`## Source Code\n`);
-    for (const file of relevantFiles) {
-      try {
-        const absPath = resolve(projectRoot, file);
-        const source = await readFile(absPath, "utf-8");
-        const lines = source.split("\n");
-        const fileSymbols = targetSymbols.filter((s) => s.file === file);
-        const startLine = Math.min(...fileSymbols.map((s) => s.startLine));
-        const endLine = Math.max(...fileSymbols.map((s) => s.endLine));
-        const window = trimSourceWindow(lines, startLine, endLine, maxSourceLines);
-        parts.push(`### ${file}:${window.start + 1}-${window.end}`);
-        parts.push("```");
-        parts.push(window.text);
-        if (window.omitted > 0) {
-          parts.push(`... (${window.omitted} lines omitted)`);
-        }
-        parts.push("```\n");
-      } catch {
-        /* skip */
-      }
-    }
+    parts.push(...(await buildSourceSection(targetSymbols, projectRoot, maxSourceLines)));
   }
 
   const text = parts.join("\n");
@@ -197,8 +229,5 @@ export async function buildRelevantContext(
     );
   }
 
-  return {
-    text: truncateText(text, maxContextChars, "_(context truncated)_"),
-    found: true,
-  };
+  return { text: truncateText(text, maxContextChars, "_(context truncated)_"), found: true };
 }

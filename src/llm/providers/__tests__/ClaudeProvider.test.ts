@@ -152,4 +152,14 @@ describe("ClaudeProvider", () => {
     expect(result[0]).toEqual([]);
     expect(result[1]).toEqual([]);
   });
+
+  it("should estimate tokens as ceil(length / 4)", async () => {
+    const { ClaudeProvider } = await import("../ClaudeProvider.js");
+    const config = createTestConfig({ provider: "claude", model: "claude-sonnet-4-20250514" });
+    const provider = new ClaudeProvider(config, mockAnthropicClient);
+    expect(provider.estimateTokens("")).toBe(0);
+    expect(provider.estimateTokens("1234")).toBe(1);
+    expect(provider.estimateTokens("12345")).toBe(2);
+    expect(provider.estimateTokens("hello world!")).toBe(3);
+  });
 });

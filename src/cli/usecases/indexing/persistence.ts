@@ -13,7 +13,7 @@ import type { LlmProvider } from "../../../llm/provider.js";
 import {
   replaceAllArchViolations,
   replaceAllPatterns,
-  replaceAllReaperFindings,
+  upsertReaperFindings,
   type PatternRowForInsert,
   type RelationshipRepository,
   type SymbolRepository,
@@ -213,13 +213,13 @@ function persistGovernanceResults(
     })),
   );
 
-  replaceAllReaperFindings(
+  upsertReaperFindings(
     db,
     reaperFindings.map((finding) => ({
       type: finding.type,
       target: finding.target,
       reason: finding.reason,
-      suggested_action: finding.suggestedAction,
+      suggestedAction: finding.suggestedAction,
     })),
   );
 }

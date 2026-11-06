@@ -16,7 +16,7 @@ export function createMaxLinesRule(): LanguageRule {
     severity: "warning",
     languages: ["php"],
     defaultConfig: {
-      max: 50,
+      max: 120,
     },
   };
 }

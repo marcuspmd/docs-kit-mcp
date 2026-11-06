@@ -16,7 +16,7 @@ export function createMaxParametersRule(): LanguageRule {
     severity: "warning",
     languages: ["php"],
     defaultConfig: {
-      max: 5,
+      max: 7,
     },
   };
 }
@@ -32,7 +32,7 @@ export function createMaxParametersStrictRule(): LanguageRule {
     severity: "error",
     languages: ["php"],
     defaultConfig: {
-      max: 3,
+      max: 7,
     },
   };
 }

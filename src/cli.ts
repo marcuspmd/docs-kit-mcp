@@ -11,14 +11,34 @@ import {
   indexUseCase,
   buildSiteUseCase,
   buildDocsUseCase,
+  diffUseCase,
   impactAnalysisUseCase,
   analyzePatternsUseCase,
   explainSymbolUseCase,
+  openSiteUseCase,
+  checkUseCase,
+  projectTreeUseCase,
 } from "./cli/usecases/index.js";
 import { serveUseCase } from "./cli/usecases/serve.usecase.js";
 import { inspectUseCase } from "./cli/usecases/inspect.usecase.js";
+import { serveSite } from "./cli/usecases/openSite.usecase.js";
 
 /* ================== Command Handlers ================== */
+
+function parseCsvFlag(value: string | undefined): string[] | undefined {
+  const values =
+    value
+      ?.split(",")
+      .map((item) => item.trim())
+      .filter(Boolean) ?? [];
+
+  return values.length > 0 ? values : undefined;
+}
+
+function parseIntegerFlag(value: string | undefined): number | undefined {
+  const parsed = Number.parseInt(value ?? "", 10);
+  return Number.isNaN(parsed) ? undefined : parsed;
+}
 
 async function runInit(args: string[]) {
   const rootDir = args[0] || ".";
@@ -30,6 +50,8 @@ async function runIndex(args: string[]) {
     db: "",
     docs: "",
     full: undefined as unknown as string,
+    port: "3000",
+    out: "docs-site-v2",
   });
 
   await indexUseCase({
@@ -38,11 +60,31 @@ async function runIndex(args: string[]) {
     docsDir: flags.docs,
     fullRebuild: "full" in flags,
   });
+
+  if ("site" in flags) {
+    const { buildSiteUseCase } = await import("./cli/usecases/buildSite.usecase.js");
+    const outDir = flags.out ?? "docs-site-v2";
+    const dbPath = flags.db || ".docs-kit/index.db";
+    const port = parseInt(flags.port ?? "3000", 10) || 3000;
+    console.log("\n  Building docs site…");
+    await buildSiteUseCase({ outDir, dbPath, rootDir: positional[0] || "." });
+    await serveSite(outDir, port);
+    const url = `http://localhost:${port}`;
+    console.log(`\n  docs-kit site running at ${url}`);
+    console.log("  Press Ctrl+C to stop.\n");
+    const { exec } = await import("child_process");
+    const opener =
+      process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+    exec(`${opener} ${url}`);
+    process.on("SIGINT", () => process.exit(0));
+    process.on("SIGTERM", () => process.exit(0));
+    await new Promise(() => {});
+  }
 }
 
 async function runBuildSite(args: string[]) {
   const { flags } = parseArgs(args, {
-    out: "docs-site",
+    out: "docs-site-v2",
     db: ".docs-kit/index.db",
     root: ".",
   });
@@ -66,6 +108,79 @@ async function runBuildDocs(args: string[]) {
     dbPath: flags.db,
     rootDir: flags.root,
   });
+}
+
+async function runProjectTree(args: string[]) {
+  const { positional, flags } = parseArgs(args, {
+    out: "STRUCTURE.md",
+    depth: "4",
+    include: "",
+    exclude: "",
+    "max-entries-per-dir": "",
+  });
+
+  await projectTreeUseCase({
+    rootDir: positional[0],
+    outFile: flags.out,
+    depth: parseIntegerFlag(flags.depth),
+    include: parseCsvFlag(flags.include),
+    exclude: parseCsvFlag(flags.exclude),
+    dirsOnly: "dirs-only" in flags,
+    sourceOnly: "source-only" in flags,
+    maxEntriesPerDir: parseIntegerFlag(flags["max-entries-per-dir"]),
+  });
+}
+
+async function runDiff(args: string[]) {
+  const { positional, flags } = parseArgs(args, {
+    head: "",
+    out: "docs-site-diff",
+    db: ".docs-kit/index.db",
+    docs: "docs",
+    root: "",
+    "ai-review": "false",
+    port: "3001",
+  });
+
+  const base = positional[0];
+  if (!base) {
+    if (process.stdin.isTTY) {
+      const { interactiveDiff } = await import("./cli/usecases/interactive.usecase.js");
+      await interactiveDiff({ flags });
+      return;
+    }
+    console.error(
+      "Usage: docs-kit diff <base> [--head ref] [--out dir] [--db path] [--docs dir] [--strict] [--ai-review] [--site] [--port n]",
+    );
+    process.exit(1);
+  }
+
+  await diffUseCase({
+    base,
+    head: flags.head || undefined,
+    outDir: flags.out,
+    dbPath: flags.db,
+    docsDir: flags.docs,
+    rootDir: flags.root || undefined,
+    strict: flags.strict === "true" || flags.ci === "true",
+    aiReview: flags["ai-review"] === "true",
+  });
+
+  if ("site" in flags) {
+    const outDir = flags.out ?? "docs-site-diff";
+    const port = parseInt(flags.port ?? "3001", 10) || 3001;
+    await serveSite(outDir, port);
+    const url = `http://localhost:${port}`;
+    console.log(`\n  Diff site running at ${url}`);
+    console.log("  Press Ctrl+C to stop.\n");
+    const { exec } = await import("child_process");
+    const opener =
+      process.platform === "darwin" ? "open" : process.platform === "win32" ? "start" : "xdg-open";
+    exec(`${opener} ${url}`);
+    process.on("SIGINT", () => process.exit(0));
+    process.on("SIGTERM", () => process.exit(0));
+    await new Promise(() => {});
+  }
 }
 
 async function runImpactAnalysis(args: string[]) {
@@ -136,6 +251,17 @@ async function runExplainSymbol(args: string[]) {
   console.log(result);
 }
 
+async function runOpenSite(args: string[]) {
+  const { flags } = parseArgs(args, {
+    port: "3000",
+    out: "docs-site-v2",
+    db: ".docs-kit/index.db",
+    root: ".",
+  });
+  const port = parseInt(flags.port || "3000", 10) || 3000;
+  await openSiteUseCase({ port, outDir: flags.out, dbPath: flags.db, rootDir: flags.root });
+}
+
 async function runServe(args: string[]) {
   const { flags } = parseArgs(args, {
     port: "7337",
@@ -143,6 +269,29 @@ async function runServe(args: string[]) {
   });
   const port = parseInt(flags.port || "7337", 10) || 7337;
   await serveUseCase({ port, docsDir: flags.docs });
+}
+
+async function runCheck(args: string[]) {
+  const { flags } = parseArgs(args, {
+    db: ".docs-kit/index.db",
+    docs: "docs",
+    checks: "",
+  });
+
+  type CheckType = "coverage" | "architecture" | "documentation";
+  const validChecks = new Set<CheckType>(["coverage", "architecture", "documentation"]);
+
+  const checks =
+    flags.checks
+      ?.split(",")
+      .map((s) => s.trim())
+      .filter((s): s is CheckType => validChecks.has(s as CheckType)) ?? [];
+
+  await checkUseCase({
+    dbPath: flags.db || undefined,
+    docsDir: flags.docs,
+    checks: checks.length > 0 ? checks : undefined,
+  });
 }
 
 async function runInspect(args: string[]) {
@@ -183,6 +332,12 @@ async function main() {
       case "build-docs":
         await runBuildDocs(args.slice(1));
         break;
+      case "project-tree":
+        await runProjectTree(args.slice(1));
+        break;
+      case "diff":
+        await runDiff(args.slice(1));
+        break;
       case "impact-analysis":
         await runImpactAnalysis(args.slice(1));
         break;
@@ -192,15 +347,30 @@ async function main() {
       case "explain-symbol":
         await runExplainSymbol(args.slice(1));
         break;
+      case "open-site":
+        await runOpenSite(args.slice(1));
+        break;
       case "serve":
         await runServe(args.slice(1));
         break;
       case "inspect":
         await runInspect(args.slice(1));
         break;
+      case "check":
+        await runCheck(args.slice(1));
+        break;
       default:
+        if (command === "--help" || command === "-h") {
+          printHelp();
+          process.exit(0);
+        }
+        if (!command && process.stdin.isTTY) {
+          const { interactiveUseCase } = await import("./cli/usecases/interactive.usecase.js");
+          await interactiveUseCase();
+          break;
+        }
         printHelp();
-        process.exit(command === "--help" || command === "-h" ? 0 : 1);
+        process.exit(command ? 1 : 0);
     }
   } catch (err) {
     console.error("Error:", err instanceof Error ? err.message : String(err));

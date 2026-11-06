@@ -1,0 +1,106 @@
+import fs from "node:fs";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
+import Database from "better-sqlite3";
+import { createSiteDataBundle } from "./dataBundle.js";
+import { loadSiteData, type LoadedSiteData } from "./dataLoader.js";
+import type { DiffSiteMetadata } from "./diffData.js";
+
+export interface GenerateSiteV2Options {
+  dbPath?: string;
+  db?: Database.Database;
+  data?: LoadedSiteData;
+  diff?: DiffSiteMetadata;
+  outDir: string;
+  rootDir?: string;
+  generatedAt?: string;
+  lcovPath?: string;
+  coverageIgnore?: string[];
+}
+
+export interface GenerateSiteV2Result {
+  symbolPages: number;
+  filePages: number;
+  totalFiles: number;
+  classCount: number;
+  moduleCount: number;
+  dataFile: string;
+}
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+function resolveReactAppRoot(): string {
+  const candidates = [
+    path.resolve(__dirname, "..", "..", "site-v2"),
+    path.resolve(process.cwd(), "site-v2"),
+  ];
+
+  const appRoot = candidates.find((candidate) => fs.existsSync(path.join(candidate, "index.html")));
+  if (!appRoot) {
+    throw new Error("React v2 site source not found. Expected site-v2/index.html.");
+  }
+
+  return appRoot;
+}
+
+function countFiles(dir: string): number {
+  if (!fs.existsSync(dir)) return 0;
+
+  let total = 0;
+  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    const fullPath = path.join(dir, entry.name);
+    total += entry.isDirectory() ? countFiles(fullPath) : 1;
+  }
+  return total;
+}
+
+async function buildReactApp(outDir: string): Promise<void> {
+  const { build } = await import("vite");
+  await build({
+    root: resolveReactAppRoot(),
+    base: "./",
+    logLevel: "silent",
+    build: {
+      outDir: path.resolve(outDir),
+      emptyOutDir: true,
+    },
+  });
+}
+
+export async function generateSiteV2(
+  options: GenerateSiteV2Options,
+): Promise<GenerateSiteV2Result> {
+  if (!options.data && !options.db && !options.dbPath) {
+    throw new Error("generateSiteV2: one of dbPath, db, or data must be provided");
+  }
+  const ownsDb = !options.db;
+  const db = options.data
+    ? undefined
+    : (options.db ?? new Database(options.dbPath as string, { readonly: true }));
+
+  try {
+    const data = options.data ?? loadSiteData(db!, options.rootDir);
+    const bundle = await createSiteDataBundle(data, options.generatedAt, options.rootDir, {
+      diff: options.diff,
+      lcovPath: options.lcovPath,
+      coverageIgnore: options.coverageIgnore ?? [],
+    });
+
+    await buildReactApp(options.outDir);
+
+    const dataFile = path.join(options.outDir, "site-data.json");
+    fs.writeFileSync(dataFile, JSON.stringify(bundle, null, 2), "utf-8");
+
+    return {
+      symbolPages: data.symbols.length,
+      filePages: data.files.length,
+      totalFiles: countFiles(options.outDir),
+      classCount: bundle.complexity.classes.length,
+      moduleCount: bundle.complexity.modules.length,
+      dataFile,
+    };
+  } finally {
+    if (ownsDb) db?.close();
+  }
+}

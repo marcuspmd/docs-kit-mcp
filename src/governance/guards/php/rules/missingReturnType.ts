@@ -17,6 +17,7 @@ export function createMissingReturnTypeRule(): LanguageRule {
     languages: ["php"],
     defaultConfig: {
       scope: "public",
+      allowedReturnTypes: ["mixed"],
     },
   };
 }
@@ -33,6 +34,7 @@ export function createMissingReturnTypeStrictRule(): LanguageRule {
     languages: ["php"],
     defaultConfig: {
       scope: "all",
+      allowedReturnTypes: ["mixed"],
     },
   };
 }

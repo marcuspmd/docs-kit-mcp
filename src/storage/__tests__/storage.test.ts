@@ -3,6 +3,8 @@ import {
   initializeSchema,
   createSymbolRepository,
   createRelationshipRepository,
+  createFileHashRepository,
+  createPrReviewRepository,
   CURRENT_SCHEMA_VERSION,
 } from "../db.js";
 import type { CodeSymbol } from "../../indexer/symbol.types.js";
@@ -46,6 +48,9 @@ describe("Storage Layer", () => {
       expect(names).toContain("symbols");
       expect(names).toContain("relationships");
       expect(names).toContain("doc_mappings");
+      expect(names).toContain("pr_pull_requests");
+      expect(names).toContain("pr_review_threads");
+      expect(names).toContain("pr_review_comments");
     });
 
     it("tracks the current schema version", () => {
@@ -302,6 +307,319 @@ describe("Storage Layer", () => {
 
       expect(repo.findBySource("a")).toHaveLength(0);
       expect(repo.findBySource("x")).toHaveLength(1);
+    });
+
+    it("findAll returns all relationships", () => {
+      const repo = createRelationshipRepository(db);
+      repo.upsert("a", "b", "calls");
+      repo.upsert("x", "y", "uses");
+
+      const all = repo.findAll();
+      expect(all).toHaveLength(2);
+    });
+  });
+
+  describe("SymbolRepository advanced methods", () => {
+    const makeSymbol = (overrides?: Partial<CodeSymbol>): CodeSymbol =>
+      ({
+        id: "sym1",
+        name: "MyClass",
+        qualifiedName: "pkg.MyClass",
+        kind: "class",
+        file: "src/my.ts",
+        startLine: 1,
+        endLine: 10,
+        language: "ts",
+        ...overrides,
+      }) as CodeSymbol;
+
+    it("findByIds returns symbols for given ids", () => {
+      const repo = createSymbolRepository(db);
+      repo.upsert(makeSymbol({ id: "id1", name: "Alpha" }));
+      repo.upsert(makeSymbol({ id: "id2", name: "Beta" }));
+      repo.upsert(makeSymbol({ id: "id3", name: "Gamma" }));
+
+      const results = repo.findByIds(["id1", "id3"]);
+      expect(results).toHaveLength(2);
+      const names = results.map((s) => s.name).sort();
+      expect(names).toEqual(["Alpha", "Gamma"]);
+    });
+
+    it("findByIds returns empty array for empty input", () => {
+      const repo = createSymbolRepository(db);
+      expect(repo.findByIds([])).toEqual([]);
+    });
+
+    it("search filters by query", () => {
+      const repo = createSymbolRepository(db);
+      repo.upsert(makeSymbol({ id: "s1", name: "OrderService" }));
+      repo.upsert(makeSymbol({ id: "s2", name: "UserController" }));
+
+      const results = repo.search({ query: "Order" });
+      expect(results).toHaveLength(1);
+      expect(results[0].name).toBe("OrderService");
+    });
+
+    it("search filters by kind", () => {
+      const repo = createSymbolRepository(db);
+      repo.upsert(makeSymbol({ id: "s1", name: "MyClass", kind: "class" }));
+      repo.upsert(makeSymbol({ id: "s2", name: "myFunc", kind: "function" }));
+
+      const results = repo.search({ kind: "function" });
+      expect(results).toHaveLength(1);
+      expect(results[0].name).toBe("myFunc");
+    });
+
+    it("findByName returns symbols matching name or qualifiedName", () => {
+      const repo = createSymbolRepository(db);
+      repo.upsert(
+        makeSymbol({ id: "s1", name: "createOrder", qualifiedName: "orders.createOrder" }),
+      );
+      repo.upsert(
+        makeSymbol({ id: "s2", name: "deleteOrder", qualifiedName: "orders.deleteOrder" }),
+      );
+
+      const results = repo.findByName("createOrder");
+      expect(results).toHaveLength(1);
+      expect(results[0].name).toBe("createOrder");
+    });
+
+    it("findAll returns all symbols", () => {
+      const repo = createSymbolRepository(db);
+      repo.upsert(makeSymbol({ id: "s1", name: "Alpha" }));
+      repo.upsert(makeSymbol({ id: "s2", name: "Beta" }));
+
+      const all = repo.findAll();
+      expect(all.length).toBeGreaterThanOrEqual(2);
+    });
+  });
+
+  describe("FileHashRepository", () => {
+    it("upserts and gets a file hash", () => {
+      const repo = createFileHashRepository(db);
+      repo.upsert("src/foo.ts", "abc123");
+
+      const result = repo.get("src/foo.ts");
+      expect(result).toBeDefined();
+      expect(result!.contentHash).toBe("abc123");
+      expect(result!.lastIndexedAt).toBeDefined();
+    });
+
+    it("get returns undefined for missing file", () => {
+      const repo = createFileHashRepository(db);
+      expect(repo.get("nonexistent.ts")).toBeUndefined();
+    });
+
+    it("getAll returns all hashes", () => {
+      const repo = createFileHashRepository(db);
+      repo.upsert("src/a.ts", "hash1");
+      repo.upsert("src/b.ts", "hash2");
+
+      const all = repo.getAll();
+      expect(all.length).toBeGreaterThanOrEqual(2);
+      const files = all.map((r) => r.filePath);
+      expect(files).toContain("src/a.ts");
+    });
+
+    it("delete removes a specific file hash", () => {
+      const repo = createFileHashRepository(db);
+      repo.upsert("src/a.ts", "hash1");
+      repo.upsert("src/b.ts", "hash2");
+
+      repo.delete("src/a.ts");
+
+      expect(repo.get("src/a.ts")).toBeUndefined();
+      expect(repo.get("src/b.ts")).toBeDefined();
+    });
+
+    it("clear removes all hashes", () => {
+      const repo = createFileHashRepository(db);
+      repo.upsert("src/a.ts", "hash1");
+      repo.upsert("src/b.ts", "hash2");
+
+      repo.clear();
+
+      expect(repo.getAll()).toHaveLength(0);
+    });
+
+    it("upsert overwrites existing hash", () => {
+      const repo = createFileHashRepository(db);
+      repo.upsert("src/a.ts", "old-hash");
+      repo.upsert("src/a.ts", "new-hash");
+
+      const result = repo.get("src/a.ts");
+      expect(result!.contentHash).toBe("new-hash");
+    });
+  });
+
+  describe("PrReviewRepository", () => {
+    const createdAt = "2026-05-12 10:00:00";
+
+    function seedPullRequest() {
+      const repo = createPrReviewRepository(db);
+      repo.upsertPullRequest({
+        id: "github:marcuspmd/docs-kit-mcp:42",
+        provider: "github",
+        repository: "marcuspmd/docs-kit-mcp",
+        number: "42",
+        title: "Add PR review flow",
+        url: "https://github.com/marcuspmd/docs-kit-mcp/pull/42",
+        author: "marcus",
+        state: "open",
+        baseRef: "master",
+        headRef: "feature/pr-review",
+        baseSha: "base-sha",
+        headSha: "head-sha",
+        createdAt,
+        updatedAt: createdAt,
+        syncedAt: createdAt,
+      });
+      return repo;
+    }
+
+    it("upserts and finds pull requests by provider identity", () => {
+      const repo = seedPullRequest();
+
+      const found = repo.findPullRequestByProvider("github", "marcuspmd/docs-kit-mcp", "42");
+
+      expect(found).toMatchObject({
+        id: "github:marcuspmd/docs-kit-mcp:42",
+        provider: "github",
+        repository: "marcuspmd/docs-kit-mcp",
+        number: "42",
+        baseRef: "master",
+        headRef: "feature/pr-review",
+      });
+    });
+
+    it("stores review runs with metadata and viewed files", () => {
+      const repo = seedPullRequest();
+      repo.upsertReviewRun({
+        id: "run-1",
+        prId: "github:marcuspmd/docs-kit-mcp:42",
+        status: "generated",
+        baseSha: "base-sha",
+        headSha: "head-sha",
+        generatedAt: createdAt,
+        providerReviewId: "review-remote-1",
+        summary: "2 files changed",
+        metadata: { mode: "dry-run" },
+      });
+      repo.markFileViewed(
+        "github:marcuspmd/docs-kit-mcp:42",
+        "src/storage/prReviewRepository.ts",
+        "marcus",
+        createdAt,
+      );
+
+      expect(repo.findReviewRun("run-1")).toMatchObject({
+        id: "run-1",
+        status: "generated",
+        metadata: { mode: "dry-run" },
+      });
+      expect(repo.listFileStates("github:marcuspmd/docs-kit-mcp:42")).toEqual([
+        {
+          prId: "github:marcuspmd/docs-kit-mcp:42",
+          file: "src/storage/prReviewRepository.ts",
+          status: "viewed",
+          viewer: "marcus",
+          viewedAt: createdAt,
+        },
+      ]);
+    });
+
+    it("stores threads, comments, suggestions, submissions, reviewers, and history", () => {
+      const repo = seedPullRequest();
+      repo.upsertThread({
+        id: "thread-1",
+        prId: "github:marcuspmd/docs-kit-mcp:42",
+        runId: "run-1",
+        providerThreadId: "provider-thread-1",
+        status: "open",
+        anchor: {
+          file: "src/server/http.ts",
+          side: "right",
+          line: 120,
+          originalLine: 115,
+          startLine: 120,
+          endLine: 122,
+          diffHunk: "@@ -115,1 +120,3 @@",
+          symbolId: "symbol-1",
+          findingId: "finding-1",
+          dedupeKey: "finding:finding-1",
+        },
+        title: "Missing persistence",
+        createdAt,
+        updatedAt: createdAt,
+      });
+      repo.upsertComment({
+        id: "comment-1",
+        threadId: "thread-1",
+        prId: "github:marcuspmd/docs-kit-mcp:42",
+        providerCommentId: "provider-comment-1",
+        author: "reviewer",
+        body: "Please persist this thread before submit.",
+        state: "published",
+        createdAt,
+      });
+      repo.upsertSuggestion({
+        id: "suggestion-1",
+        threadId: "thread-1",
+        commentId: "comment-1",
+        body: "return repo.save(thread);",
+        state: "pending",
+        createdAt,
+      });
+      repo.upsertSubmission({
+        id: "submission-1",
+        prId: "github:marcuspmd/docs-kit-mcp:42",
+        runId: "run-1",
+        author: "reviewer",
+        verdict: "request_changes",
+        body: "Please address the inline thread.",
+        state: "submitted",
+        createdAt,
+        submittedAt: createdAt,
+      });
+      repo.upsertReviewer({
+        prId: "github:marcuspmd/docs-kit-mcp:42",
+        username: "reviewer",
+        role: "reviewer",
+        status: "changes_requested",
+        reviewedAt: createdAt,
+      });
+
+      expect(repo.listThreads("github:marcuspmd/docs-kit-mcp:42")).toHaveLength(1);
+      expect(repo.listComments("thread-1")).toEqual([
+        expect.objectContaining({
+          id: "comment-1",
+          body: "Please persist this thread before submit.",
+        }),
+      ]);
+      expect(repo.listSuggestions("thread-1")).toEqual([
+        expect.objectContaining({ id: "suggestion-1", state: "pending" }),
+      ]);
+      expect(repo.listSubmissions("github:marcuspmd/docs-kit-mcp:42")).toEqual([
+        expect.objectContaining({ verdict: "request_changes", state: "submitted" }),
+      ]);
+      expect(repo.listReviewers("github:marcuspmd/docs-kit-mcp:42")).toEqual([
+        expect.objectContaining({ username: "reviewer", status: "changes_requested" }),
+      ]);
+
+      expect(repo.updateThreadStatus("thread-1", "resolved", "reviewer")).toBe(true);
+      expect(repo.findThread("thread-1")).toMatchObject({
+        status: "resolved",
+        resolvedBy: "reviewer",
+      });
+      expect(repo.listHistory("github:marcuspmd/docs-kit-mcp:42")).toEqual([
+        expect.objectContaining({
+          entityType: "thread",
+          entityId: "thread-1",
+          field: "status",
+          oldValue: "open",
+          newValue: "resolved",
+        }),
+      ]);
     });
   });
 });

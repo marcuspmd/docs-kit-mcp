@@ -30,6 +30,10 @@ export class GeminiProvider implements LlmProvider {
         },
       }),
     });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Gemini API error ${res.status}: ${body}`);
+    }
     const json = (await res.json()) as {
       candidates?: Array<{ content?: { parts?: Array<{ text?: string }> } }>;
     };
@@ -49,6 +53,10 @@ export class GeminiProvider implements LlmProvider {
         })),
       }),
     });
+    if (!res.ok) {
+      const body = await res.text();
+      throw new Error(`Gemini embeddings API error ${res.status}: ${body}`);
+    }
     const json = (await res.json()) as {
       embeddings?: Array<{ values?: number[] }>;
     };

@@ -164,6 +164,80 @@ describe("CLI - Command Handlers: Build Docs", () => {
   });
 });
 
+describe("CLI - Command Handlers: Project Tree", () => {
+  it("should parse project-tree flags", async () => {
+    const { parseArgs: parseArgsFunc } = await import("../utils/args.js");
+    const args = [
+      ".",
+      "--out",
+      "STRUCTURE.md",
+      "--depth",
+      "3",
+      "--include",
+      "src/**,docs/**",
+      "--exclude",
+      "coverage/**",
+      "--dirs-only",
+      "--source-only",
+      "--max-entries-per-dir",
+      "20",
+    ];
+    const result = parseArgsFunc(args, {
+      out: "STRUCTURE.md",
+      depth: "4",
+      include: "",
+      exclude: "",
+      "max-entries-per-dir": "",
+    });
+
+    expect(result.positional).toEqual(["."]);
+    expect(result.flags.out).toBe("STRUCTURE.md");
+    expect(result.flags.depth).toBe("3");
+    expect(result.flags.include).toBe("src/**,docs/**");
+    expect(result.flags.exclude).toBe("coverage/**");
+    expect(result.flags["dirs-only"]).toBe("true");
+    expect(result.flags["source-only"]).toBe("true");
+    expect(result.flags["max-entries-per-dir"]).toBe("20");
+  });
+
+  it("should construct projectTreeUseCase params", () => {
+    const positional = ["."];
+    const flags: Record<string, string> = {
+      out: "STRUCTURE.md",
+      depth: "3",
+      include: "src/**,docs/**",
+      exclude: "coverage/**",
+      "dirs-only": "true",
+      "source-only": "true",
+      "max-entries-per-dir": "20",
+    };
+    const include = flags.include.split(",").map((item) => item.trim());
+    const exclude = flags.exclude.split(",").map((item) => item.trim());
+
+    const params = {
+      rootDir: positional[0],
+      outFile: flags.out,
+      depth: parseInt(flags.depth, 10),
+      include,
+      exclude,
+      dirsOnly: "dirs-only" in flags,
+      sourceOnly: "source-only" in flags,
+      maxEntriesPerDir: parseInt(flags["max-entries-per-dir"], 10),
+    };
+
+    expect(params).toEqual({
+      rootDir: ".",
+      outFile: "STRUCTURE.md",
+      depth: 3,
+      include: ["src/**", "docs/**"],
+      exclude: ["coverage/**"],
+      dirsOnly: true,
+      sourceOnly: true,
+      maxEntriesPerDir: 20,
+    });
+  });
+});
+
 describe("CLI - Command Handlers: Impact Analysis", () => {
   beforeEach(() => {
     jest.clearAllMocks();

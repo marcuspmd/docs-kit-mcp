@@ -14,9 +14,26 @@ INDEX
 
 BUILD
   docs-kit build-site  [--out dir] [--db path] Generate navigable HTML site
-                       [--root dir]
+                       [--root dir] [--version v1|v2]
   docs-kit build-docs  [--out dir] [--db path] Generate structured Markdown docs
                        [--root dir]
+  docs-kit project-tree [dir] [--out file]     Generate Markdown project tree
+                       [--depth n] [--dirs-only]
+                       [--source-only] [--include glob]
+                       [--exclude glob]
+
+DIFF PREVIEW
+  docs-kit diff        [<base>]              Without a base branch, launches an
+                                             interactive branch picker (requires TTY).
+  docs-kit diff <base> [--head ref]          Generate a v2 preview site scoped to
+                       [--out docs-site-diff] the PR-style git diff base...HEAD
+                       [--db path] [--docs dir]
+                       [--strict] [--ai-review]
+                       [--site] [--port 3001] Serve diff site locally after generation
+                                             Run Docs-Guard and suggested docs
+                                             updates without writing docs files;
+                                             preview code changes beside site diffs;
+                                             optionally generate AI review notes
 
 ANALYZE
   docs-kit explain-symbol <symbol>             Explain a symbol (code + docs + LLM)
@@ -27,6 +44,12 @@ ANALYZE
                        [--db path] [--docs dir]
   docs-kit analyze-patterns [--db path]        Detect patterns & SOLID violations
 
+CHECK
+  docs-kit check       [--checks coverage,     Show coverage gaps, arch violations,
+                        architecture,          and undocumented symbols in terminal.
+                        documentation]         Runs interactive multiselect when no
+                       [--db path] [--docs dir] --checks flag is provided.
+
 INSPECT
   docs-kit inspect <symbol>                    Show context quality metrics for a
                        [--file path]           symbol (tokens, latency, coverage)
@@ -34,12 +57,16 @@ INSPECT
                        [--verbose]
 
 SERVER
+  docs-kit open-site   [--port 3000]           Generate + serve the v2 site locally
+                       [--out docs-site-v2]    (builds site data then opens browser)
+                       [--db path] [--root dir]
   docs-kit serve       [--port 7337]           Start local HTTP API for the site
                        [--db path] [--docs dir] inspector (inspector.html)
 
+  docs-kit                                     Launch interactive TUI menu (requires TTY)
   docs-kit --help                              Show this help
 
-Additional tools available as MCP tools in Copilot/Claude (19 tools including
+Additional tools available as MCP tools in Copilot/Claude (21 tools including
 generateDocs, scanFile, askKnowledgeBase, smartCodeReview, and more).
 Run: npx docs-kit index && npx docs-kit build-site  to get started.
 `);

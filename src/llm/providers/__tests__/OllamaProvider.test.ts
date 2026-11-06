@@ -100,4 +100,13 @@ describe("OllamaProvider", () => {
       expect.any(Object),
     );
   });
+
+  it("should estimate tokens as ceil(length / 4)", async () => {
+    const { OllamaProvider } = await import("../OllamaProvider.js");
+    const config = createTestConfig({ provider: "ollama", model: "llama3" });
+    const provider = new OllamaProvider(config);
+    expect(provider.estimateTokens("")).toBe(0);
+    expect(provider.estimateTokens("1234")).toBe(1);
+    expect(provider.estimateTokens("12345")).toBe(2);
+  });
 });

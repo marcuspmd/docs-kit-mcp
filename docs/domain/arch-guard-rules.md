@@ -8,44 +8,37 @@ O Arch-Guard aplica regras de arquitetura e qualidade sobre o índice de símbol
 export default {
   // ... outras configurações
   archGuard: {
-    rules: [
+    languages: [
       {
-        name: "layer-boundary-domain-infra",
-        type: "layer_boundary",
-        severity: "error",
-        config: {
-          from: "domain",
-          to: "infrastructure"
-        }
-      }
-    ]
-  }
-}
+        language: "typescript",
+        rules: ["typescript:layer_boundary", "typescript:max_complexity"],
+        ignorePaths: ["**/*.test.ts", "**/__tests__/**"],
+        overrideRules: [
+          { code: "typescript:max_complexity", severity: "warning", config: { max: 12 } },
+        ],
+      },
+    ],
+  },
+};
 ```
 
-### Gerando configuração inicial
+### Configuração inicial
 
-Use o comando `init-arch-guard` para gerar um snippet de configuração com regras padrão:
-
-```bash
-docs-kit init-arch-guard --lang ts
-```
-
-Isso imprimirá um snippet de código que você pode copiar e colar no seu `docs.config.js`.
+Configure o Arch-Guard diretamente em `docs.config.js`, na seção `archGuard.languages`. O CLI atual valida a configuração com `docs-kit check --checks architecture` depois que o projeto foi indexado.
 
 ---
 
 ## Visão geral dos tipos de regra
 
-| Tipo | Descrição | Dados usados |
-|------|-----------|---------------|
-| `layer_boundary` | Camada X não pode depender de camada Y | `relationships`, `file` |
-| `forbidden_import` | Proibir dependências por path ou nome | `relationships`, `file`, `name` |
-| `naming_convention` | Nomes devem seguir regex; permite exceções (ex.: `__construct`) | `name`, `kind`, `file` |
-| `max_complexity` | Limite de complexidade ciclomática | `metrics.cyclomaticComplexity` |
-| `max_parameters` | Limite de parâmetros por função/método | `metrics.parameterCount` |
-| `max_lines` | Limite de linhas por símbolo | `metrics.linesOfCode` ou `endLine - startLine` |
-| `missing_return_type` | Exigir tipo de retorno declarado | `signature`, `kind`, `visibility` |
+| Tipo                  | Descrição                                                       | Dados usados                                   |
+| --------------------- | --------------------------------------------------------------- | ---------------------------------------------- |
+| `layer_boundary`      | Camada X não pode depender de camada Y                          | `relationships`, `file`                        |
+| `forbidden_import`    | Proibir dependências por path ou nome                           | `relationships`, `file`, `name`                |
+| `naming_convention`   | Nomes devem seguir regex; permite exceções (ex.: `__construct`) | `name`, `kind`, `file`                         |
+| `max_complexity`      | Limite de complexidade ciclomática                              | `metrics.cyclomaticComplexity`                 |
+| `max_parameters`      | Limite de parâmetros por função/método                          | `metrics.parameterCount`                       |
+| `max_lines`           | Limite de linhas por símbolo                                    | `metrics.linesOfCode` ou `endLine - startLine` |
+| `missing_return_type` | Exigir tipo de retorno declarado                                | `signature`, `kind`, `visibility`              |
 
 ---
 
@@ -53,8 +46,8 @@ Isso imprimirá um snippet de código que você pode copiar e colar no seu `docs
 
 Em **qualquer regra** você pode definir `ignore` no `config` para não aplicar a regra a certos arquivos ou paths.
 
-| Campo | Tipo | Descrição |
-|-------|------|------------|
+| Campo    | Tipo     | Descrição                                                                                                                                                           |
+| -------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `ignore` | string[] | Globs (ex.: `**/tests/**`, `0.Presentation/auth/tests/**`) ou regex (ex.: `/.*\/tests\/.*/`). Arquivos cujo path bater com algum item são ignorados por essa regra. |
 
 - **Glob:** mesmo padrão do resto do Arch-Guard (ex.: `**/tests/**`, `0.Presentation/**/TestCase.php`).
@@ -82,11 +75,11 @@ Em **qualquer regra** você pode definir `ignore` no `config` para não aplicar 
 
 **Config:**
 
-| Campo | Tipo | Obrigatório | Descrição |
-|-------|------|-------------|-----------|
-| `source` | string | sim | Glob dos arquivos da camada que não pode importar (ex.: `src/domain/**`) |
-| `forbidden` | string[] | sim | Globs dos arquivos/camadas proibidos como dependência |
-| `ignore` | string[] | não | Globs ou regex de paths a ignorar (não aplicar a regra) |
+| Campo       | Tipo     | Obrigatório | Descrição                                                                |
+| ----------- | -------- | ----------- | ------------------------------------------------------------------------ |
+| `source`    | string   | sim         | Glob dos arquivos da camada que não pode importar (ex.: `src/domain/**`) |
+| `forbidden` | string[] | sim         | Globs dos arquivos/camadas proibidos como dependência                    |
+| `ignore`    | string[] | não         | Globs ou regex de paths a ignorar (não aplicar a regra)                  |
 
 **Exemplo:**
 
@@ -111,11 +104,11 @@ Em **qualquer regra** você pode definir `ignore` no `config` para não aplicar 
 
 **Config:**
 
-| Campo | Tipo | Obrigatório | Descrição |
-|------|------|-------------|-----------|
-| `forbidden` | string[] | sim | Globs de path ou nome (ex.: `node_modules/lodash/**`, `console*`) |
-| `scope` | string | não | Se definido, só símbolos nesses arquivos são checados (glob) |
-| `ignore` | string[] | não | Globs ou regex de paths a ignorar |
+| Campo       | Tipo     | Obrigatório | Descrição                                                         |
+| ----------- | -------- | ----------- | ----------------------------------------------------------------- |
+| `forbidden` | string[] | sim         | Globs de path ou nome (ex.: `node_modules/lodash/**`, `console*`) |
+| `scope`     | string   | não         | Se definido, só símbolos nesses arquivos são checados (glob)      |
+| `ignore`    | string[] | não         | Globs ou regex de paths a ignorar                                 |
 
 **Exemplo:**
 
@@ -147,14 +140,14 @@ Em **qualquer regra** você pode definir `ignore` no `config` para não aplicar 
 
 **Config:**
 
-| Campo | Tipo | Obrigatório | Descrição |
-|-------|------|-------------|-----------|
-| `pattern` | string | sim | Regex (sem barras). Ex.: `^[A-Z][a-zA-Z0-9]*$` para PascalCase |
-| `kind` | string | não | Filtrar por `kind` (ex.: `class`, `method`, `function`) |
-| `file` | string | não | Glob: regra só vale nesses arquivos |
-| `allowNames` | string[] | não | Nomes permitidos mesmo fora do padrão (ex.: `__construct`, `constructor`) |
-| `excludeNames` | string[] | não | Mesmo efeito que `allowNames`; ambos são somados para exceções |
-| `ignore` | string[] | não | Globs ou regex de paths a ignorar (ex.: `**/tests/**`, `**/TestCase.php`) |
+| Campo          | Tipo     | Obrigatório | Descrição                                                                 |
+| -------------- | -------- | ----------- | ------------------------------------------------------------------------- |
+| `pattern`      | string   | sim         | Regex (sem barras). Ex.: `^[A-Z][a-zA-Z0-9]*$` para PascalCase            |
+| `kind`         | string   | não         | Filtrar por `kind` (ex.: `class`, `method`, `function`)                   |
+| `file`         | string   | não         | Glob: regra só vale nesses arquivos                                       |
+| `allowNames`   | string[] | não         | Nomes permitidos mesmo fora do padrão (ex.: `__construct`, `constructor`) |
+| `excludeNames` | string[] | não         | Mesmo efeito que `allowNames`; ambos são somados para exceções            |
+| `ignore`       | string[] | não         | Globs ou regex de paths a ignorar (ex.: `**/tests/**`, `**/TestCase.php`) |
 
 **Exemplo (classes PascalCase, métodos camelCase com exceções para PHP):**
 
@@ -185,7 +178,7 @@ Em **qualquer regra** você pode definir `ignore` no `config` para não aplicar 
 
 **Como o nome é avaliado:** O padrão é aplicado ao **nome curto** do símbolo em todas as regras de naming (class-pascal-case, method-camel-case, function-camel-case). Se o índice tiver `qualifiedName`, só o último segmento é comparado ao padrão: `\Namespace\Classe` ou `module.Classe` → `Classe` (para classes); `Classe.metodo` ou `Classe::metodo` → `metodo` (para métodos); `module.funcao` → `funcao` (para funções). Assim getters/setters como `getCode`, `setName` passam na regra camelCase.
 
-**Nomes reservados por linguagem:** O comando `init-arch-guard --lang php` já gera regras com `allowNames` preenchido com os métodos mágicos de PHP. Para outras linguagens, use `--lang ts`, `js`, `python` ou `go`; a base inclui os nomes especiais (ex.: Python `__init__`, TS/JS `constructor`).
+**Nomes reservados por linguagem:** As regras base por linguagem já consideram nomes especiais como métodos mágicos de PHP, `__init__` em Python e `constructor` em TS/JS. Use `excludeRules`, `overrideRules` e regras customizadas em `docs.config.js` quando precisar ajustar exceções.
 
 ---
 
@@ -195,11 +188,11 @@ Em **qualquer regra** você pode definir `ignore` no `config` para não aplicar 
 
 **Config:**
 
-| Campo | Tipo | Obrigatório | Descrição |
-|-------|------|-------------|-----------|
-| `max` | number | sim | Valor máximo permitido (ex.: 10) |
-| `kind` | string | não | Filtrar por `kind` (ex.: `method`, `function`) |
-| `file` | string | não | Glob: regra só nesses arquivos |
+| Campo  | Tipo   | Obrigatório | Descrição                                      |
+| ------ | ------ | ----------- | ---------------------------------------------- |
+| `max`  | number | sim         | Valor máximo permitido (ex.: 10)               |
+| `kind` | string | não         | Filtrar por `kind` (ex.: `method`, `function`) |
+| `file` | string | não         | Glob: regra só nesses arquivos                 |
 
 **Exemplo:**
 
@@ -222,11 +215,11 @@ Em **qualquer regra** você pode definir `ignore` no `config` para não aplicar 
 
 **Config:**
 
-| Campo | Tipo | Obrigatório | Descrição |
-|-------|------|-------------|-----------|
-| `max` | number | sim | Número máximo de parâmetros (ex.: 5) |
-| `kind` | string | não | Filtrar por `kind` |
-| `file` | string | não | Glob: regra só nesses arquivos |
+| Campo  | Tipo   | Obrigatório | Descrição                            |
+| ------ | ------ | ----------- | ------------------------------------ |
+| `max`  | number | sim         | Número máximo de parâmetros (ex.: 5) |
+| `kind` | string | não         | Filtrar por `kind`                   |
+| `file` | string | não         | Glob: regra só nesses arquivos       |
 
 **Exemplo:**
 
@@ -249,11 +242,11 @@ Em **qualquer regra** você pode definir `ignore` no `config` para não aplicar 
 
 **Config:**
 
-| Campo | Tipo | Obrigatório | Descrição |
-|-------|------|-------------|-----------|
-| `max` | number | sim | Número máximo de linhas (ex.: 80) |
-| `kind` | string | não | Filtrar por `kind` |
-| `file` | string | não | Glob: regra só nesses arquivos |
+| Campo  | Tipo   | Obrigatório | Descrição                         |
+| ------ | ------ | ----------- | --------------------------------- |
+| `max`  | number | sim         | Número máximo de linhas (ex.: 80) |
+| `kind` | string | não         | Filtrar por `kind`                |
+| `file` | string | não         | Glob: regra só nesses arquivos    |
 
 **Exemplo:**
 
@@ -276,11 +269,11 @@ Em **qualquer regra** você pode definir `ignore` no `config` para não aplicar 
 
 **Config:**
 
-| Campo | Tipo | Obrigatório | Descrição |
-|-------|------|-------------|-----------|
-| `scope` | string | não | `"all"` (padrão) ou `"public"` — em `public` só símbolos com `visibility === "public"` são checados |
-| `kind` | string | não | Filtrar por `kind` (ex.: `method`, `function`) |
-| `file` | string | não | Glob: regra só nesses arquivos |
+| Campo   | Tipo   | Obrigatório | Descrição                                                                                           |
+| ------- | ------ | ----------- | --------------------------------------------------------------------------------------------------- |
+| `scope` | string | não         | `"all"` (padrão) ou `"public"` — em `public` só símbolos com `visibility === "public"` são checados |
+| `kind`  | string | não         | Filtrar por `kind` (ex.: `method`, `function`)                                                      |
+| `file`  | string | não         | Glob: regra só nesses arquivos                                                                      |
 
 **Exemplo:**
 
@@ -305,41 +298,74 @@ Todas as regras aceitam:
 
 ---
 
-## Gerando uma base por linguagem
+## Configurando uma base por linguagem
 
-```bash
-docs-kit init-arch-guard --lang php --out arch-guard.json
+No `docs.config.js`, use `archGuard.languages` para escolher linguagens, ignorar paths, excluir regras e sobrescrever limites:
+
+```javascript
+export default {
+  archGuard: {
+    languages: [
+      {
+        language: "php",
+        ignorePaths: ["**/legacy/**", "**/vendor/**"],
+        overrideRules: [{ code: "php:max_complexity", config: { max: 15 } }],
+        excludeRules: ["php:missing_return_type_strict"],
+      },
+      {
+        language: "typescript",
+        ignorePaths: ["**/*.test.ts", "**/__tests__/**"],
+      },
+    ],
+  },
+};
 ```
 
-Isso cria um `arch-guard.json` com:
+Depois rode:
 
-- Regras de camada e import proibido de exemplo
-- Convenções de nome para classe/método/função com **allowNames** preenchidos com os nomes especiais da linguagem (ex.: PHP `__construct`, Python `__init__`)
-- Regras de métricas: `max_complexity`, `max_parameters`, `max_lines` (e opcionalmente `missing_return_type`)
-
-Opções úteis:
-
-- `--lang ts|js|php|python|go` — linguagem (ts/js compartilham base)
-- `--out path` — arquivo de saída (padrão: `arch-guard.json` na raiz)
-
-Depois você pode editar `arch-guard.json` para ajustar limites, adicionar regras ou restringir por `file`/`kind`.
+```bash
+docs-kit index
+docs-kit check --checks architecture
+```
 
 ---
 
-## Estrutura do arquivo de configuração
+## Estrutura da configuração
 
-```json
-{
-  "rules": [
-    {
-      "name": "unique-rule-name",
-      "description": "Optional description",
-      "type": "layer_boundary | forbidden_import | naming_convention | max_complexity | max_parameters | max_lines | missing_return_type",
-      "severity": "error | warning",
-      "config": { ... }
-    }
-  ]
-}
+```javascript
+export default {
+  archGuard: {
+    languages: [
+      {
+        language: "typescript",
+        rules: ["typescript:layer_boundary"],
+        ignorePaths: ["**/*.test.ts"],
+        overrideRules: [{ code: "typescript:max_complexity", config: { max: 12 } }],
+        excludeRules: ["typescript:missing_return_type"],
+      },
+    ],
+    customRules: [
+      {
+        language: ["typescript"],
+        code: "custom:no_todo",
+        description: "No TODO comments",
+        severity: "warning",
+        check: (content) => (content.match(/TODO:/g) || []).length,
+      },
+    ],
+  },
+};
 ```
 
-O Arch-Guard é usado no **smart-code-review**, **project-status** e em fluxos que carregam `arch-guard.json` e chamam `archGuard.analyze(symbols, relationships)`.
+Campos principais:
+
+| Campo                       | Descrição                                                                                      |
+| --------------------------- | ---------------------------------------------------------------------------------------------- |
+| `languages[].language`      | Linguagem alvo (`typescript`, `javascript`, `php`, etc.)                                       |
+| `languages[].rules`         | Whitelist opcional de códigos. Quando omitido, aplica todas as regras disponíveis da linguagem |
+| `languages[].ignorePaths`   | Globs ignorados ao filtrar violações                                                           |
+| `languages[].overrideRules` | Sobrescreve severity/config de uma regra pelo código                                           |
+| `languages[].excludeRules`  | Remove regras da seleção final                                                                 |
+| `customRules`               | Regras customizadas baseadas no conteúdo do arquivo                                            |
+
+O Arch-Guard é usado por `docs-kit check --checks architecture`, pela tool MCP `smartCodeReview`, pela tool MCP `projectStatus` e por fluxos internos que chamam `archGuard.analyze(symbols, relationships)`.

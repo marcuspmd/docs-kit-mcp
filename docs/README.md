@@ -24,6 +24,7 @@ O **docs-kit** é um sistema completo de documentação automática que:
 **[→ Visão Geral da Arquitetura](./ARCHITECTURE.md)**
 
 Entenda como todos os componentes do sistema trabalham juntos:
+
 - Fluxo de dados completo
 - Padrões de design aplicados
 - Princípios arquiteturais
@@ -34,24 +35,43 @@ Entenda como todos os componentes do sistema trabalham juntos:
 ### Interface Layer
 
 #### [CLI - Command Line Interface](./modules/cli.md)
-Interface de linha de comando com 20+ comandos:
+
+Interface de linha de comando com 13 comandos explícitos e um menu interativo:
+
 - `docs-kit index` - Indexa símbolos e relacionamentos
 - `docs-kit build-site` - Gera site HTML
-- `docs-kit generate-docs` - Atualiza docs para mudanças
-- `docs-kit project-status` - Relatório de saúde do projeto
-- E muito mais...
+- `docs-kit diff` - Gera preview PR-style de mudanças e documentação
+- `docs-kit check` - Exibe checks de cobertura, arquitetura e documentação
+- `docs-kit inspect` - Mostra métricas de contexto para símbolos e arquivos
 
 #### [MCP Server - Model Context Protocol](./modules/mcp-server.md)
+
 Servidor MCP para integração com LLMs:
-- 18 tools registradas
+
+- 21 tools registradas
 - Integração com Claude Desktop
-- Suporte para VS Code (futuro)
+- Suporte a clientes MCP como Copilot, Claude e ferramentas compatíveis
 - Protocolo stdio para comunicação
+
+### Módulos de Suporte
+
+Além dos módulos centrais, o código inclui áreas especializadas que dão sustentação às ferramentas:
+
+- [Handlers](./modules/handlers.md) - pipelines de explicação, cache e resolução de contexto
+- [Business Layer](./modules/business.md) - tradução de símbolos para linguagem de negócio e matriz de rastreabilidade
+- [Pattern Analyzer](./modules/patterns.md) - detecção de patterns e violações de design
+- [Event Flow Analyzer](./modules/events.md) - análise e visualização de fluxos de eventos
+- [Interfaces and API Sync](./modules/interfaces.md) - sincronização com contratos externos como OpenAPI
+- [Dependency Injection](./modules/di.md) - wiring de serviços com `tsyringe`
+- [Prompt Templates](./modules/prompts.md) - prompts tipados para LLM e atualização de docs
+- [Languages and Shared Types](./modules/languages-and-types.md) - linguagens suportadas, aliases e declarações Tree-sitter
 
 ### Core Services
 
 #### [Indexer - Extração de Símbolos](./modules/indexer.md)
+
 Análise de código via Tree-sitter:
+
 - Parse AST multi-linguagem
 - Extração de símbolos (classes, funções, métodos)
 - Detecção de relacionamentos
@@ -59,14 +79,18 @@ Análise de código via Tree-sitter:
 - Suporte incremental (file hashing)
 
 #### [Analyzer - Detecção de Mudanças](./modules/analyzer.md)
+
 Análise semântica de mudanças no código:
+
 - Git diff parsing
 - AST diff comparison
 - Detecção de mudanças semânticas (não só textuais)
 - Geração de ChangeImpacts para doc updates
 
 #### [Docs - Gestão de Documentação](./modules/docs.md)
+
 Sistema completo de documentação:
+
 - **DocRegistry**: Mapeamento símbolo ↔ doc
 - **DocUpdater**: Atualizações cirúrgicas (section-level)
 - **DocScanner**: Detecção de símbolos sem docs
@@ -76,7 +100,9 @@ Sistema completo de documentação:
 ### Analysis Layer
 
 #### [Governance - Qualidade e Compliance](./modules/governance.md)
+
 Ferramentas de governança de código:
+
 - **Arch Guard**: Enforça regras arquiteturais
 - **Reaper**: Detecta dead code e orphan docs
 - **Project Status**: Relatórios de saúde
@@ -84,7 +110,9 @@ Ferramentas de governança de código:
 - **Doc Guard**: Gate para CI/CD
 
 #### [Knowledge - Grafo e RAG](./modules/knowledge.md)
+
 Sistema de conhecimento inteligente:
+
 - **Knowledge Graph**: Grafo de dependências
 - **RAG Index**: Busca semântica via embeddings
 - **Context Builder**: Monta contexto para LLMs
@@ -93,14 +121,18 @@ Sistema de conhecimento inteligente:
 ### Integration Layer
 
 #### [LLM - Abstração de Provedores](./modules/llm.md)
+
 Interface unificada para múltiplos LLMs:
+
 - **Providers**: OpenAI, Claude, Gemini, Ollama
 - **Strategy Pattern**: Troca transparente
 - **Factory**: Criação baseada em config
 - Chat e embeddings padronizados
 
 #### [Storage - Persistência SQLite](./modules/storage.md)
+
 Camada de persistência:
+
 - **Schema Management**: Criação e migração
 - **Repository Pattern**: Abstrações para dados
 - **Prepared Statements**: Performance otimizada
@@ -109,7 +141,9 @@ Camada de persistência:
 ### Output Layer
 
 #### [Site - Geração de Documentação](./modules/site.md)
+
 Geradores de documentação estática:
+
 - **HTML Generator**: Sites navegáveis
 - **Markdown Generator**: Docs estruturadas
 - **Smart Diagrams**: Mermaid automático
@@ -162,32 +196,26 @@ export default {
   llm: {
     provider: "openai",
     model: "gpt-4-turbo",
-    embeddingModel: "text-embedding-ada-002"
+    embeddingModel: "text-embedding-ada-002",
   },
   // Regras de governança arquitetural
   archGuard: {
-    rules: [
+    languages: [
       {
-        name: "max-complexity",
-        type: "max_complexity",
-        severity: "warning",
-        config: { threshold: 10, kinds: ["function", "method"] }
+        language: "typescript",
+        ignorePaths: ["**/*.test.ts", "**/__tests__/**"],
+        overrideRules: [{ code: "typescript:max_complexity", config: { max: 12 } }],
       },
       {
-        name: "naming-convention",
-        type: "naming_convention",
-        severity: "error",
-        config: {
-          pattern: "^[A-Z][a-zA-Z0-9]*$",
-          kinds: ["class", "interface"]
-        }
-      }
-    ]
-  }
+        language: "javascript",
+        excludeRules: ["typescript:missing_return_type"],
+      },
+    ],
+  },
 };
 ```
 
-**Dica:** Use `docs-kit init-arch-guard --lang ts` para gerar um snippet de configuração com regras padrão.
+**Dica:** configure `archGuard.languages` em `docs.config.js` e rode `docs-kit check --checks architecture` para validar as regras contra o índice.
 
 ## 🔄 Workflows Comuns
 
@@ -201,7 +229,7 @@ docs-kit init
 docs-kit index
 
 # Escanear arquivos sem docs
-docs-kit scan-file src/main.ts
+docs-kit explain-symbol main
 
 # Gerar site
 docs-kit build-site
@@ -214,7 +242,7 @@ docs-kit build-site
 docs-kit index
 
 # Gerar docs para mudanças
-docs-kit generate-docs --base main --head feature/new-api
+docs-kit diff main --head feature/new-api
 
 # Validar docs
 docs-kit validate-examples
@@ -227,13 +255,13 @@ docs-kit build-site
 
 ```bash
 # Análise completa
-docs-kit smart-code-review
+docs-kit check
 
 # Status do projeto
-docs-kit project-status
+docs-kit inspect buildRelevantContext
 
 # Detectar dead code
-docs-kit dead-code
+docs-kit analyze-patterns
 
 # Validar arquitetura
 docs-kit analyze-patterns
@@ -243,10 +271,10 @@ docs-kit analyze-patterns
 
 ```bash
 # Via CLI
-docs-kit ask-knowledge-base "Como funciona a autenticação?"
+docs-kit explain-symbol AuthService
 
 # Via MCP (Claude Desktop)
-# Use o tool "askKnowledgeBase" diretamente no chat
+# Use a tool "askKnowledgeBase" diretamente no chat
 ```
 
 ## 🧪 Testing
@@ -275,7 +303,7 @@ Mostra todos os símbolos afetados se `OrderService` mudar.
 ### Matriz de Rastreabilidade
 
 ```bash
-docs-kit traceability-matrix
+Use a tool MCP `buildTraceabilityMatrix`.
 ```
 
 Liga tickets → símbolos → testes → docs.
@@ -283,7 +311,7 @@ Liga tickets → símbolos → testes → docs.
 ### Event Flow
 
 ```bash
-docs-kit generate-event-flow
+Use a tool MCP `generateEventFlow`.
 ```
 
 Gera diagrama de event emitters e listeners.
@@ -322,6 +350,7 @@ Detecta patterns (Factory, Singleton, etc.) e violations (SOLID).
 ### VS Code Extension (Futuro)
 
 Comandos planejados:
+
 - Explain Symbol at Cursor
 - Generate Docs for File
 - Update Documentation
@@ -349,7 +378,7 @@ Use `docs-kit scan-file` para documentar progressivamente:
 
 ```bash
 # Documenta um arquivo por vez
-docs-kit scan-file src/services/order.ts
+Use a tool MCP `scanFile` para documentar um arquivo por vez.
 ```
 
 ### Arch Guard
@@ -357,7 +386,7 @@ docs-kit scan-file src/services/order.ts
 Inicie com regras base e customize:
 
 ```bash
-docs-kit init-arch-guard --lang ts --out arch-guard.json
+Configure `archGuard` em `docs.config.js` e rode `docs-kit check --checks architecture`.
 ```
 
 ### RAG Index
@@ -420,18 +449,21 @@ MIT
 ## 🗺️ Roadmap
 
 ### v1.1 (Q2 2026)
+
 - [ ] VS Code Extension
 - [ ] Approximate NN para RAG (FAISS)
 - [ ] Worker threads para parallel parsing
 - [ ] Python, PHP, Go support
 
 ### v1.2 (Q3 2026)
+
 - [ ] Web UI (dashboard)
 - [ ] Realtime doc updates
 - [ ] Team collaboration features
 - [ ] Docker support
 
 ### v2.0 (Q4 2026)
+
 - [ ] Cloud-hosted version
 - [ ] Multi-repo support
 - [ ] Advanced analytics

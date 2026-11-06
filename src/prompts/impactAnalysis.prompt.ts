@@ -19,6 +19,15 @@ export function buildImpactAnalysisPrompt(input: ImpactAnalysisInput): string {
   ];
 
   if (targetSymbol.signature) parts.push(`- **Signature**: \`${targetSymbol.signature}\``);
+  if (targetSymbol.security?.isSensitive) {
+    parts.push(
+      `- **🔐 Security-sensitive** (${targetSymbol.security.categories.join(", ")})`,
+    );
+  }
+  if (targetSymbol.changeVelocity?.isHotspot) {
+    const v = targetSymbol.changeVelocity;
+    parts.push(`- **⚠️ Hotspot**: ${v.changeCount30d} changes in 30 days`);
+  }
 
   parts.push(
     ``,
@@ -37,7 +46,11 @@ export function buildImpactAnalysisPrompt(input: ImpactAnalysisInput): string {
   for (const [layer, syms] of byLayer) {
     parts.push(``, `### ${layer} layer (${syms.length})`);
     for (const sym of syms) {
-      parts.push(`- ${sym.name} (${sym.kind} in ${sym.file})`);
+      const tags: string[] = [];
+      if (sym.security?.isSensitive) tags.push("🔐 security");
+      if (sym.changeVelocity?.isHotspot) tags.push(`⚠️ hotspot (${sym.changeVelocity.changeCount30d}d/30d)`);
+      const annotation = tags.length > 0 ? ` [${tags.join(", ")}]` : "";
+      parts.push(`- ${sym.name} (${sym.kind} in ${sym.file})${annotation}`);
     }
   }
 

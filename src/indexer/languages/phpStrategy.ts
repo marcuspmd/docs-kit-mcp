@@ -25,62 +25,52 @@ export class PhpStrategy implements LanguageStrategy {
    */
   extractUseStatements(root: Parser.SyntaxNode): Map<string, string> {
     const imports = new Map<string, string>();
-
     for (const child of root.children) {
       if (child.type === "namespace_use_declaration") {
         for (const clause of child.children) {
           if (clause.type === "namespace_use_clause") {
-            const nameNode = clause.children.find(
-              (c) => c.type === "name" || c.type === "qualified_name",
-            );
-            if (nameNode) {
-              const qualifiedName = nameNode.text;
-              // Check for alias: `use Foo\Bar as Baz;`
-              const aliasNode = clause.children.find((c) => c.type === "namespace_aliasing_clause");
-              let alias: string;
-              if (aliasNode) {
-                const aliasName = aliasNode.children.find((c) => c.type === "name");
-                alias = aliasName?.text ?? qualifiedName.split("\\").pop()!;
-              } else {
-                alias = qualifiedName.split("\\").pop()!;
-              }
-              imports.set(alias, qualifiedName);
-            }
+            this._resolveUseClause(clause, imports);
           } else if (clause.type === "namespace_use_group") {
-            // Handle group imports: `use App\Services\{Request, Response};`
-            const prefixNode = clause.children.find(
-              (c) => c.type === "name" || c.type === "qualified_name",
-            );
-            const prefix = prefixNode?.text ?? "";
-
-            for (const groupClause of clause.children) {
-              if (groupClause.type === "namespace_use_group_clause") {
-                const subName = groupClause.children.find(
-                  (c) => c.type === "name" || c.type === "qualified_name",
-                );
-                if (subName) {
-                  const qualifiedName = prefix ? `${prefix}\\${subName.text}` : subName.text;
-                  // Check for alias within group
-                  const aliasNode = groupClause.children.find(
-                    (c) => c.type === "namespace_aliasing_clause",
-                  );
-                  let alias: string;
-                  if (aliasNode) {
-                    const aliasName = aliasNode.children.find((c) => c.type === "name");
-                    alias = aliasName?.text ?? subName.text.split("\\").pop()!;
-                  } else {
-                    alias = subName.text.split("\\").pop()!;
-                  }
-                  imports.set(alias, qualifiedName);
-                }
-              }
-            }
+            this._resolveUseGroup(clause, imports);
           }
         }
       }
     }
-
     return imports;
+  }
+
+  private _resolveUseClause(clause: Parser.SyntaxNode, imports: Map<string, string>): void {
+    const nameNode = clause.children.find((c) => c.type === "name" || c.type === "qualified_name");
+    if (!nameNode) return;
+    const qualifiedName = nameNode.text;
+    const aliasNode = clause.children.find((c) => c.type === "namespace_aliasing_clause");
+    const alias = aliasNode
+      ? (aliasNode.children.find((c) => c.type === "name")?.text ??
+        qualifiedName.split("\\").pop()!)
+      : qualifiedName.split("\\").pop()!;
+    imports.set(alias, qualifiedName);
+  }
+
+  private _resolveUseGroup(clause: Parser.SyntaxNode, imports: Map<string, string>): void {
+    const prefixNode = clause.children.find(
+      (c) => c.type === "name" || c.type === "qualified_name",
+    );
+    const prefix = prefixNode?.text ?? "";
+    for (const groupClause of clause.children) {
+      if (groupClause.type === "namespace_use_group_clause") {
+        const subName = groupClause.children.find(
+          (c) => c.type === "name" || c.type === "qualified_name",
+        );
+        if (!subName) continue;
+        const qualifiedName = prefix ? `${prefix}\\${subName.text}` : subName.text;
+        const aliasNode = groupClause.children.find((c) => c.type === "namespace_aliasing_clause");
+        const alias = aliasNode
+          ? (aliasNode.children.find((c) => c.type === "name")?.text ??
+            subName.text.split("\\").pop()!)
+          : subName.text.split("\\").pop()!;
+        imports.set(alias, qualifiedName);
+      }
+    }
   }
 
   buildQualifiedName(name: string, parentName?: string, namespace?: string): string {
@@ -245,7 +235,8 @@ export class PhpStrategy implements LanguageStrategy {
         member.type === "method_declaration" &&
         member.childForFieldName("name")?.text === "__construct"
       ) {
-        const params = member.childForFieldName("parameters") ??
+        const params =
+          member.childForFieldName("parameters") ??
           member.children.find((c) => c.type === "formal_parameters");
         if (!params) continue;
 
@@ -270,7 +261,8 @@ export class PhpStrategy implements LanguageStrategy {
       // attribute_list  → attribute { name: "Inject" / "Autowire" / ... }
       // property_declaration → named_type
       if (member.type === "property_declaration") {
-        const hasInjectAttr = member.previousNamedSibling?.type === "attribute_list" &&
+        const hasInjectAttr =
+          member.previousNamedSibling?.type === "attribute_list" &&
           PHP_INJECT_ATTRS.test(member.previousNamedSibling.text);
 
         if (!hasInjectAttr) continue;
@@ -403,117 +395,128 @@ export class PhpStrategy implements LanguageStrategy {
     file: string,
     ctx?: ResolutionContext,
   ): void {
-    // Extract function calls
     if (node.type === "function_call_expression") {
-      const functionNode = node.childForFieldName("function");
-      if (functionNode?.type === "name" || functionNode?.type === "qualified_name") {
-        const funcName = functionNode.text;
-        const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
-        if (!enclosing) return;
-
-        // If it's a fully qualified name (starts with \), use it directly
-        if (funcName.startsWith("\\")) {
-          addRel(enclosing.id, funcName.slice(1), "calls", file, node.startPosition.row + 1, ctx);
-          return;
-        }
-
-        // If it's already a qualified name (contains \), use it directly
-        if (funcName.includes("\\")) {
-          // Could be relative to current namespace or absolute
-          const qualifiedName = ctx?.namespace ? `${ctx.namespace}\\${funcName}` : funcName;
-          addRel(enclosing.id, qualifiedName, "calls", file, node.startPosition.row + 1, ctx);
-          return;
-        }
-
-        // Short name - need to verify it's a known function
-        // Check if function is defined locally in the same file
-        const isLocalFunction = symsInFile.some(
-          (s) => s.kind === "function" && (s.name === funcName || s.name.endsWith(`\\${funcName}`)),
-        );
-
-        // Check if there's a use statement for this function
-        // (ctx.imports contains class imports, but PHP also has `use function`)
-        const isImported = ctx?.imports.has(funcName);
-
-        // Build qualified name using namespace if available
-        const qualifiedName = ctx?.namespace ? `${ctx.namespace}\\${funcName}` : funcName;
-
-        // Check if a function with this qualified name exists in the index
-        const existsInNamespace = symsInFile.some(
-          (s) => s.kind === "function" && s.name === qualifiedName,
-        );
-
-        // Only create relationship if we have confidence about the target
-        if (isLocalFunction || isImported || existsInNamespace) {
-          addRel(enclosing.id, qualifiedName, "calls", file, node.startPosition.row + 1, ctx);
-        }
-      }
+      this._extractFunctionCallRel(node, symsInFile, addRel, file, ctx);
     }
-
-    // Extract member access - only for static class method calls
     if (node.type === "member_access_expression" || node.type === "member_call_expression") {
-      const object = node.childForFieldName("object");
+      this._extractMemberAccessRel(node, symsInFile, addRel, file, ctx);
+    }
+    if (node.type === "member_call_expression") {
+      this._extractThisCallRel(node, symsInFile, addRel, file, ctx);
+    }
+  }
 
-      // Skip variable access like $this->method() or $obj->method()
-      if (object?.type === "variable_name" && object.text.startsWith("$")) {
-        return;
-      }
+  private _extractFunctionCallRel(
+    node: Parser.SyntaxNode,
+    symsInFile: CodeSymbol[],
+    addRel: AddRelFn,
+    file: string,
+    ctx?: ResolutionContext,
+  ): void {
+    const functionNode = node.childForFieldName("function");
+    if (functionNode?.type !== "name" && functionNode?.type !== "qualified_name") return;
 
-      // Handle static class access like ClassName::method()
-      if (object?.type === "name" || object?.type === "qualified_name") {
-        const className = object.text;
-        const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
-        if (!enclosing) return;
+    const funcName = functionNode.text;
+    const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
+    if (!enclosing) return;
 
-        // If it's a fully qualified name, use it directly
-        if (className.startsWith("\\")) {
-          addRel(enclosing.id, className.slice(1), "uses", file, node.startPosition.row + 1, ctx);
-          return;
-        }
-
-        // Check if this class is imported via use statement
-        if (ctx?.imports.has(className)) {
-          const qualifiedName = ctx.imports.get(className)!;
-          addRel(enclosing.id, qualifiedName, "uses", file, node.startPosition.row + 1, ctx);
-          return;
-        }
-
-        // Check if class exists in current namespace
-        const qualifiedName = ctx?.namespace ? `${ctx.namespace}\\${className}` : className;
-        const existsInNamespace = symsInFile.some(
-          (s) =>
-            (s.kind === "class" || s.kind === "abstract_class" || s.kind === "interface") &&
-            s.name === qualifiedName,
-        );
-
-        if (existsInNamespace || className.includes("\\")) {
-          addRel(enclosing.id, qualifiedName, "uses", file, node.startPosition.row + 1, ctx);
-        }
-      }
+    if (funcName.startsWith("\\")) {
+      addRel(enclosing.id, funcName.slice(1), "calls", file, node.startPosition.row + 1, ctx);
+      return;
+    }
+    if (funcName.includes("\\")) {
+      const qualifiedName = ctx?.namespace ? `${ctx.namespace}\\${funcName}` : funcName;
+      addRel(enclosing.id, qualifiedName, "calls", file, node.startPosition.row + 1, ctx);
+      return;
     }
 
-    // Handle $this->method() calls - create relationship to parent class method
-    if (node.type === "member_call_expression") {
-      const object = node.childForFieldName("object");
-      const methodName = node.childForFieldName("name")?.text;
+    const qualifiedName = ctx?.namespace ? `${ctx.namespace}\\${funcName}` : funcName;
+    const isLocalFunction = symsInFile.some(
+      (s) => s.kind === "function" && (s.name === funcName || s.name.endsWith(`\\${funcName}`)),
+    );
+    const isImported = ctx?.imports.has(funcName);
+    const existsInNamespace = symsInFile.some(
+      (s) => s.kind === "function" && s.name === qualifiedName,
+    );
 
-      if (object?.type === "variable_name" && object.text === "$this" && methodName) {
-        const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
-        if (!enclosing) return;
+    if (isLocalFunction || isImported || existsInNamespace) {
+      addRel(enclosing.id, qualifiedName, "calls", file, node.startPosition.row + 1, ctx);
+    }
+  }
 
-        // Find the parent class
-        const parentClass = symsInFile.find(
-          (s) =>
-            s.id === enclosing.parent &&
-            (s.kind === "class" || s.kind === "abstract_class" || s.kind === "service"),
-        );
+  private _extractMemberAccessRel(
+    node: Parser.SyntaxNode,
+    symsInFile: CodeSymbol[],
+    addRel: AddRelFn,
+    file: string,
+    ctx?: ResolutionContext,
+  ): void {
+    const object = node.childForFieldName("object");
 
-        if (parentClass) {
-          // Use qualified method name: ClassName.methodName
-          const qualifiedMethodName = `${parentClass.name}.${methodName}`;
-          addRel(enclosing.id, qualifiedMethodName, "calls", file, node.startPosition.row + 1, ctx);
-        }
-      }
+    // Skip variable access like $this->method() or $obj->method()
+    if (object?.type === "variable_name" && object.text.startsWith("$")) return;
+
+    if (object?.type !== "name" && object?.type !== "qualified_name") return;
+
+    const className = object.text;
+    const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
+    if (!enclosing) return;
+
+    if (className.startsWith("\\")) {
+      addRel(enclosing.id, className.slice(1), "uses", file, node.startPosition.row + 1, ctx);
+      return;
+    }
+    if (ctx?.imports.has(className)) {
+      addRel(
+        enclosing.id,
+        ctx.imports.get(className)!,
+        "uses",
+        file,
+        node.startPosition.row + 1,
+        ctx,
+      );
+      return;
+    }
+
+    const qualifiedName = ctx?.namespace ? `${ctx.namespace}\\${className}` : className;
+    const existsInNamespace = symsInFile.some(
+      (s) =>
+        (s.kind === "class" || s.kind === "abstract_class" || s.kind === "interface") &&
+        s.name === qualifiedName,
+    );
+    if (existsInNamespace || className.includes("\\")) {
+      addRel(enclosing.id, qualifiedName, "uses", file, node.startPosition.row + 1, ctx);
+    }
+  }
+
+  private _extractThisCallRel(
+    node: Parser.SyntaxNode,
+    symsInFile: CodeSymbol[],
+    addRel: AddRelFn,
+    file: string,
+    ctx?: ResolutionContext,
+  ): void {
+    const object = node.childForFieldName("object");
+    const methodName = node.childForFieldName("name")?.text;
+    if (object?.type !== "variable_name" || object.text !== "$this" || !methodName) return;
+
+    const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile);
+    if (!enclosing) return;
+
+    const parentClass = symsInFile.find(
+      (s) =>
+        s.id === enclosing.parent &&
+        (s.kind === "class" || s.kind === "abstract_class" || s.kind === "service"),
+    );
+    if (parentClass) {
+      addRel(
+        enclosing.id,
+        `${parentClass.name}.${methodName}`,
+        "calls",
+        file,
+        node.startPosition.row + 1,
+        ctx,
+      );
     }
   }
 }
@@ -544,12 +547,34 @@ const PHP_INJECT_ATTRS = /\#\[\s*(Inject|Autowire|Autowired|Required)\s*[(\]]/i;
  * that are never user-defined services.
  */
 const PHP_PRIMITIVES = new Set([
-  "int", "float", "string", "bool", "array", "callable", "void",
-  "null", "mixed", "never", "self", "static", "parent", "object",
-  "iterable", "resource", "false", "true",
+  "int",
+  "float",
+  "string",
+  "bool",
+  "array",
+  "callable",
+  "void",
+  "null",
+  "mixed",
+  "never",
+  "self",
+  "static",
+  "parent",
+  "object",
+  "iterable",
+  "resource",
+  "false",
+  "true",
   // Common SPL types — not user services
-  "Closure", "Generator", "Throwable", "Exception", "Error",
-  "stdClass", "DateTime", "DateTimeImmutable", "DateTimeInterface",
+  "Closure",
+  "Generator",
+  "Throwable",
+  "Exception",
+  "Error",
+  "stdClass",
+  "DateTime",
+  "DateTimeImmutable",
+  "DateTimeInterface",
 ]);
 
 /**
@@ -563,57 +588,49 @@ const PHP_PRIMITIVES = new Set([
  *   intersection_type → named_type ("&" named_type)+
  *   disjunctive_normal_form_type — complex, skip
  */
-function extractPhpTypeHint(
-  node: Parser.SyntaxNode,
-  ctx?: ResolutionContext,
-): string | null {
-  // `simple_parameter` / `promoted_property_parameter` expose the type via
-  // field "type"; `property_declaration` has it as a direct child.
-  const typeNode =
-    node.childForFieldName("type") ??
-    node.children.find((c) =>
-      c.type === "named_type" ||
-      c.type === "nullable_type" ||
-      c.type === "union_type" ||
-      c.type === "intersection_type",
-    );
-
-  if (!typeNode) return null;
-
-  let candidate: Parser.SyntaxNode | null = null;
+function resolvePhpTypeCandidate(typeNode: Parser.SyntaxNode): Parser.SyntaxNode | null {
+  const isNameOrQualified = (c: Parser.SyntaxNode) =>
+    c.type === "name" || c.type === "qualified_name";
 
   if (typeNode.type === "named_type") {
-    candidate = typeNode.children.find(
-      (c) => c.type === "name" || c.type === "qualified_name",
-    ) ?? null;
-  } else if (typeNode.type === "nullable_type") {
-    // ?ClassName → descend into the inner named_type
+    return typeNode.children.find(isNameOrQualified) ?? null;
+  }
+
+  if (typeNode.type === "nullable_type") {
     const inner = typeNode.children.find((c) => c.type === "named_type");
-    candidate = inner?.children.find(
-      (c) => c.type === "name" || c.type === "qualified_name",
-    ) ?? null;
-  } else if (typeNode.type === "union_type" || typeNode.type === "intersection_type") {
-    // Take the first non-null/non-false/non-true named_type
+    return inner?.children.find(isNameOrQualified) ?? null;
+  }
+
+  if (typeNode.type === "union_type" || typeNode.type === "intersection_type") {
     for (const child of typeNode.children) {
       if (child.type === "named_type") {
-        const nameNode = child.children.find(
-          (c) => c.type === "name" || c.type === "qualified_name",
-        );
-        if (nameNode && !PHP_PRIMITIVES.has(nameNode.text)) {
-          candidate = nameNode;
-          break;
-        }
+        const nameNode = child.children.find(isNameOrQualified);
+        if (nameNode && !PHP_PRIMITIVES.has(nameNode.text)) return nameNode;
       }
     }
   }
 
+  return null;
+}
+
+function extractPhpTypeHint(node: Parser.SyntaxNode, ctx?: ResolutionContext): string | null {
+  const typeNode =
+    node.childForFieldName("type") ??
+    node.children.find(
+      (c) =>
+        c.type === "named_type" ||
+        c.type === "nullable_type" ||
+        c.type === "union_type" ||
+        c.type === "intersection_type",
+    );
+
+  if (!typeNode) return null;
+
+  const candidate = resolvePhpTypeCandidate(typeNode);
   if (!candidate) return null;
 
   const name = candidate.text;
   if (!name || PHP_PRIMITIVES.has(name)) return null;
 
-  // Resolve short name via use-statement imports in context
-  if (ctx?.imports.has(name)) return ctx.imports.get(name)!;
-
-  return name;
+  return ctx?.imports.has(name) ? ctx.imports.get(name)! : name;
 }

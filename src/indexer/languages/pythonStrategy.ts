@@ -37,17 +37,98 @@ export class PythonStrategy extends DefaultStrategy implements LanguageStrategy 
     this._extractPythonDiRelationships(node, classSymbol, addRel, file, ctx);
   }
 
-  override refineKind(
-    kind: SymbolKind,
-    name: string,
-  ): SymbolKind {
+  /**
+   * Map local names to `module/path::OriginalName` for `from x.y import Z [as W]`.
+   * Relative imports drop their leading dots; `from . import mod` is skipped
+   * (imports a module, not a symbol).
+   */
+  extractImports(root: Parser.SyntaxNode): Map<string, string> {
+    const imports = new Map<string, string>();
+    for (const node of root.descendantsOfType("import_from_statement")) {
+      const moduleNode = node.childForFieldName("module_name");
+      const modulePath = (moduleNode?.text ?? "").replace(/^\.+/, "").replace(/\./g, "/");
+      if (!modulePath) continue;
+      for (const nameNode of node.childrenForFieldName("name")) {
+        if (nameNode.type === "aliased_import") {
+          const original = nameNode.childForFieldName("name")?.text;
+          const alias = nameNode.childForFieldName("alias")?.text;
+          if (original && alias) imports.set(alias, `${modulePath}::${original}`);
+        } else if (nameNode.type === "dotted_name") {
+          imports.set(nameNode.text, `${modulePath}::${nameNode.text}`);
+        }
+      }
+    }
+    return imports;
+  }
+
+  /** `from x import Y` at module level: emit a `uses` edge from the file's top symbol. */
+  override extractImportRelationships(
+    node: Parser.SyntaxNode,
+    symsInFile: CodeSymbol[],
+    addRel: AddRelFn,
+    file: string,
+    ctx?: ResolutionContext,
+  ): void {
+    if (node.type !== "import_from_statement" || !ctx) return;
+    const source = symsInFile.find((s) => !s.parent) ?? { id: `module::${file}` };
+    for (const nameNode of node.childrenForFieldName("name")) {
+      const local =
+        nameNode.type === "aliased_import"
+          ? nameNode.childForFieldName("alias")?.text
+          : nameNode.text;
+      const target = local ? ctx.imports.get(local) : undefined;
+      if (target) addRel(source.id, target, "uses", file, node.startPosition.row + 1, ctx);
+    }
+  }
+
+  /**
+   * Calls to imported/local names: `XService(...)` → instantiates (PascalCase),
+   * `get_repo()` → calls. Identifier arguments that are imported names
+   * (e.g. `Depends(get_repo)`, `service=my_factory`) become `uses` edges.
+   */
+  override extractInstantiationRelationships(
+    node: Parser.SyntaxNode,
+    symsInFile: CodeSymbol[],
+    addRel: AddRelFn,
+    file: string,
+    ctx?: ResolutionContext,
+  ): void {
+    if (node.type !== "call") return;
+    const fn = node.childForFieldName("function");
+    if (fn?.type !== "identifier") return;
+    const enclosing = findEnclosingSymbol(node.startPosition.row, symsInFile) ?? {
+      id: `module::${file}`,
+    };
+    const isLocal = (name: string) =>
+      symsInFile.some((s) => s.name === name || s.name.endsWith(`.${name}`));
+    const resolveName = (name: string): string | undefined =>
+      ctx?.imports.get(name) ?? (isLocal(name) ? name : undefined);
+    const line = node.startPosition.row + 1;
+
+    const target = resolveName(fn.text);
+    if (target) {
+      const type = /^[A-Z]/.test(fn.text) ? "instantiates" : "calls";
+      addRel(enclosing.id, target, type, file, line, ctx);
+    }
+
+    const args = node.childForFieldName("arguments");
+    for (const arg of args?.namedChildren ?? []) {
+      const value = arg.type === "keyword_argument" ? arg.childForFieldName("value") : arg;
+      if (value?.type !== "identifier") continue;
+      const argTarget = ctx?.imports.get(value.text);
+      if (argTarget) addRel(enclosing.id, argTarget, "uses", file, line, ctx);
+    }
+  }
+
+  override refineKind(kind: SymbolKind, name: string): SymbolKind {
     if (kind !== "class") return kind;
     const n = name.toLowerCase();
     if (n.endsWith("service")) return "service";
     if (n.endsWith("repository") || n.endsWith("repo")) return "repository";
     if (n.endsWith("controller") || n.endsWith("view")) return "controller";
     if (n.endsWith("event")) return "event";
-    if (n.endsWith("listener") || n.endsWith("handler") || n.endsWith("subscriber")) return "listener";
+    if (n.endsWith("listener") || n.endsWith("handler") || n.endsWith("subscriber"))
+      return "listener";
     if (n.endsWith("factory")) return "factory";
     if (n.endsWith("middleware")) return "middleware";
     if (n.endsWith("dto") || n.endsWith("schema") || n.endsWith("serializer")) return "dto";
@@ -119,18 +200,55 @@ export class PythonStrategy extends DefaultStrategy implements LanguageStrategy 
 // ── Python DI helpers ─────────────────────────────────────────────────────────
 
 const PYTHON_PRIMITIVES = new Set([
-  "int", "float", "str", "bool", "bytes", "bytearray",
-  "list", "dict", "tuple", "set", "frozenset",
-  "None", "NoneType", "Any", "Optional", "Union",
-  "Type", "ClassVar", "Final", "Literal",
-  "Callable", "Awaitable", "Coroutine", "AsyncGenerator", "Generator",
-  "Iterator", "Iterable", "AsyncIterator", "AsyncIterable",
-  "Sequence", "MutableSequence", "Mapping", "MutableMapping",
-  "IO", "TextIO", "BinaryIO",
-  "object", "type", "super",
+  "int",
+  "float",
+  "str",
+  "bool",
+  "bytes",
+  "bytearray",
+  "list",
+  "dict",
+  "tuple",
+  "set",
+  "frozenset",
+  "None",
+  "NoneType",
+  "Any",
+  "Optional",
+  "Union",
+  "Type",
+  "ClassVar",
+  "Final",
+  "Literal",
+  "Callable",
+  "Awaitable",
+  "Coroutine",
+  "AsyncGenerator",
+  "Generator",
+  "Iterator",
+  "Iterable",
+  "AsyncIterator",
+  "AsyncIterable",
+  "Sequence",
+  "MutableSequence",
+  "Mapping",
+  "MutableMapping",
+  "IO",
+  "TextIO",
+  "BinaryIO",
+  "object",
+  "type",
+  "super",
   // common typing / annotation helpers
-  "Self", "Never", "LiteralString", "TypeVar", "ParamSpec",
-  "overload", "cast", "no_type_check", "runtime_checkable",
+  "Self",
+  "Never",
+  "LiteralString",
+  "TypeVar",
+  "ParamSpec",
+  "overload",
+  "cast",
+  "no_type_check",
+  "runtime_checkable",
 ]);
 
 /**
@@ -147,21 +265,51 @@ const PYTHON_PRIMITIVES = new Set([
  *   - binary_operator (|)        → Python 3.10 union  ← take first operand
  *   - string (forward ref)       → skip (can't resolve statically)
  */
-function extractPythonType(
-  param: Parser.SyntaxNode,
-  ctx?: ResolutionContext,
-): string | null {
+function extractPythonType(param: Parser.SyntaxNode, ctx?: ResolutionContext): string | null {
   // The type annotation is the child after the identifier and ":"
   // In tree-sitter-python, typed_parameter children:
   //   [0] identifier (param name), [1] ":", [2] type expression
   //   OR field "type" in some grammar versions
   const typeNode =
     param.childForFieldName("type") ??
-    param.children.find((c, i) => i > 0 && c.type !== ":" && c.type !== "identifier" && c.type !== ",");
+    param.children.find(
+      (c, i) => i > 0 && c.type !== ":" && c.type !== "identifier" && c.type !== ",",
+    );
 
   if (!typeNode) return null;
 
   return annotationToTypeName(typeNode, ctx);
+}
+
+function resolveSubscriptAnnotation(
+  typeNode: Parser.SyntaxNode,
+  ctx?: ResolutionContext,
+): string | null {
+  const base = typeNode.childForFieldName("value") ?? typeNode.children[0];
+  const baseText = base?.text ?? "";
+
+  if (baseText === "Optional" || baseText === "typing.Optional") {
+    const sliceNode =
+      typeNode.childForFieldName("subscript") ??
+      typeNode.children.find((c) => c.type !== "identifier" && c.type !== "[" && c.type !== "]");
+    return annotationToTypeName(sliceNode ?? null, ctx);
+  }
+
+  if (baseText === "Union" || baseText === "typing.Union") {
+    const sliceNode =
+      typeNode.childForFieldName("subscript") ??
+      typeNode.children.find((c) => c.type === "tuple" || c.type === "argument_list");
+    if (sliceNode) {
+      for (const child of sliceNode.children) {
+        const result = annotationToTypeName(child, ctx);
+        if (result) return result;
+      }
+    }
+    return null;
+  }
+
+  if (!PYTHON_PRIMITIVES.has(baseText)) return resolveImport(baseText, ctx);
+  return null;
 }
 
 function annotationToTypeName(
@@ -170,50 +318,20 @@ function annotationToTypeName(
 ): string | null {
   if (!typeNode) return null;
 
-  // Direct identifier: PaymentRepository
   if (typeNode.type === "identifier") {
     const name = typeNode.text;
     if (!name || PYTHON_PRIMITIVES.has(name) || name === "self" || name === "cls") return null;
     return resolveImport(name, ctx);
   }
 
-  // Attribute access: services.PaymentRepository
   if (typeNode.type === "attribute") {
-    const name = typeNode.text;
-    return resolveImport(name, ctx);
+    return resolveImport(typeNode.text, ctx);
   }
 
-  // Subscript: Optional[T], List[T], Union[T, ...] etc. — unwrap
   if (typeNode.type === "subscript") {
-    // First child is the generic name, second is the slice / subscript
-    const base = typeNode.childForFieldName("value") ?? typeNode.children[0];
-    const baseText = base?.text ?? "";
-    // For Optional[X] — unwrap to X
-    if (baseText === "Optional" || baseText === "typing.Optional") {
-      const sliceNode =
-        typeNode.childForFieldName("subscript") ??
-        typeNode.children.find((c) => c.type !== "identifier" && c.type !== "[" && c.type !== "]");
-      return annotationToTypeName(sliceNode ?? null, ctx);
-    }
-    // For Union[X, Y, ...] — take first non-None arg
-    if (baseText === "Union" || baseText === "typing.Union") {
-      const sliceNode =
-        typeNode.childForFieldName("subscript") ??
-        typeNode.children.find((c) => c.type === "tuple" || c.type === "argument_list");
-      if (sliceNode) {
-        for (const child of sliceNode.children) {
-          const result = annotationToTypeName(child, ctx);
-          if (result) return result;
-        }
-      }
-      return null;
-    }
-    // For other generics (List[X], Sequence[X], etc.), the service is usually the base
-    if (!PYTHON_PRIMITIVES.has(baseText)) return resolveImport(baseText, ctx);
-    return null;
+    return resolveSubscriptAnnotation(typeNode, ctx);
   }
 
-  // Python 3.10 union: X | Y — take first non-None side
   if (typeNode.type === "binary_operator") {
     const left = typeNode.childForFieldName("left") ?? typeNode.children[0];
     const leftResult = annotationToTypeName(left, ctx);
@@ -230,4 +348,14 @@ function resolveImport(name: string, ctx?: ResolutionContext): string | null {
   // ctx.imports maps short name → full module path (populated from `from X import Y`)
   if (ctx?.imports?.has(name)) return ctx.imports.get(name)!;
   return name;
+}
+
+function findEnclosingSymbol(line: number, symsInFile: CodeSymbol[]): CodeSymbol | undefined {
+  let best: CodeSymbol | undefined;
+  for (const s of symsInFile) {
+    if (s.startLine <= line + 1 && s.endLine >= line + 1) {
+      if (!best || s.endLine - s.startLine < best.endLine - best.startLine) best = s;
+    }
+  }
+  return best;
 }

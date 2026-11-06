@@ -2,7 +2,7 @@
 
 living connection between code & knowledge
 
-**docs-kit** é um agente inteligente de documentação (via MCP) para repositórios de código. Ele usa AST (Tree-sitter) para indexar símbolos, mapeia código para docs Markdown, gera diagramas, mantém um knowledge graph em SQLite e expõe 19 ferramentas MCP para Copilot/Claude. Inclui também um **Context Inspector** interativo para visualizar exatamente o que o agente envia para a IA.
+**docs-kit** é um agente inteligente de documentação (via MCP) para repositórios de código. Ele usa AST (Tree-sitter) para indexar símbolos, mapeia código para docs Markdown, gera diagramas, mantém um knowledge graph em SQLite e expõe 21 ferramentas MCP para Copilot/Claude. Inclui também um **Context Inspector** interativo para visualizar exatamente o que o agente envia para a IA.
 
 ---
 
@@ -10,7 +10,7 @@ living connection between code & knowledge
 
 - **Indexação semântica** — extrai símbolos (classes, funções, interfaces, DTOs…) de TypeScript/JS/Python/Go/PHP/Dart via Tree-sitter
 - **Knowledge graph** — rastreia dependências entre símbolos e mapeia cada símbolo para seu arquivo de doc `.md`
-- **19 ferramentas MCP** — disponíveis em Copilot/Claude: `getRelevantContext`, `explainSymbol`, `impactAnalysis`, `smartCodeReview`, `generateDocs`, e mais
+- **21 ferramentas MCP** — disponíveis em Copilot/Claude: `getRelevantContext`, `explainSymbol`, `impactAnalysis`, `smartCodeReview`, `generateDocs`, e mais
 - **Docs-Guard** — gate de CI/CD que falha o PR se símbolos foram alterados sem atualizar a documentação
 - **Context Inspector** — preview interativo do contexto exato enviado para a IA, com métricas de tokens, latência e cobertura de docs
 
@@ -62,6 +62,31 @@ npm run test           # Executa testes
 npm run test:coverage  # Testes com relatório de cobertura
 npm run format         # Formata código com Prettier
 npm run check:deps     # Verifica dependências instaladas
+
+# Site v2 (React + Vite)
+npm run gen:site       # Gera o site v2 em docs-site-v2/
+npm run serve:site     # Serve o site v2 gerado (produção)
+npm run dev:site       # Inicia Vite dev server do site v2 (hot-reload)
+npm run start:site     # Gera dados e inicia o Vite dev server
+```
+
+### Site v2 — Dashboard interativo
+
+O site v2 é uma SPA React com explorador de símbolos, métricas de complexidade, violações arquiteturais e cobertura.
+
+```bash
+# 1. Indexar e gerar os dados
+npm run build
+docs-kit index
+npm run gen:site
+
+# 2a. Dev (hot-reload, útil para contribuir no site)
+npm run dev:site
+# Abra http://localhost:5173
+
+# 2b. Produção (serve os arquivos gerados)
+npm run serve:site
+# Abra http://localhost:3000
 ```
 
 ---
@@ -78,16 +103,25 @@ Após `npm run build`, use `docs-kit` (se instalado/linkado) ou `node dist/cli.j
 
 ### INDEX
 
-| Comando                | Opções                     | Descrição                                        |
-| ---------------------- | -------------------------- | ------------------------------------------------ |
-| `docs-kit index [dir]` | `--db`, `--docs`, `--full` | Indexa repositório: símbolos, relações, métricas |
+| Comando                | Opções                                                  | Descrição                                        |
+| ---------------------- | ------------------------------------------------------- | ------------------------------------------------ |
+| `docs-kit index [dir]` | `--db`, `--docs`, `--full`, `--site`, `--port`, `--out` | Indexa repositório: símbolos, relações, métricas |
 
 ### BUILD
 
-| Comando               | Opções                    | Descrição                                                       |
-| --------------------- | ------------------------- | --------------------------------------------------------------- |
-| `docs-kit build-site` | `--out`, `--db`, `--root` | Gera site HTML estático com dashboard, símbolo pages, inspector |
-| `docs-kit build-docs` | `--out`, `--db`, `--root` | Gera documentação estruturada em Markdown                       |
+| Comando                       | Opções                                             | Descrição                                                       |
+| ----------------------------- | -------------------------------------------------- | --------------------------------------------------------------- |
+| `docs-kit build-site`         | `--out`, `--db`, `--root`                          | Gera site HTML estático com dashboard, símbolo pages, inspector |
+| `docs-kit build-docs`         | `--out`, `--db`, `--root`                          | Gera documentação estruturada em Markdown                       |
+| `docs-kit project-tree [dir]` | `--out`, `--depth`, `--dirs-only`, `--source-only` | Gera `STRUCTURE.md` com a árvore do projeto para LLMs           |
+
+### DIFF PREVIEW
+
+| Comando                | Opções                                                                             | Descrição                                                            |
+| ---------------------- | ---------------------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| `docs-kit diff <base>` | `--head`, `--out`, `--db`, `--docs`, `--strict`, `--ai-review`, `--site`, `--port` | Gera site v2 em `docs-site-diff/` para o diff PR-style `base...HEAD` |
+
+`docs-kit diff master` roda em modo preview: analisa os símbolos impactados pelo Git diff, calcula sugestões dry-run de documentação, avalia Docs-Guard e grava um site filtrado em `docs-site-diff/`. O painel de diff mostra um preview PR-style por símbolo, pareando o que mudou no código com o que entraria na documentação/site, com diff lado a lado, números de linha e problemas encontrados por símbolo. Use `--ai-review` para gerar um resumo de code review via LLM quando houver provider configurado. O comando não altera arquivos `.md`; use `--strict` em CI para retornar exit code 1 quando houver violações de Docs-Guard.
 
 ### ANALYZE
 
@@ -97,6 +131,12 @@ Após `npm run build`, use `docs-kit` (se instalado/linkado) ou `node dist/cli.j
 | `docs-kit impact-analysis <symbol>` | `--max-depth`, `--db`, `--docs`       | O que quebra se este símbolo mudar       |
 | `docs-kit analyze-patterns`         | `--db`                                | Detecta padrões e violações SOLID        |
 
+### CHECK
+
+| Comando          | Opções                       | Descrição                                                         |
+| ---------------- | ---------------------------- | ----------------------------------------------------------------- |
+| `docs-kit check` | `--checks`, `--db`, `--docs` | Exibe checks de cobertura, arquitetura e documentação no terminal |
+
 ### INSPECT
 
 | Comando                     | Opções                                  | Descrição                                                                          |
@@ -105,9 +145,10 @@ Após `npm run build`, use `docs-kit` (se instalado/linkado) ou `node dist/cli.j
 
 ### SERVER
 
-| Comando          | Opções                          | Descrição                                         |
-| ---------------- | ------------------------------- | ------------------------------------------------- |
-| `docs-kit serve` | `--port 7337`, `--db`, `--docs` | Inicia API HTTP local para o inspector interativo |
+| Comando              | Opções                              | Descrição                                         |
+| -------------------- | ----------------------------------- | ------------------------------------------------- |
+| `docs-kit open-site` | `--port`, `--out`, `--db`, `--root` | Gera, serve e abre o site v2 localmente           |
+| `docs-kit serve`     | `--port 7337`, `--docs`             | Inicia API HTTP local para o inspector interativo |
 
 > Banco padrão: `.docs-kit/index.db`. Docs padrão: `docs/`.
 
@@ -174,7 +215,7 @@ curl "http://localhost:7337/api/symbols/search?q=Registry&limit=10"
 
 ## Ferramentas MCP (Copilot / Claude)
 
-O servidor MCP expõe **19 ferramentas** acessíveis via Copilot ou Claude. Inicie o servidor:
+O servidor MCP expõe **21 ferramentas** acessíveis via Copilot ou Claude. Inicie o servidor:
 
 ```bash
 npm run build
@@ -184,20 +225,29 @@ node dist/server.js &
 
 Principais ferramentas:
 
-| Ferramenta                | Descrição                                                                                                                                                                |
-| ------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `getRelevantContext`      | Contexto completo para um símbolo ou arquivo (combina index, graph, docs, source)                                                                                        |
-| `explainSymbol`           | Explica um símbolo em linguagem natural (LLM)                                                                                                                            |
-| `impactAnalysis`          | Analisa o impacto de mudar um símbolo                                                                                                                                    |
-| `generateDocs`            | Atualiza seções de docs para símbolos afetados por mudanças git                                                                                                          |
-| `smartCodeReview`         | Revisão de código com múltiplas perspectivas                                                                                                                             |
-| `scanFile`                | Indexa um arquivo e cria docs para símbolos não documentados                                                                                                             |
-| `analyzePatterns`         | Detecta padrões de design e violações SOLID                                                                                                                              |
-| `askKnowledgeBase`        | Q&A sobre código + docs (RAG + LLM)                                                                                                                                      |
-| `buildTraceabilityMatrix` | Rastreabilidade requisito → código                                                                                                                                       |
-| `searchSymbols`           | Busca de símbolos por nome/padrão                                                                                                                                        |
-| `getFileOutline`          | Estrutura/outline de um arquivo                                                                                                                                          |
-| …e mais                   | `generateMermaid`, `createOnboarding`, `describeInBusinessTerms`, `validateExamples`, `projectStatus`, `generateEventFlow`, `scanForDeadCode`, `updateSymbolExplanation` |
+| Ferramenta                | Descrição                                                                         |
+| ------------------------- | --------------------------------------------------------------------------------- |
+| `getRelevantContext`      | Contexto completo para um símbolo ou arquivo (combina index, graph, docs, source) |
+| `explainSymbol`           | Explica um símbolo em linguagem natural (LLM)                                     |
+| `impactAnalysis`          | Analisa o impacto de mudar um símbolo                                             |
+| `generateDocs`            | Atualiza seções de docs para símbolos afetados por mudanças git                   |
+| `smartCodeReview`         | Revisão de código com múltiplas perspectivas                                      |
+| `scanFile`                | Indexa um arquivo e cria docs para símbolos não documentados                      |
+| `analyzePatterns`         | Detecta padrões de design e violações SOLID                                       |
+| `askKnowledgeBase`        | Q&A sobre código + docs (RAG + LLM)                                               |
+| `buildTraceabilityMatrix` | Rastreabilidade requisito → código                                                |
+| `searchSymbols`           | Busca de símbolos por nome/padrão                                                 |
+| `getFileOutline`          | Estrutura/outline de um arquivo                                                   |
+| `generateMermaid`         | Gera diagramas Mermaid para símbolos selecionados                                 |
+| `createOnboarding`        | Gera trilha de onboarding com base no índice RAG                                  |
+| `describeInBusinessTerms` | Traduz um símbolo para linguagem de negócio                                       |
+| `validateExamples`        | Valida exemplos de código presentes nos docs                                      |
+| `projectStatus`           | Gera relatório de saúde do projeto                                                |
+| `generateEventFlow`       | Gera diagrama Mermaid para eventos/listeners                                      |
+| `scanForDeadCode`         | Detecta dead code, orphan docs e links quebrados                                  |
+| `updateSymbolExplanation` | Atualiza o cache de explicação de um símbolo                                      |
+| `updateDeadCodeStatus`    | Marca findings do Reaper como active, false_positive ou ignored                   |
+| `getDeadCodeHistory`      | Exibe histórico/auditoria de findings do Reaper                                   |
 
 ---
 
@@ -239,7 +289,7 @@ exit code 1
 
 ```
 src/
-├── cli.ts              # Entrypoint da CLI (9 comandos)
+├── cli.ts              # Entrypoint da CLI
 ├── server.ts           # Entrypoint do servidor MCP
 ├── analyzer/           # Git diff + AST diff → ChangeImpact[]
 ├── indexer/            # Tree-sitter: extração de símbolos e métricas
@@ -247,7 +297,7 @@ src/
 ├── knowledge/          # Knowledge graph, contextBuilder (getRelevantContext)
 ├── governance/         # docs-guard CLI, arch-guard, reaper
 ├── llm/                # Provider abstraction (OpenAI, Claude, Ollama, Gemini)
-├── server/             # MCP tools (19) + HTTP API (serve)
+├── server/             # MCP tools (21) + HTTP API (serve)
 │   ├── http.ts         # API HTTP para o inspector (node:http nativo)
 │   └── tools/          # Um arquivo por ferramenta MCP
 ├── site/               # Gerador de site estático (HTML + inspector.html)
@@ -258,21 +308,21 @@ docs/                   # Documentação do projeto
 
 ---
 
-## docs-config.json
+## docs.config.js
 
 Lista os documentos Markdown que aparecem na página **Docs** do site. Coloque na raiz do projeto (não dentro de `src/`):
 
-```json
-{
-  "docs": [
+```javascript
+export default {
+  docs: [
     {
-      "path": "docs/domain/arch-guard-rules.md",
-      "title": "Arch Guard Rules",
-      "name": "arch-guard-rules",
-      "category": "domain"
-    }
-  ]
-}
+      path: "docs/domain/arch-guard-rules.md",
+      title: "Arch Guard Rules",
+      name: "arch-guard-rules",
+      category: "domain",
+    },
+  ],
+};
 ```
 
 Campos disponíveis:

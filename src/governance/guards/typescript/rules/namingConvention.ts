@@ -17,7 +17,7 @@ export function createNamingClassRule(): LanguageRule {
     languages: ["typescript", "javascript"],
     defaultConfig: {
       kind: "class",
-      pattern: "^[A-Z][a-zA-Z0-9]*$",
+      pattern: "^[A-Z_][a-zA-Z0-9]*$",
     },
   };
 }
@@ -34,7 +34,7 @@ export function createNamingInterfaceRule(): LanguageRule {
     languages: ["typescript"],
     defaultConfig: {
       kind: "interface",
-      pattern: "^[A-Z][a-zA-Z0-9]*(Interface)?$",
+      pattern: "^_?[A-Z_[a-zA-Z0-9]*(Interface)?$",
     },
   };
 }
@@ -51,7 +51,7 @@ export function createNamingTypeRule(): LanguageRule {
     languages: ["typescript"],
     defaultConfig: {
       kind: "type_alias",
-      pattern: "^[A-Z][a-zA-Z0-9]*$",
+      pattern: "^_?[A-Z][a-zA-Z0-9]*$",
     },
   };
 }
@@ -68,7 +68,7 @@ export function createNamingMethodRule(): LanguageRule {
     languages: ["typescript", "javascript"],
     defaultConfig: {
       kind: "method",
-      pattern: "^[a-z][a-zA-Z0-9]*$",
+      pattern: "^_?[a-z][a-zA-Z0-9]*$",
     },
   };
 }
@@ -102,7 +102,7 @@ export function createNamingConstantRule(): LanguageRule {
     languages: ["typescript", "javascript"],
     defaultConfig: {
       kind: "constant",
-      pattern: "^[A-Z][A-Z0-9_]*$",
+      pattern: "^_?[A-Z][A-Z0-9_]*$",
     },
   };
 }
@@ -119,7 +119,7 @@ export function createNamingVariableRule(): LanguageRule {
     languages: ["typescript", "javascript"],
     defaultConfig: {
       kind: "variable",
-      pattern: "^[a-z][a-zA-Z0-9]*$",
+      pattern: "^_?[a-z][a-zA-Z0-9]*$",
     },
   };
 }

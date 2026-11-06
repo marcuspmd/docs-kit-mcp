@@ -1,4 +1,4 @@
-import { parseGitDiff, getGitDiff } from "../gitDiff.js";
+import { parseGitDiff, getGitDiff, buildGitDiffArgs, buildStructuredDiff } from "../gitDiff.js";
 
 describe("parseGitDiff", () => {
   it("returns empty array for empty input", () => {
@@ -243,7 +243,69 @@ some metadata line
   });
 });
 
+describe("buildStructuredDiff", () => {
+  it("builds side-by-side rows with old and new line numbers", () => {
+    const structured = buildStructuredDiff([
+      {
+        oldStart: 10,
+        oldLines: 3,
+        newStart: 10,
+        newLines: 4,
+        content: " context\n-old value\n+new value\n+extra value",
+      },
+    ]);
+
+    expect(structured.addedLines).toBe(2);
+    expect(structured.removedLines).toBe(1);
+    expect(structured.hunks[0].lines).toEqual([
+      expect.objectContaining({
+        oldLineNumber: 10,
+        newLineNumber: 10,
+        oldText: "context",
+        newText: "context",
+        tone: "context",
+      }),
+      expect.objectContaining({
+        oldLineNumber: 11,
+        newLineNumber: 11,
+        oldText: "old value",
+        newText: "new value",
+        tone: "changed",
+      }),
+      expect.objectContaining({
+        newLineNumber: 12,
+        newText: "extra value",
+        tone: "added",
+      }),
+    ]);
+  });
+});
+
 describe("getGitDiff", () => {
+  it("builds direct diff args by default", () => {
+    expect(buildGitDiffArgs({ repoPath: ".", base: "main", head: "feature" })).toEqual([
+      "diff",
+      "--unified=3",
+      "main",
+      "feature",
+    ]);
+  });
+
+  it("builds merge-base diff args for PR-style comparisons", () => {
+    expect(
+      buildGitDiffArgs({ repoPath: ".", base: "main", head: "HEAD", range: "merge-base" }),
+    ).toEqual(["diff", "--unified=3", "main...HEAD"]);
+  });
+
+  it("builds merge-base changed-files args", () => {
+    expect(
+      buildGitDiffArgs(
+        { repoPath: ".", base: "master", head: "topic", range: "merge-base" },
+        "name-only",
+      ),
+    ).toEqual(["diff", "--name-only", "master...topic"]);
+  });
+
   it("calls git diff with head when provided", async () => {
     // This test ensures the if (options.head) branch is covered
     // Since it's a real git call, it may succeed or fail depending on the repo state

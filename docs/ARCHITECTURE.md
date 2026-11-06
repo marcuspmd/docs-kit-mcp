@@ -101,6 +101,7 @@ graph LR
 ```
 
 **Etapas:**
+
 1. **Scan**: Fast-glob encontra arquivos usando patterns do config
 2. **Parse**: Tree-sitter gera AST para cada arquivo
 3. **Extract**: Indexer extrai símbolos (classes, funções, etc.)
@@ -134,6 +135,7 @@ sequenceDiagram
 ```
 
 **Etapas:**
+
 1. **Git Diff**: Compara branches (base vs head)
 2. **Parse Diff**: Extrai arquivos e hunks modificados
 3. **AST Diff**: Compara ASTs old vs new
@@ -163,6 +165,7 @@ graph TD
 ```
 
 **Etapas:**
+
 1. **Index Building**:
    - Docs são chunked por seção
    - Código é chunked por símbolo
@@ -193,6 +196,7 @@ graph LR
 ```
 
 **Etapas:**
+
 1. **Arch Guard**: Valida regras arquiteturais (layers, naming, metrics)
 2. **Reaper**: Detecta dead code, orphan docs, broken links
 3. **Pattern Analyzer**: Valida design patterns (SOLID, etc.)
@@ -215,6 +219,7 @@ interface SymbolRepository {
 ```
 
 **Benefícios:**
+
 - Testável (mock repositories)
 - Desacoplado da implementação
 - Transações encapsuladas
@@ -234,6 +239,7 @@ const llm = createLlmProvider(config);
 ```
 
 **Benefícios:**
+
 - Suporte multi-provider
 - Fácil adicionar novos
 - Testável com mocks
@@ -270,6 +276,7 @@ Detecta event emitters e listeners para gerar sequence diagrams.
 ### 1. Single Responsibility
 
 Cada módulo tem uma responsabilidade clara:
+
 - **Indexer**: Extração de símbolos
 - **Analyzer**: Detecção de mudanças
 - **Docs**: Gestão de documentação
@@ -278,6 +285,7 @@ Cada módulo tem uma responsabilidade clara:
 ### 2. Separation of Concerns
 
 Camadas não se misturam:
+
 - **Interface** (CLI/MCP) não contém lógica de negócio
 - **Core Services** são agnósticos de UI
 - **Storage** é isolado em repositories
@@ -301,6 +309,7 @@ class DocUpdater {
 ### 4. Don't Repeat Yourself (DRY)
 
 Código compartilhado é extraído:
+
 - `shared.ts` em cada módulo
 - Utilities centralizadas
 - Templates reutilizáveis
@@ -308,6 +317,7 @@ Código compartilhado é extraído:
 ### 5. Incremental Processing
 
 Evita reprocessamento desnecessário:
+
 - **File hashes**: Skip arquivos não modificados
 - **Doc mappings cache**: Registry mantém cache
 - **Prepared statements**: SQLite reutiliza queries
@@ -326,6 +336,7 @@ Evita reprocessamento desnecessário:
 ```
 
 **Resultado:**
+
 - ✅ Pass: Docs atualizadas para símbolos modificados
 - ❌ Fail: Símbolos modificados sem atualização de docs
 
@@ -345,6 +356,7 @@ Evita reprocessamento desnecessário:
 ```
 
 **Ferramentas disponíveis:**
+
 - `generateDocs`: Atualiza docs para mudanças
 - `explainSymbol`: Explica símbolo com contexto
 - `impactAnalysis`: Analisa raio de impacto
@@ -354,9 +366,9 @@ Evita reprocessamento desnecessário:
 
 ```typescript
 // Extension commands
-vscode.commands.registerCommand('docs-kit.explainSymbol', async () => {
+vscode.commands.registerCommand("docs-kit.explainSymbol", async () => {
   const symbol = getCurrentSymbol();
-  const explanation = await mcpClient.call('explainSymbol', { symbol });
+  const explanation = await mcpClient.call("explainSymbol", { symbol });
   vscode.window.showInformationMessage(explanation);
 });
 ```
@@ -366,16 +378,19 @@ vscode.commands.registerCommand('docs-kit.explainSymbol', async () => {
 ### Current Performance
 
 **Indexing:**
+
 - 1000 arquivos: ~30s
 - 10,000 símbolos: ~45s
 - Bottleneck: I/O (read files)
 
 **Doc Updates:**
+
 - Analyze changes: ~2s
 - Update 10 docs: ~15s (com LLM)
 - Bottleneck: LLM latency
 
 **Site Generation:**
+
 - 10,000 símbolos: ~30s
 - Output: ~10MB HTML
 - Bottleneck: File writes
@@ -406,7 +421,7 @@ const updater = createDocUpdater({ llm: mockLlm });
 // Mock
 const mockLlm: LlmProvider = {
   chat: jest.fn().mockResolvedValue("Mock response"),
-  embed: jest.fn().mockResolvedValue([[0.1, 0.2]])
+  embed: jest.fn().mockResolvedValue([[0.1, 0.2]]),
 };
 ```
 
@@ -456,8 +471,8 @@ Zod schemas validam configuração:
 const configSchema = z.object({
   llm: z.object({
     provider: z.enum(["openai", "claude", "gemini", "ollama"]),
-    model: z.string()
-  })
+    model: z.string(),
+  }),
 });
 ```
 
@@ -532,7 +547,7 @@ OpenTelemetry para distributed tracing.
 
 1. Add rule type to `RuleType` enum
 2. Implement check logic in `archGuard.ts`
-3. Update `arch-guard.json` schema
+3. Update `docs.config.js` / `archGuard` schema documentation
 
 ## Referências
 

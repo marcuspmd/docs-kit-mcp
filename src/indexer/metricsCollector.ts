@@ -3,12 +3,13 @@ import type { CodeMetrics, CodeSymbol } from "./symbol.types.js";
 import type { LcovFileData } from "./lcovCollector.js";
 import { enrichSymbolsWithCoverage } from "./lcovCollector.js";
 
-const BRANCH_NODE_TYPES = new Set([
+const CYCLOMATIC_BRANCH_NODE_TYPES = new Set([
   "if_statement",
   "else_clause",
   "switch_case",
   "for_statement",
   "for_in_statement",
+  "foreach_statement",
   "while_statement",
   "do_statement",
   "catch_clause",
@@ -16,16 +17,46 @@ const BRANCH_NODE_TYPES = new Set([
   "binary_expression", // && and || counted separately below
 ]);
 
-const LOGICAL_OPERATORS = new Set(["&&", "||", "??"]);
+const COGNITIVE_FLOW_NODE_TYPES = new Set([
+  "if_statement",
+  "switch_statement",
+  "for_statement",
+  "for_in_statement",
+  "foreach_statement",
+  "while_statement",
+  "do_statement",
+  "catch_clause",
+  "ternary_expression",
+]);
+
+const NESTING_NODE_TYPES = new Set([
+  "if_statement",
+  "switch_statement",
+  "for_statement",
+  "for_in_statement",
+  "foreach_statement",
+  "while_statement",
+  "do_statement",
+  "catch_clause",
+  "ternary_expression",
+]);
+
+const LOGICAL_OPERATORS = new Set(["&&", "||"]);
+
+function getLogicalOperator(node: Parser.SyntaxNode): string | undefined {
+  const fieldOperator = node.childForFieldName("operator")?.text;
+  if (fieldOperator && LOGICAL_OPERATORS.has(fieldOperator)) return fieldOperator;
+
+  return node.children.find((child) => LOGICAL_OPERATORS.has(child.text))?.text;
+}
 
 function countBranches(node: Parser.SyntaxNode): number {
   let count = 0;
 
-  if (BRANCH_NODE_TYPES.has(node.type)) {
+  if (CYCLOMATIC_BRANCH_NODE_TYPES.has(node.type)) {
     // For binary_expression, only count logical operators
     if (node.type === "binary_expression") {
-      const op = node.childForFieldName("operator")?.text;
-      if (op && LOGICAL_OPERATORS.has(op)) {
+      if (getLogicalOperator(node)) {
         count++;
       }
     } else {
@@ -37,6 +68,40 @@ function countBranches(node: Parser.SyntaxNode): number {
     count += countBranches(child);
   }
   return count;
+}
+
+function countCognitiveComplexity(node: Parser.SyntaxNode, nestingDepth = 0): number {
+  let complexity = 0;
+  let childNestingDepth = nestingDepth;
+
+  if (COGNITIVE_FLOW_NODE_TYPES.has(node.type)) {
+    complexity += 1 + nestingDepth;
+  }
+
+  if (node.type === "binary_expression" && getLogicalOperator(node)) {
+    complexity++;
+  }
+
+  if (NESTING_NODE_TYPES.has(node.type)) {
+    childNestingDepth++;
+  }
+
+  for (const child of node.children) {
+    complexity += countCognitiveComplexity(child, childNestingDepth);
+  }
+
+  return complexity;
+}
+
+function getMaxNestingDepth(node: Parser.SyntaxNode, currentDepth = 0): number {
+  const nextDepth = NESTING_NODE_TYPES.has(node.type) ? currentDepth + 1 : currentDepth;
+  let maxDepth = nextDepth;
+
+  for (const child of node.children) {
+    maxDepth = Math.max(maxDepth, getMaxNestingDepth(child, nextDepth));
+  }
+
+  return maxDepth;
 }
 
 function countParameters(signature: string | undefined): number {
@@ -73,6 +138,44 @@ function findNodeForSymbol(
   return search(root);
 }
 
+const COMMENT_NODE_TYPES = new Set([
+  "comment",
+  "line_comment",
+  "block_comment",
+  "multiline_comment",
+]);
+
+/** Python-style docstring: a bare string expression statement that is the first statement of a body. */
+function isDocstring(node: Parser.SyntaxNode): boolean {
+  if (node.type !== "expression_statement") return false;
+  const first = node.namedChildren[0];
+  if (!first || (first.type !== "string" && first.type !== "concatenated_string")) return false;
+  if (node.namedChildren.length !== 1) return false;
+  const parent = node.parent;
+  if (!parent || (parent.type !== "block" && parent.type !== "module")) return false;
+  return parent.namedChildren[0]?.id === node.id;
+}
+
+/**
+ * Count lines of the node that contain actual code, ignoring blank lines,
+ * comments (line/block) and docstrings.
+ */
+function countCodeLines(node: Parser.SyntaxNode): number {
+  const rows = new Set<number>();
+  const stack: Parser.SyntaxNode[] = [node];
+  while (stack.length > 0) {
+    const current = stack.pop()!;
+    if (COMMENT_NODE_TYPES.has(current.type) || isDocstring(current)) continue;
+    if (current.childCount === 0) {
+      if (current.text.trim().length === 0) continue;
+      for (let r = current.startPosition.row; r <= current.endPosition.row; r++) rows.add(r);
+      continue;
+    }
+    for (const child of current.children) stack.push(child);
+  }
+  return rows.size;
+}
+
 export interface MetricsCollectorOptions {
   symbols: CodeSymbol[];
   trees: Map<string, Parser.Tree>;
@@ -90,20 +193,28 @@ export function collectMetrics(options: MetricsCollectorOptions): CodeSymbol[] {
   // First, collect static metrics (LOC, complexity, parameters)
   const symbolsWithStaticMetrics = symbols.map((symbol) => {
     const tree = trees.get(symbol.file);
-    const linesOfCode = symbol.endLine - symbol.startLine + 1;
+    let linesOfCode = symbol.endLine - symbol.startLine + 1;
     const parameterCount = countParameters(symbol.signature);
 
     let cyclomaticComplexity = 1; // base complexity
+    let cognitiveComplexity = 0;
+    let maxNestingDepth = 0;
     if (tree) {
       const node = findNodeForSymbol(tree.rootNode, symbol);
       if (node) {
         cyclomaticComplexity += countBranches(node);
+        cognitiveComplexity = countCognitiveComplexity(node);
+        maxNestingDepth = getMaxNestingDepth(node);
+        // Exclude comments, docstrings and blank lines from LOC
+        linesOfCode = Math.max(1, countCodeLines(node));
       }
     }
 
     const metrics: CodeMetrics = {
       linesOfCode,
       cyclomaticComplexity,
+      cognitiveComplexity,
+      maxNestingDepth,
       parameterCount,
     };
 

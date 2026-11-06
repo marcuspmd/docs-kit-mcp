@@ -56,6 +56,10 @@ export default {
     "**/target/**",
     "**/.git/**",
     "**/coverage/**",
+    "**/docs-site/**",
+    "**/docs-site-v2/**",
+    "**/docs-site-diff/**",
+    "**/docs-output/**",
     "**/__tests__/**",
     "**/*.min.js",
     "**/*.bundle.js",
@@ -110,6 +114,15 @@ export default {
   //   model: "gemini-pro",
   //   maxTokens: 2000,
   //   temperature: 0.7,
+  // },
+
+  // -- OpenRouter (any model via https://openrouter.ai) --
+  // llm: {
+  //   provider: "openrouter",
+  //   apiKey: { env: "OPENROUTER_API_KEY" },
+  //   model: "anthropic/claude-sonnet-4.5",
+  //   maxTokens: 2000,
+  //   temperature: 0.2,
   // },
 
   // -- Claude --
@@ -258,7 +271,7 @@ export async function loadConfig(workspaceRoot: string): Promise<ResolvedConfig>
   // Load .env file from workspace root
   const envPath = path.resolve(workspaceRoot, ".env");
   if (fs.existsSync(envPath)) {
-    dotenv.config({ path: envPath, override: true });
+    dotenv.config({ path: envPath, override: true, quiet: true });
   }
 
   let userConfig: Record<string, unknown> = {};

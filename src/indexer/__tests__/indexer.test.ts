@@ -1,5 +1,6 @@
 import Parser from "tree-sitter";
 import TypeScript from "tree-sitter-typescript";
+import Python from "tree-sitter-python";
 import { readFileSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -225,5 +226,15 @@ describe("indexProject", () => {
     });
     expect(result.fileCount).toBe(0);
     expect(result.symbols).toHaveLength(0);
+  });
+});
+
+describe("indexFile (python module docstring)", () => {
+  it("does not treat the Python module root as a class symbol", () => {
+    const parser = new Parser();
+    (parser as { setLanguage: (l: unknown) => void }).setLanguage(Python);
+    const src = '"""Configuração base."""\n\nclass Settings:\n    pass\n';
+    const symbols = indexFile("src/config.py", src, parser);
+    expect(symbols.map((s) => s.name)).toEqual(["Settings"]);
   });
 });

@@ -58,14 +58,6 @@ export type Visibility = z.infer<typeof VisibilitySchema>;
 export const LanguageSchema = z.enum(["ts", "js", "php", "python", "go"]);
 export type Language = z.infer<typeof LanguageSchema>;
 
-/**
- * Convert legacy language code to canonical name.
- * @internal
- */
-export function normalizeSymbolLanguage(lang: Language): CanonicalLanguage {
-  return LEGACY_LANGUAGE_ALIASES[lang] ?? (lang as CanonicalLanguage);
-}
-
 export const LayerSchema = z.enum([
   "domain",
   "application",
@@ -83,6 +75,8 @@ export type Stability = z.infer<typeof StabilitySchema>;
 export const CodeMetricsSchema = z.object({
   linesOfCode: z.number().int().nonnegative().optional(),
   cyclomaticComplexity: z.number().int().nonnegative().optional(),
+  cognitiveComplexity: z.number().int().nonnegative().optional(),
+  maxNestingDepth: z.number().int().nonnegative().optional(),
   parameterCount: z.number().int().nonnegative().optional(),
   testCoverage: z
     .object({
@@ -148,6 +142,23 @@ export const CodeSymbolSchema = z
 
     explanation: z.string().optional(),
     explanationHash: z.string().optional(),
+
+    security: z
+      .object({
+        isSensitive: z.boolean(),
+        categories: z.array(z.string()),
+      })
+      .optional(),
+
+    changeVelocity: z
+      .object({
+        lastModifiedBy: z.string().optional(),
+        lastModifiedAt: z.date().optional(),
+        changeCount30d: z.number().int().nonnegative().optional(),
+        changeCount90d: z.number().int().nonnegative().optional(),
+        isHotspot: z.boolean().optional(),
+      })
+      .optional(),
   })
   .refine((s) => s.endLine >= s.startLine, {
     message: "endLine must be greater than or equal to startLine",
@@ -224,10 +235,41 @@ export const ChangeTypeSchema = z.enum([
 
 export type ChangeType = z.infer<typeof ChangeTypeSchema>;
 
+/* ================== Structured Diff ================== */
+
+export const StructuredDiffLineSchema = z.object({
+  oldLineNumber: z.number().int().nonnegative().optional(),
+  newLineNumber: z.number().int().nonnegative().optional(),
+  oldText: z.string().optional(),
+  newText: z.string().optional(),
+  tone: z.enum(["context", "added", "removed", "changed"]),
+});
+
+export type StructuredDiffLine = z.infer<typeof StructuredDiffLineSchema>;
+
+export const StructuredDiffHunkSchema = z.object({
+  oldStart: z.number().int().nonnegative(),
+  oldLines: z.number().int().nonnegative(),
+  newStart: z.number().int().nonnegative(),
+  newLines: z.number().int().nonnegative(),
+  lines: z.array(StructuredDiffLineSchema),
+});
+
+export type StructuredDiffHunk = z.infer<typeof StructuredDiffHunkSchema>;
+
+export const StructuredDiffSchema = z.object({
+  hunks: z.array(StructuredDiffHunkSchema),
+  addedLines: z.number().int().nonnegative(),
+  removedLines: z.number().int().nonnegative(),
+});
+
+export type StructuredDiff = z.infer<typeof StructuredDiffSchema>;
+
 export const ChangeImpactSchema = z.object({
   symbol: CodeSymbolSchema,
   changeType: ChangeTypeSchema,
   diff: z.string(),
+  structuredDiff: StructuredDiffSchema.optional(),
   breakingChange: z.boolean().optional(),
   severity: z.enum(["low", "medium", "high", "critical"]).optional(),
   docUpdateRequired: z.boolean(),

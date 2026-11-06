@@ -5,7 +5,15 @@
 
 import type { CodeSymbol } from "../indexer/symbol.types.js";
 import type { RelationshipRow } from "../storage/db.js";
-import { mermaidDiagramWrap } from "./templates/mermaid.js";
+
+/**
+ * Wrap a Mermaid diagram source in a fenced code block that renders inside
+ * Markdown viewers and the React v2 site.
+ */
+function mermaidDiagramWrap(source: string): string {
+  if (!source.trim()) return "";
+  return "```mermaid\n" + source + "\n```";
+}
 
 interface DiagramView {
   id: string;
@@ -36,216 +44,133 @@ export function createLayeredDiagrams(
   const layers = new Map<string, Set<string>>();
   for (const symbol of symbols) {
     const layer = symbol.layer || "application";
-    if (!layers.has(layer)) {
-      layers.set(layer, new Set());
-    }
+    if (!layers.has(layer)) layers.set(layer, new Set());
     layers.get(layer)!.add(symbol.id);
   }
 
   const views: DiagramView[] = [];
 
-  // 1. Overview: Inter-layer relationships
-  const overviewRels: RelationshipRow[] = [];
-  for (const rel of relationships) {
-    const sourceSymbol = symbolMap.get(rel.source_id);
-    const targetSymbol = symbolMap.get(rel.target_id);
-    if (!sourceSymbol || !targetSymbol) continue;
+  const overviewView = buildOverviewDiagram(layers, relationships, symbolMap);
+  if (overviewView) views.push(overviewView);
 
-    const sourceLayer = sourceSymbol.layer || "application";
-    const targetLayer = targetSymbol.layer || "application";
-
-    if (sourceLayer !== targetLayer) {
-      overviewRels.push(rel);
-    }
-  }
-
-  if (overviewRels.length > 0 && layers.size > 1) {
-    const lines: string[] = ["graph TB"];
-    const layerCounts = new Map<string, number>();
-
-    for (const [layer, ids] of layers) {
-      layerCounts.set(layer, ids.size);
-      const safe = safeNodeId(layer);
-      lines.push(`  ${safe}["${layer}<br/>(${ids.size} symbols)"]:::layerBox`);
-    }
-
-    // Count cross-layer relationships
-    const edgeCounts = new Map<string, number>();
-    for (const rel of overviewRels) {
-      const source = symbolMap.get(rel.source_id);
-      const target = symbolMap.get(rel.target_id);
-      if (!source || !target) continue;
-
-      const sLayer = source.layer || "application";
-      const tLayer = target.layer || "application";
-      const key = `${sLayer}:::${tLayer}`;
-      edgeCounts.set(key, (edgeCounts.get(key) ?? 0) + 1);
-    }
-
-    for (const [key, count] of edgeCounts) {
-      const [sLayer, tLayer] = key.split(":::");
-      lines.push(`  ${safeNodeId(sLayer)} -->|${count} refs| ${safeNodeId(tLayer)}`);
-    }
-
-    lines.push("  classDef layerBox fill:#dbeafe,stroke:#2563eb,stroke-width:2px");
-
-    views.push({
-      id: "overview",
-      title: "Architecture Overview",
-      description: "Cross-layer dependencies",
-      mermaid: lines.join("\n"),
-    });
-  }
-
-  // 2. Per-layer diagrams (limit to 100 relationships each)
   for (const [layer, symbolIds] of layers) {
-    const layerSymbols = Array.from(symbolIds)
-      .map((id) => symbolMap.get(id)!)
-      .filter(Boolean);
-    const layerRels = relationships.filter(
-      (r) => symbolIds.has(r.source_id) && symbolIds.has(r.target_id),
-    );
-
-    if (layerRels.length === 0) continue;
-
-    const lines: string[] = ["graph LR"];
-    const added = new Set<string>();
-    const clickLines: string[] = [];
-    const limit = Math.min(layerRels.length, 100);
-
-    for (let i = 0; i < limit; i++) {
-      const rel = layerRels[i];
-      const source = symbolMap.get(rel.source_id);
-      const target = symbolMap.get(rel.target_id);
-      if (!source || !target) continue;
-
-      const sName = safeNodeId(source.name);
-      const tName = safeNodeId(target.name);
-
-      if (!added.has(sName)) {
-        added.add(sName);
-        lines.push(`  ${sName}["${source.name}"]`);
-        if (clickable) {
-          clickLines.push(`  click ${sName} "${baseUrl}${source.id}.html"`);
-        }
-      }
-      if (!added.has(tName)) {
-        added.add(tName);
-        lines.push(`  ${tName}["${target.name}"]`);
-        if (clickable) {
-          clickLines.push(`  click ${tName} "${baseUrl}${target.id}.html"`);
-        }
-      }
-
-      const arrowMap: Record<string, string> = {
-        inherits: "-->|inherits|",
-        implements: "-.->|implements|",
-        uses: "-->|uses|",
-        instantiates: "-.->|instantiates|",
-        calls: "-->|calls|",
-        contains: "-->|contains|",
-        listens_to: "-.->|listens to|",
-        dispatches: "-->|dispatches|",
-      };
-      const arrow = arrowMap[rel.type] ?? "-->|" + rel.type + "|";
-      lines.push(`  ${sName} ${arrow} ${tName}`);
-    }
-
-    if (added.size > 0) {
-      if (layerRels.length > limit) {
-        const label = `Showing ${limit} of ${layerRels.length} relationships`;
-        lines.push(`  subgraph _note[${label}]`);
-        lines.push("  end");
-      }
-
-      views.push({
-        id: `layer-${layer}`,
-        title: `${layer} Layer`,
-        description: `${layerSymbols.length} symbols, ${layerRels.length} relationships`,
-        mermaid: [...lines, ...clickLines].join("\n"),
-      });
-    }
+    const view = buildLayerDiagram(layer, symbolIds, relationships, symbolMap, clickable, baseUrl);
+    if (view) views.push(view);
   }
 
   return views;
 }
 
-/**
- * Create diagrams separated by relationship type
- */
-// createRelationshipTypeDiagrams has been removed (feature not implemented).
-export function createRelationshipTypeDiagrams_DEPRECATED(
-  symbols: CodeSymbol[],
+function buildOverviewDiagram(
+  layers: Map<string, Set<string>>,
   relationships: RelationshipRow[],
-  clickable = false,
-  baseUrl = "../symbols/",
-): DiagramView[] {
-  const symbolMap = new Map(symbols.map((s) => [s.id, s]));
+  symbolMap: Map<string, CodeSymbol>,
+): DiagramView | null {
+  const overviewRels = relationships.filter((rel) => {
+    const s = symbolMap.get(rel.source_id);
+    const t = symbolMap.get(rel.target_id);
+    return s && t && (s.layer || "application") !== (t.layer || "application");
+  });
 
-  // Group relationships by type
-  const byType = new Map<string, RelationshipRow[]>();
-  for (const rel of relationships) {
-    if (!byType.has(rel.type)) {
-      byType.set(rel.type, []);
-    }
-    byType.get(rel.type)!.push(rel);
+  if (overviewRels.length === 0 || layers.size <= 1) return null;
+
+  const lines: string[] = ["graph TB"];
+  for (const [layer, ids] of layers) {
+    const safe = safeNodeId(layer);
+    lines.push(`  ${safe}["${layer}<br/>(${ids.size} symbols)"]:::layerBox`);
   }
 
-  const views: DiagramView[] = [];
-
-  // Create diagram for each relationship type (limit 80 per diagram)
-  for (const [type, rels] of byType) {
-    if (rels.length === 0) continue;
-
-    const lines: string[] = ["graph LR"];
-    const added = new Set<string>();
-    const clickLines: string[] = [];
-    const limit = Math.min(rels.length, 80);
-
-    for (let i = 0; i < limit; i++) {
-      const rel = rels[i];
-      const source = symbolMap.get(rel.source_id);
-      const target = symbolMap.get(rel.target_id);
-      if (!source || !target) continue;
-
-      const sName = safeNodeId(source.name);
-      const tName = safeNodeId(target.name);
-
-      if (!added.has(sName)) {
-        added.add(sName);
-        lines.push(`  ${sName}["${source.name}"]`);
-        if (clickable) {
-          clickLines.push(`  click ${sName} "${baseUrl}${source.id}.html"`);
-        }
-      }
-      if (!added.has(tName)) {
-        added.add(tName);
-        lines.push(`  ${tName}["${target.name}"]`);
-        if (clickable) {
-          clickLines.push(`  click ${tName} "${baseUrl}${target.id}.html"`);
-        }
-      }
-
-      lines.push(`  ${sName} -->|${type}| ${tName}`);
-    }
-
-    if (added.size > 0) {
-      if (rels.length > limit) {
-        const label = `Showing ${limit} of ${rels.length} relationships`;
-        lines.push(`  subgraph _note[${label}]`);
-        lines.push("  end");
-      }
-
-      views.push({
-        id: `type-${type}`,
-        title: `${type} Relationships`,
-        description: `${rels.length} ${type} relationships`,
-        mermaid: [...lines, ...clickLines].join("\n"),
-      });
-    }
+  const edgeCounts = new Map<string, number>();
+  for (const rel of overviewRels) {
+    const source = symbolMap.get(rel.source_id);
+    const target = symbolMap.get(rel.target_id);
+    if (!source || !target) continue;
+    const key = `${source.layer || "application"}:::${target.layer || "application"}`;
+    edgeCounts.set(key, (edgeCounts.get(key) ?? 0) + 1);
   }
 
-  return views;
+  for (const [key, count] of edgeCounts) {
+    const [sLayer, tLayer] = key.split(":::");
+    lines.push(`  ${safeNodeId(sLayer)} -->|${count} refs| ${safeNodeId(tLayer)}`);
+  }
+  lines.push("  classDef layerBox fill:#dbeafe,stroke:#2563eb,stroke-width:2px");
+
+  return {
+    id: "overview",
+    title: "Architecture Overview",
+    description: "Cross-layer dependencies",
+    mermaid: lines.join("\n"),
+  };
+}
+
+function buildLayerDiagram(
+  layer: string,
+  symbolIds: Set<string>,
+  relationships: RelationshipRow[],
+  symbolMap: Map<string, CodeSymbol>,
+  clickable: boolean,
+  baseUrl: string,
+): DiagramView | null {
+  const layerSymbols = Array.from(symbolIds)
+    .map((id) => symbolMap.get(id)!)
+    .filter(Boolean);
+  const layerRels = relationships.filter(
+    (r) => symbolIds.has(r.source_id) && symbolIds.has(r.target_id),
+  );
+  if (layerRels.length === 0) return null;
+
+  const lines: string[] = ["graph LR"];
+  const added = new Set<string>();
+  const clickLines: string[] = [];
+  const limit = Math.min(layerRels.length, 100);
+  const arrowMap: Record<string, string> = {
+    inherits: "-->|inherits|",
+    implements: "-.->|implements|",
+    uses: "-->|uses|",
+    instantiates: "-.->|instantiates|",
+    calls: "-->|calls|",
+    contains: "-->|contains|",
+    listens_to: "-.->|listens to|",
+    dispatches: "-->|dispatches|",
+  };
+
+  for (let i = 0; i < limit; i++) {
+    const rel = layerRels[i];
+    const source = symbolMap.get(rel.source_id);
+    const target = symbolMap.get(rel.target_id);
+    if (!source || !target) continue;
+
+    const sName = safeNodeId(source.name);
+    const tName = safeNodeId(target.name);
+
+    if (!added.has(sName)) {
+      added.add(sName);
+      lines.push(`  ${sName}["${source.name}"]`);
+      if (clickable) clickLines.push(`  click ${sName} "${baseUrl}${source.id}.html"`);
+    }
+    if (!added.has(tName)) {
+      added.add(tName);
+      lines.push(`  ${tName}["${target.name}"]`);
+      if (clickable) clickLines.push(`  click ${tName} "${baseUrl}${target.id}.html"`);
+    }
+
+    const arrow = arrowMap[rel.type] ?? `-->|${rel.type}|`;
+    lines.push(`  ${sName} ${arrow} ${tName}`);
+  }
+
+  if (added.size === 0) return null;
+
+  if (layerRels.length > limit) {
+    lines.push(`  subgraph _note[Showing ${limit} of ${layerRels.length} relationships]`);
+    lines.push("  end");
+  }
+
+  return {
+    id: `layer-${layer}`,
+    title: `${layer} Layer`,
+    description: `${layerSymbols.length} symbols, ${layerRels.length} relationships`,
+    mermaid: [...lines, ...clickLines].join("\n"),
+  };
 }
 
 /**

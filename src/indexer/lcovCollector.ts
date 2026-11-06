@@ -1,4 +1,5 @@
 import lcovParse from "lcov-parse";
+import fs from "node:fs/promises";
 import path from "node:path";
 import { promisify } from "node:util";
 import type { CodeSymbol } from "./symbol.types.js";
@@ -56,6 +57,9 @@ interface LcovParsedRecord {
  */
 export async function parseLcov(lcovPath: string): Promise<LcovFileData[]> {
   try {
+    if (lcovPath.toLowerCase().endsWith(".xml")) {
+      return parseCoberturaXml(await fs.readFile(lcovPath, "utf8"));
+    }
     const parsedData = (await parseLcovFile(lcovPath)) as LcovParsedRecord[];
 
     return parsedData.map((record: LcovParsedRecord) => {
@@ -88,6 +92,63 @@ export async function parseLcov(lcovPath: string): Promise<LcovFileData[]> {
   }
 }
 
+/**
+ * Parse a Cobertura XML report (e.g. Python coverage.xml, JaCoCo-converted)
+ * into the same per-file structure produced for lcov.
+ */
+export function parseCoberturaXml(xml: string): LcovFileData[] {
+  const attr = (tag: string, name: string): string | undefined =>
+    new RegExp(`\\b${name}="([^"]*)"`).exec(tag)?.[1];
+
+  // Cobertura filenames are relative to <source>; prefix a relative source root
+  // (e.g. "src") so they match project-relative symbol paths.
+  const sources = [...xml.matchAll(/<source>([^<]*)<\/source>/g)]
+    .map((m) => m[1].trim())
+    .filter((s) => s && !path.isAbsolute(s) && s !== ".");
+  const sourcePrefix = sources.length === 1 ? sources[0].replace(/\/+$/, "") + "/" : "";
+
+  const byFile = new Map<string, LcovFileData>();
+  const classRe = /<class\b[^>]*>([\s\S]*?)<\/class>/g;
+  let classMatch: RegExpExecArray | null;
+
+  while ((classMatch = classRe.exec(xml)) !== null) {
+    const openTag = classMatch[0].slice(0, classMatch[0].indexOf(">") + 1);
+    const rawFilename = attr(openTag, "filename");
+    if (!rawFilename) continue;
+    const filename = path.isAbsolute(rawFilename) ? rawFilename : sourcePrefix + rawFilename;
+
+    let entry = byFile.get(filename);
+    if (!entry) {
+      entry = { file: filename, functions: [], lines: new Map(), branches: { found: 0, hit: 0 } };
+      byFile.set(filename, entry);
+    }
+
+    const body = classMatch[1];
+    const methodRe = /<method\b[^>]*>[\s\S]*?<\/method>/g;
+    let m: RegExpExecArray | null;
+    while ((m = methodRe.exec(body)) !== null) {
+      const tag = m[0].slice(0, m[0].indexOf(">") + 1);
+      const firstLine = /<line\b[^>]*>/.exec(m[0])?.[0];
+      entry.functions.push({
+        name: attr(tag, "name") ?? "",
+        line: Number(firstLine ? attr(firstLine, "number") : 0) || 0,
+        hitCount: Number(firstLine ? attr(firstLine, "hits") : 0) || 0,
+      });
+    }
+
+    const lineRe = /<line\b[^>]*>/g;
+    let l: RegExpExecArray | null;
+    while ((l = lineRe.exec(body)) !== null) {
+      const num = Number(attr(l[0], "number"));
+      const hits = Number(attr(l[0], "hits") ?? 0);
+      if (!Number.isFinite(num)) continue;
+      entry.lines.set(num, Math.max(entry.lines.get(num) ?? 0, hits));
+    }
+  }
+
+  return [...byFile.values()];
+}
+
 /* ================== Path Normalization ================== */
 
 /**
@@ -114,6 +175,14 @@ export function normalizePath(filePath: string, projectRoot?: string): string {
 }
 
 /* ================== Coverage Enrichment ================== */
+
+/** Fallback match when one path is a suffix of the other (e.g. container/absolute roots). */
+function findBySuffix(byFile: Map<string, LcovFileData>, file: string): LcovFileData | undefined {
+  for (const [key, data] of byFile) {
+    if (key.endsWith("/" + file) || file.endsWith("/" + key)) return data;
+  }
+  return undefined;
+}
 
 /**
  * Calculate coverage metrics for a symbol based on lcov line data.
@@ -187,7 +256,8 @@ export function enrichSymbolsWithCoverage(
   const enrichedSymbols = symbols.map((symbol) => {
     // Normalize symbol file path using the same function
     const normalizedFile = normalizePath(symbol.file, projectRoot);
-    const lcovFile = coverageByFile.get(normalizedFile);
+    const lcovFile =
+      coverageByFile.get(normalizedFile) ?? findBySuffix(coverageByFile, normalizedFile);
 
     if (!lcovFile) {
       return symbol;

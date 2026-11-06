@@ -87,12 +87,12 @@ jest.unstable_mockModule("../../../handlers/explainSymbol.js", () => ({
 const mockInitializeSchema = jest.fn();
 const mockReplaceAllPatterns = jest.fn();
 const mockReplaceAllArchViolations = jest.fn();
-const mockReplaceAllReaperFindings = jest.fn();
+const mockUpsertReaperFindings = jest.fn();
 jest.unstable_mockModule("../../../storage/db.js", () => ({
   initializeSchema: mockInitializeSchema,
   replaceAllPatterns: mockReplaceAllPatterns,
   replaceAllArchViolations: mockReplaceAllArchViolations,
-  replaceAllReaperFindings: mockReplaceAllReaperFindings,
+  upsertReaperFindings: mockUpsertReaperFindings,
 }));
 
 const mockHeader = jest.fn();
@@ -399,7 +399,7 @@ describe("indexUseCase", () => {
     expect(mockArchGuard.analyze).toHaveBeenCalled();
     expect(mockReaper.scan).toHaveBeenCalled();
     expect(mockReplaceAllArchViolations).toHaveBeenCalled();
-    expect(mockReplaceAllReaperFindings).toHaveBeenCalled();
+    expect(mockUpsertReaperFindings).toHaveBeenCalled();
   });
 
   it("should scan docs directory if exists", async () => {

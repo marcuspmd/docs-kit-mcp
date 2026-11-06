@@ -7,7 +7,8 @@ export type ArchRuleType =
   | "max_complexity"
   | "max_parameters"
   | "max_lines"
-  | "missing_return_type";
+  | "missing_return_type"
+  | "circular_dependency";
 
 export interface ArchRule {
   name: string;
@@ -47,19 +48,23 @@ function matchAnyGlob(patterns: string[], value: string): boolean {
 }
 
 /** Ignore patterns: globs or regex (string in /slashes/). Returns true if filePath should be ignored. */
+function matchesIgnorePattern(pattern: string, filePath: string): boolean {
+  const s = pattern?.trim();
+  if (!s) return false;
+  if (s.length >= 2 && s.startsWith("/") && s.endsWith("/")) {
+    try {
+      if (new RegExp(s.slice(1, -1)).test(filePath)) return true;
+    } catch {
+      /* treat as literal glob below */
+    }
+  }
+  return matchGlob(s, filePath);
+}
+
 function isIgnored(filePath: string, ignore: string[] | undefined): boolean {
   if (!ignore?.length || !filePath) return false;
   for (const p of ignore) {
-    const s = p?.trim();
-    if (!s) continue;
-    if (s.length >= 2 && s.startsWith("/") && s.endsWith("/")) {
-      try {
-        if (new RegExp(s.slice(1, -1)).test(filePath)) return true;
-      } catch {
-        /* treat as literal glob below */
-      }
-    }
-    if (matchGlob(s, filePath)) return true;
+    if (matchesIgnorePattern(p, filePath)) return true;
   }
   return false;
 }
@@ -140,6 +145,21 @@ function checkForbiddenImport(
 
 const FILE_EXT_REGEX = /\.(php|ts|tsx|js|jsx|go|py|rs|java)$/i;
 
+const EXT_TO_LANGUAGE: Record<string, string> = {
+  ts: "ts",
+  tsx: "ts",
+  js: "js",
+  jsx: "js",
+  php: "php",
+  py: "python",
+  go: "go",
+};
+
+function extToLanguage(file: string): string | undefined {
+  const ext = file.split(".").pop()?.toLowerCase();
+  return ext ? EXT_TO_LANGUAGE[ext] : undefined;
+}
+
 /** Name used for pattern check: short name (last segment) for qualified/path-like names.
  * - PHP \Namespace\Class -> "Class"
  * - ClassName.methodName or ClassName::methodName -> "methodName" (so method-camel-case checks the method only)
@@ -171,7 +191,8 @@ function nameForNamingCheck(symbol: CodeSymbol): string {
 }
 
 function checkNamingConvention(rule: ArchRule, symbols: CodeSymbol[]): ArchViolation[] {
-  const pattern = new RegExp(rule.config.pattern as string);
+  const basePattern = rule.config.pattern as string | undefined;
+  const patternByLanguage = (rule.config.patternByLanguage ?? {}) as Record<string, string>;
   const kind = rule.config.kind as string | undefined;
   const fileGlob = rule.config.file as string | undefined;
   const ignore = (rule.config.ignore as string[] | undefined) ?? [];
@@ -185,6 +206,12 @@ function checkNamingConvention(rule: ArchRule, symbols: CodeSymbol[]): ArchViola
     if (isIgnored(sym.file, ignore)) continue;
     if (kind && sym.kind !== kind) continue;
     if (fileGlob && !matchGlob(fileGlob, sym.file)) continue;
+
+    const lang = sym.language ?? extToLanguage(sym.file);
+    const rawPattern = (lang && patternByLanguage[lang]) ?? basePattern;
+    if (!rawPattern) continue;
+    const pattern = new RegExp(rawPattern);
+
     const nameToCheck = nameForNamingCheck(sym);
     if (allowedSet.has(nameToCheck.toLowerCase()) || allowedSet.has(sym.name.toLowerCase()))
       continue;
@@ -193,7 +220,7 @@ function checkNamingConvention(rule: ArchRule, symbols: CodeSymbol[]): ArchViola
         rule: rule.name,
         file: sym.file,
         symbolId: sym.id,
-        message: `'${sym.name}' does not match naming convention /${rule.config.pattern as string}/`,
+        message: `'${sym.name}' does not match naming convention /${rawPattern}/`,
         severity,
       });
     }
@@ -294,11 +321,24 @@ function hasReturnTypeInSignature(signature: string | undefined): boolean {
   return suffix.length > 0 && !/^\s*[{[]?\s*$/.test(suffix);
 }
 
+/** Extract the declared return type name from a signature, e.g. "foo(): mixed" → "mixed". */
+function extractReturnTypeFromSignature(signature: string | undefined): string | undefined {
+  if (!signature) return undefined;
+  const match = signature.match(/\):\s*(\S+)\s*$/);
+  return match?.[1]?.toLowerCase();
+}
+
 function checkMissingReturnType(rule: ArchRule, symbols: CodeSymbol[]): ArchViolation[] {
   const scope = (rule.config.scope as string | undefined) ?? "all";
   const kind = rule.config.kind as string | undefined;
   const fileGlob = rule.config.file as string | undefined;
   const ignore = (rule.config.ignore as string[] | undefined) ?? [];
+  const allowNames = new Set(
+    ((rule.config.allowNames as string[] | undefined) ?? []).map((n) => n.toLowerCase()),
+  );
+  const allowedReturnTypes = new Set(
+    ((rule.config.allowedReturnTypes as string[] | undefined) ?? []).map((t) => t.toLowerCase()),
+  );
   const severity = rule.severity ?? "warning";
   const violations: ArchViolation[] = [];
 
@@ -309,8 +349,16 @@ function checkMissingReturnType(rule: ArchRule, symbols: CodeSymbol[]): ArchViol
     if (!isMethodOrFunction) continue;
     if (kind && sym.kind !== kind) continue;
     if (fileGlob && !matchGlob(fileGlob, sym.file)) continue;
+    if (allowNames.size > 0 && allowNames.has(sym.name.toLowerCase())) continue;
     if (scope === "public" && sym.visibility && sym.visibility !== "public") continue;
-    if (hasReturnTypeInSignature(sym.signature)) continue;
+    if (hasReturnTypeInSignature(sym.signature)) {
+      if (allowedReturnTypes.size === 0) continue;
+      const retType = extractReturnTypeFromSignature(sym.signature);
+      if (!retType || allowedReturnTypes.has(retType)) continue;
+      // Has a return type but it's in the disallowed-loose list — still a violation
+    } else {
+      // No return type declared at all
+    }
     violations.push({
       rule: rule.name,
       file: sym.file,
@@ -321,6 +369,93 @@ function checkMissingReturnType(rule: ArchRule, symbols: CodeSymbol[]): ArchViol
   }
 
   return violations;
+}
+
+function checkCircularDependency(
+  rule: ArchRule,
+  symbols: CodeSymbol[],
+  relationships: SymbolRelationship[],
+  byId: Map<string, CodeSymbol>,
+): ArchViolation[] {
+  const ignore = (rule.config.ignore as string[] | undefined) ?? [];
+  const scope = rule.config.scope as string | undefined;
+  const severity = rule.severity ?? "error";
+
+  const scopedIds = new Set(
+    symbols
+      .filter((s) => !isIgnored(s.file, ignore) && (!scope || matchGlob(scope, s.file)))
+      .map((s) => s.id),
+  );
+
+  const adj = new Map<string, string[]>();
+  for (const rel of relationships) {
+    if (!scopedIds.has(rel.sourceId) || !scopedIds.has(rel.targetId)) continue;
+    if (!adj.has(rel.sourceId)) adj.set(rel.sourceId, []);
+    adj.get(rel.sourceId)!.push(rel.targetId);
+  }
+
+  const color = new Map<string, "white" | "gray" | "black">();
+  for (const id of adj.keys()) color.set(id, "white");
+
+  const cycles: string[][] = [];
+
+  function dfs(nodeId: string, path: string[]): void {
+    color.set(nodeId, "gray");
+    path.push(nodeId);
+
+    for (const neighbor of adj.get(nodeId) ?? []) {
+      const state = color.get(neighbor);
+      if (state === "gray") {
+        const start = path.indexOf(neighbor);
+        if (start !== -1) cycles.push([...path.slice(start)]);
+      } else if (state === "white") {
+        dfs(neighbor, path);
+      }
+    }
+
+    color.set(nodeId, "black");
+    path.pop();
+  }
+
+  for (const nodeId of adj.keys()) {
+    if (color.get(nodeId) === "white") dfs(nodeId, []);
+  }
+
+  return cycles.map((cycle) => {
+    const syms = cycle.map((id) => byId.get(id)).filter(Boolean) as CodeSymbol[];
+    const names = syms.map((s) => s.name).join(" → ");
+    const first = syms[0];
+    return {
+      rule: rule.name,
+      file: first?.file ?? "unknown",
+      symbolId: first?.id,
+      message: `Circular dependency: ${names} → ${syms[0]?.name ?? "?"}`,
+      severity,
+    };
+  });
+}
+
+/**
+ * Deduplicate violations where a strict variant (-strict suffix) and its regular counterpart
+ * both fire for the same symbol. The strict (error) violation supersedes the regular (warning).
+ */
+function deduplicateViolations(violations: ArchViolation[]): ArchViolation[] {
+  const map = new Map<string, ArchViolation>();
+
+  for (const v of violations) {
+    const baseRule = v.rule.endsWith("-strict") ? v.rule.slice(0, -"-strict".length) : v.rule;
+    const key = `${v.symbolId ?? v.file}::${baseRule}`;
+
+    const existing = map.get(key);
+    if (!existing) {
+      map.set(key, v);
+    } else if (v.severity === "error" && existing.severity === "warning") {
+      // Strict (error) takes precedence over the regular (warning) for same symbol
+      map.set(key, v);
+    }
+  }
+
+  return Array.from(map.values());
 }
 
 export function createArchGuard(): ArchGuard {
@@ -358,10 +493,13 @@ export function createArchGuard(): ArchGuard {
           case "missing_return_type":
             violations.push(...checkMissingReturnType(rule, symbols));
             break;
+          case "circular_dependency":
+            violations.push(...checkCircularDependency(rule, symbols, relationships, byId));
+            break;
         }
       }
 
-      return violations;
+      return deduplicateViolations(violations);
     },
   };
 }

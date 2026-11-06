@@ -425,3 +425,26 @@ end_of_record
     });
   });
 });
+
+describe("parseCoberturaXml", () => {
+  it("parses files, lines and methods from coverage.xml", async () => {
+    const { parseCoberturaXml } = await import("../lcovCollector.js");
+    const xml = `<coverage><packages><package><classes>
+      <class name="a" filename="app/a.py"><methods><method name="f"><lines><line number="3" hits="2"/></lines></method></methods>
+      <lines><line number="3" hits="2"/><line number="4" hits="0"/></lines></class>
+    </classes></package></packages></coverage>`;
+    const [file] = parseCoberturaXml(xml);
+    expect(file.file).toBe("app/a.py");
+    expect(file.lines.get(3)).toBe(2);
+    expect(file.lines.get(4)).toBe(0);
+    expect(file.functions[0]).toEqual({ name: "f", line: 3, hitCount: 2 });
+  });
+
+  it("prefixes a relative <source> root so paths match project-relative symbols", async () => {
+    const { parseCoberturaXml } = await import("../lcovCollector.js");
+    const xml = `<coverage><sources><source>src</source></sources><packages><package><classes>
+      <class name="a" filename="agents/a.py"><methods/><lines><line number="1" hits="1"/></lines></class>
+    </classes></package></packages></coverage>`;
+    expect(parseCoberturaXml(xml)[0].file).toBe("src/agents/a.py");
+  });
+});

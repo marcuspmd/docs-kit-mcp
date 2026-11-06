@@ -42,8 +42,8 @@ export const ConfigSchema = z.object({
   /** Output directories for generated content */
   output: z
     .object({
-      /** Output directory for `docs-kit build-site` (default: "docs-site") */
-      site: z.string().default("docs-site"),
+      /** Output directory for `docs-kit build-site` (default: "docs-site-v2") */
+      site: z.string().default("docs-site-v2"),
       /** Output directory for `docs-kit build-docs` (default: "docs-output") */
       docs: z.string().default("docs-output"),
     })
@@ -75,6 +75,10 @@ export const ConfigSchema = z.object({
       "**/target/**",
       "**/.git/**",
       "**/coverage/**",
+      "**/docs-site/**",
+      "**/docs-site-v2/**",
+      "**/docs-site-diff/**",
+      "**/docs-output/**",
       "**/*.min.js",
       "**/*.bundle.js",
       "**/*.map",
@@ -98,6 +102,7 @@ export const ConfigSchema = z.object({
     .object({
       lcovPath: z.string().default("coverage/lcov.info"),
       enabled: z.boolean().default(false),
+      ignore: z.array(z.string()).default([]),
     })
     .optional(),
 
@@ -130,7 +135,9 @@ export const ConfigSchema = z.object({
 
   llm: z
     .object({
-      provider: z.enum(["none", "openai", "ollama", "gemini", "claude"]).default("none"),
+      provider: z
+        .enum(["none", "openai", "ollama", "gemini", "claude", "openrouter"])
+        .default("none"),
       apiKey: z
         .union([
           z.string(), // Direct API key (not recommended for production)

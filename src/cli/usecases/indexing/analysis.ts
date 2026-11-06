@@ -2,7 +2,8 @@ import fs from "node:fs";
 import path from "node:path";
 import type Parser from "tree-sitter";
 import type { ResolvedConfig } from "../../../configLoader.js";
-import { parseLcov, type LcovFileData } from "../../../indexer/lcovCollector.js";
+import { parseLcov, normalizePath, type LcovFileData } from "../../../indexer/lcovCollector.js";
+import { minimatch } from "../../../config.js";
 import { collectMetrics } from "../../../indexer/metricsCollector.js";
 import { extractRelationships } from "../../../indexer/relationshipExtractor.js";
 import type { CodeSymbol, SymbolRelationship } from "../../../indexer/symbol.types.js";
@@ -58,6 +59,12 @@ export async function loadCoverageData(
       step("Loading test coverage data");
       try {
         coverageData = await parseLcov(lcovPath);
+        const ignore = config.coverage?.ignore ?? [];
+        if (ignore.length > 0) {
+          coverageData = coverageData.filter(
+            (f) => !ignore.some((pattern) => minimatch(normalizePath(f.file, configDir), pattern)),
+          );
+        }
         done(`loaded from ${config.coverage.lcovPath}`);
       } catch (err) {
         console.warn(

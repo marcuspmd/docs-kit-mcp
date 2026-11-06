@@ -65,6 +65,24 @@ function buildSymbolIndex(symbols: CodeSymbol[]): SymbolIndex {
  * A function named "count" should NOT match all "count()" calls globally.
  * Relationships are only created when we have high confidence about the target.
  */
+function resolveViaImportPath(targetName: string, index: SymbolIndex): CodeSymbol | undefined {
+  const [sourcePath, symbolName] = targetName.split("::");
+  const candidates = index.byShortName.get(symbolName) ?? [];
+  for (const candidate of candidates) {
+    const normalizedSource = sourcePath.replace(/^\.\//, "").replace(/\.(js|ts|tsx|jsx)$/, "");
+    const normalizedFile = candidate.file
+      .replace(/\.(js|ts|tsx|jsx|py)$/, "")
+      .replace(/\/__init__$/, "");
+    if (
+      normalizedFile.endsWith(normalizedSource) ||
+      normalizedFile.endsWith(`/${normalizedSource}`)
+    ) {
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
 export function resolveSymbol(
   targetName: string,
   index: SymbolIndex,
@@ -93,21 +111,7 @@ export function resolveSymbol(
 
   // 4. TypeScript import path resolution (e.g., "./utils::count" → find symbol in that file)
   if (targetName.includes("::")) {
-    const [sourcePath, symbolName] = targetName.split("::");
-    // Find symbols that match the name and are in a file that matches the source path
-    const candidates = index.byShortName.get(symbolName) ?? [];
-    for (const candidate of candidates) {
-      // Check if the candidate's file matches the import source path
-      // Handle relative paths: "./utils" should match "src/utils.ts" etc.
-      const normalizedSource = sourcePath.replace(/^\.\//, "").replace(/\.(js|ts|tsx|jsx)$/, "");
-      const normalizedFile = candidate.file.replace(/\.(js|ts|tsx|jsx)$/, "");
-      if (
-        normalizedFile.endsWith(normalizedSource) ||
-        normalizedFile.endsWith(`/${normalizedSource}`)
-      ) {
-        return candidate;
-      }
-    }
+    return resolveViaImportPath(targetName, index);
   }
 
   // NO short name fallback - this was causing false positives
@@ -179,7 +183,10 @@ export function extractRelationships(options: RelationshipExtractorOptions): Sym
         imports: phpStrategy.extractUseStatements(tree.rootNode),
         namespace: phpStrategy.extractNamespace(tree.rootNode),
       };
-    } else if ((language === "ts" || language === "js") && "extractImports" in strategy) {
+    } else if (
+      (language === "ts" || language === "js" || language === "python") &&
+      "extractImports" in strategy
+    ) {
       // TypeScript/JavaScript: import statements
       const tsStrategy = strategy as {
         extractImports: (root: Parser.SyntaxNode) => Map<string, string>;
@@ -223,7 +230,11 @@ function walkForRelationships(
 ) {
   if (!node) return;
 
-  if (node.type === "class_declaration" || node.type === "abstract_class_declaration") {
+  if (
+    node.type === "class_declaration" ||
+    node.type === "abstract_class_declaration" ||
+    node.type === "class_definition" // Python
+  ) {
     const className = node.childForFieldName("name")?.text;
     // Match by short name (className) against the last segment of qualified names
     const classSymbol = symsInFile.find((s) => {

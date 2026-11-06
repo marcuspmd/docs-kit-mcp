@@ -13,6 +13,7 @@ import {
   getTypeScriptRulesByCategory,
   TS_RULE_CATEGORIES,
   toArchRule,
+  toArchRules,
 } from "../typeScriptGuards.js";
 
 describe("TypeScript Guards", () => {
@@ -64,7 +65,11 @@ describe("TypeScript Guards", () => {
     });
 
     it("filters by multiple codes", () => {
-      const codes = ["typescript:naming_class", "typescript:naming_interface", "typescript:max_complexity"];
+      const codes = [
+        "typescript:naming_class",
+        "typescript:naming_interface",
+        "typescript:max_complexity",
+      ];
       const filtered = filterTypeScriptRulesByCodes(codes);
       expect(filtered.length).toBe(3);
       expect(filtered.map((r) => r.code)).toEqual(expect.arrayContaining(codes));
@@ -193,6 +198,23 @@ describe("TypeScript Guards", () => {
     it("all rules support typescript language", () => {
       const rules = getTypeScriptAvailableRules();
       expect(rules.every((r) => r.languages.includes("typescript"))).toBe(true);
+    });
+  });
+
+  describe("toArchRules", () => {
+    it("converts multiple rules to ArchRules", () => {
+      const rules = filterTypeScriptRulesByCodes([
+        "typescript:naming_class",
+        "typescript:max_complexity",
+      ]);
+      const archRules = toArchRules(rules);
+      expect(archRules).toHaveLength(2);
+      expect(archRules[0].name).toBeDefined();
+      expect(archRules[1].name).toBeDefined();
+    });
+
+    it("returns empty array for empty input", () => {
+      expect(toArchRules([])).toEqual([]);
     });
   });
 });

@@ -1,9 +1,12 @@
 ---
 title: Site - Geração de Documentação Estática
 module: site
-lastUpdated: 2026-02-01
+lastUpdated: 2026-05-09
 symbols:
   - generateSite
+  - generateSiteV2
+  - createSiteDataBundle
+  - buildComplexityModel
   - generateDocs
 ---
 
@@ -20,6 +23,7 @@ O módulo Site (`src/site/`) fornece:
 3. **Templates**: Sistema de templates reutilizáveis
 4. **Smart Diagrams**: Geração automática de diagramas Mermaid
 5. **Search Index**: JSON para busca client-side
+6. **Site v2**: SPA React/Vite interativa com bundle `site-data.json`
 
 ## Componentes
 
@@ -28,19 +32,17 @@ O módulo Site (`src/site/`) fornece:
 Gera site HTML completo.
 
 **Função:**
+
 ```typescript
-function generateSite(options: {
-  dbPath: string;
-  outDir: string;
-  rootDir: string;
-}): {
+function generateSite(options: { dbPath: string; outDir: string; rootDir: string }): {
   symbolPages: number;
   filePages: number;
   totalFiles: number;
-}
+};
 ```
 
 **Estrutura de Saída:**
+
 ```
 docs-site/
 ├── index.html              # Landing page com estatísticas
@@ -62,6 +64,7 @@ docs-site/
 ```
 
 **Generation Flow:**
+
 ```typescript
 function generateSite({ dbPath, outDir, rootDir }) {
   const db = new Database(dbPath);
@@ -81,12 +84,12 @@ function generateSite({ dbPath, outDir, rootDir }) {
   // 3. Generate index page
   const indexHtml = generateIndexPage({
     totalSymbols: allSymbols.length,
-    totalFiles: new Set(allSymbols.map(s => s.file)).size,
+    totalFiles: new Set(allSymbols.map((s) => s.file)).size,
     totalRelationships: allRels.length,
     symbolsByKind: groupByKind(allSymbols),
     patterns: loadPatterns(db),
     archViolations: loadArchViolations(db),
-    reaperFindings: loadReaperFindings(db)
+    reaperFindings: loadReaperFindings(db),
   });
   fs.writeFileSync(path.join(outDir, "index.html"), indexHtml);
 
@@ -94,10 +97,7 @@ function generateSite({ dbPath, outDir, rootDir }) {
   let symbolPages = 0;
   for (const symbol of allSymbols) {
     const html = generateSymbolPage(symbol, allSymbols, allRels, rootDir);
-    fs.writeFileSync(
-      path.join(outDir, "symbols", `${symbol.id}.html`),
-      html
-    );
+    fs.writeFileSync(path.join(outDir, "symbols", `${symbol.id}.html`), html);
     symbolPages++;
   }
 
@@ -107,10 +107,7 @@ function generateSite({ dbPath, outDir, rootDir }) {
   for (const [file, symbols] of fileGroups) {
     const html = generateFilePage(file, symbols, allRels, rootDir);
     const fileHash = hash(file);
-    fs.writeFileSync(
-      path.join(outDir, "files", `${fileHash}.html`),
-      html
-    );
+    fs.writeFileSync(path.join(outDir, "files", `${fileHash}.html`), html);
     filePages++;
   }
 
@@ -131,18 +128,68 @@ function generateSite({ dbPath, outDir, rootDir }) {
   return {
     symbolPages,
     filePages,
-    totalFiles: fileGroups.size
+    totalFiles: fileGroups.size,
   };
 }
 ```
 
+### 2. Site v2 Interativo (`v2Generator.ts`)
+
+Gera uma versão interativa do site usando React + Vite. A versão v1 continua sendo o padrão; a v2 é ativada explicitamente:
+
+```bash
+docs-kit build-site --version v2 --out docs-site-v2 --root . --db .docs-kit/index.db
+```
+
+**Estrutura de Saída:**
+
+```
+docs-site-v2/
+├── index.html
+├── site-data.json          # símbolos, relações, docs, source, busca, saúde e complexidade
+└── assets/
+    ├── index-*.js          # bundle React/Vite
+    └── index-*.css
+```
+
+**Experiência da v2:**
+
+- Tree view por path, arquivo e símbolos aninhados
+- Busca global por path, nome, símbolo, assinatura, kind, layer e docRef
+- Página detalhada ao clicar em símbolo ou arquivo
+- Detalhe de classe com membros, métricas, relacionamentos e fonte completa da classe
+- Preview MCP LLM mostrando o contexto que seria enviado para explicar o símbolo, incluindo instrução para chamar `updateSymbolExplanation`
+
+**Dados Disponíveis no Bundle:**
+
+- `complexity.symbols`: LOC, ciclomática, cognitiva, nesting e score de risco por símbolo
+- `complexity.classes`: agregados por classe, incluindo membros e hotspots
+- `complexity.modules`: agregados por pasta/módulo, incluindo arquivos, classes e funções
+- `health.docs`: símbolos documentados e lacunas por kind/layer
+- `health.coverage`: resumo de cobertura quando LCOV está configurado
+- `health.governance`: violações arquiteturais, achados do reaper, símbolos deprecated e patterns
+- `sourceFiles`: texto, linguagem e número de linhas dos arquivos indexados para previews e páginas detalhadas
+
+**Fluxo da v2:**
+
+```typescript
+async function generateSiteV2({ dbPath, outDir, rootDir }) {
+  const data = loadSiteData(db, rootDir);
+  const bundle = createSiteDataBundle(data);
+
+  await vite.build({ root: "site-v2", build: { outDir } });
+  fs.writeFileSync(path.join(outDir, "site-data.json"), JSON.stringify(bundle, null, 2));
+}
+```
+
 **Symbol Page Template:**
+
 ```typescript
 function generateSymbolPage(
   symbol: CodeSymbol,
   allSymbols: CodeSymbol[],
   allRels: SymbolRelationship[],
-  rootDir: string
+  rootDir: string,
 ): string {
   const dependencies = getDependencies(symbol, allSymbols, allRels);
   const dependents = getDependents(symbol, allSymbols, allRels);
@@ -170,8 +217,8 @@ function generateSymbolPage(
 
     <div class="metadata">
       <span class="badge badge-${symbol.kind}">${symbol.kind}</span>
-      ${symbol.isExported ? '<span class="badge badge-exported">exported</span>' : ''}
-      ${symbol.isAsync ? '<span class="badge badge-async">async</span>' : ''}
+      ${symbol.isExported ? '<span class="badge badge-exported">exported</span>' : ""}
+      ${symbol.isAsync ? '<span class="badge badge-async">async</span>' : ""}
     </div>
 
     <div class="info-grid">
@@ -182,65 +229,97 @@ function generateSymbolPage(
       <div class="info-item">
         <strong>Lines:</strong> ${symbol.startLine}-${symbol.endLine}
       </div>
-      ${symbol.signature ? `
+      ${
+        symbol.signature
+          ? `
       <div class="info-item">
         <strong>Signature:</strong>
         <code>${escapeHtml(symbol.signature)}</code>
       </div>
-      ` : ''}
-      ${symbol.complexity ? `
+      `
+          : ""
+      }
+      ${
+        symbol.complexity
+          ? `
       <div class="info-item">
         <strong>Complexity:</strong>
         <span class="complexity-${getComplexityLevel(symbol.complexity)}">${symbol.complexity}</span>
       </div>
-      ` : ''}
-      ${symbol.coverage !== undefined ? `
+      `
+          : ""
+      }
+      ${
+        symbol.coverage !== undefined
+          ? `
       <div class="info-item">
         <strong>Coverage:</strong>
         <span class="coverage-${getCoverageLevel(symbol.coverage)}">${symbol.coverage.toFixed(1)}%</span>
       </div>
-      ` : ''}
+      `
+          : ""
+      }
     </div>
 
-    ${symbol.doc_ref ? `
+    ${
+      symbol.doc_ref
+        ? `
     <div class="section">
       <h2>Documentation</h2>
       <a href="../docs/${symbol.doc_ref}" class="docs-link">View Documentation →</a>
     </div>
-    ` : ''}
+    `
+        : ""
+    }
 
     <div class="section">
       <h2>Source Code</h2>
       <pre><code class="language-typescript">${escapeHtml(sourceCode)}</code></pre>
     </div>
 
-    ${dependencies.length > 0 ? `
+    ${
+      dependencies.length > 0
+        ? `
     <div class="section">
       <h2>Dependencies (${dependencies.length})</h2>
       <ul class="symbol-list">
-        ${dependencies.map(dep => `
+        ${dependencies
+          .map(
+            (dep) => `
           <li>
             <a href="${dep.id}.html">${dep.name}</a>
             <span class="badge badge-${dep.kind}">${dep.kind}</span>
           </li>
-        `).join('')}
+        `,
+          )
+          .join("")}
       </ul>
     </div>
-    ` : ''}
+    `
+        : ""
+    }
 
-    ${dependents.length > 0 ? `
+    ${
+      dependents.length > 0
+        ? `
     <div class="section">
       <h2>Used By (${dependents.length})</h2>
       <ul class="symbol-list">
-        ${dependents.map(dep => `
+        ${dependents
+          .map(
+            (dep) => `
           <li>
             <a href="${dep.id}.html">${dep.name}</a>
             <span class="badge badge-${dep.kind}">${dep.kind}</span>
           </li>
-        `).join('')}
+        `,
+          )
+          .join("")}
       </ul>
     </div>
-    ` : ''}
+    `
+        : ""
+    }
   </main>
 
   <script src="../assets/highlight.js"></script>
@@ -251,6 +330,7 @@ function generateSymbolPage(
 ```
 
 **Styles (`styles.css`):**
+
 ```css
 :root {
   --primary: #3b82f6;
@@ -264,7 +344,10 @@ function generateSymbolPage(
 }
 
 body {
-  font-family: system-ui, -apple-system, sans-serif;
+  font-family:
+    system-ui,
+    -apple-system,
+    sans-serif;
   line-height: 1.6;
   color: var(--text);
   background: var(--bg);
@@ -304,14 +387,32 @@ main {
   text-transform: uppercase;
 }
 
-.badge-class { background: #dbeafe; color: #1e40af; }
-.badge-function { background: #d1fae5; color: #065f46; }
-.badge-method { background: #fef3c7; color: #92400e; }
-.badge-interface { background: #e0e7ff; color: #3730a3; }
+.badge-class {
+  background: #dbeafe;
+  color: #1e40af;
+}
+.badge-function {
+  background: #d1fae5;
+  color: #065f46;
+}
+.badge-method {
+  background: #fef3c7;
+  color: #92400e;
+}
+.badge-interface {
+  background: #e0e7ff;
+  color: #3730a3;
+}
 
-.complexity-low { color: var(--success); }
-.complexity-medium { color: var(--warning); }
-.complexity-high { color: var(--danger); }
+.complexity-low {
+  color: var(--success);
+}
+.complexity-medium {
+  color: var(--warning);
+}
+.complexity-high {
+  color: var(--danger);
+}
 
 pre code {
   display: block;
@@ -323,24 +424,22 @@ pre code {
 }
 ```
 
-### 2. Markdown Generator (`mdGenerator.ts`)
+### 3. Markdown Generator (`mdGenerator.ts`)
 
 Gera documentação em Markdown.
 
 **Função:**
+
 ```typescript
-function generateDocs(options: {
-  dbPath: string;
-  outDir: string;
-  rootDir: string;
-}): {
+function generateDocs(options: { dbPath: string; outDir: string; rootDir: string }): {
   symbolPages: number;
   filePages: number;
   totalFiles: number;
-}
+};
 ```
 
 **Estrutura de Saída:**
+
 ```
 docs-output/
 ├── README.md               # Índice principal
@@ -358,8 +457,13 @@ docs-output/
 ```
 
 **Symbol Page (Markdown):**
+
 ```typescript
-function generateSymbolMarkdown(symbol: CodeSymbol, deps: CodeSymbol[], dependents: CodeSymbol[]): string {
+function generateSymbolMarkdown(
+  symbol: CodeSymbol,
+  deps: CodeSymbol[],
+  dependents: CodeSymbol[],
+): string {
   return `# ${symbol.name}
 
 > ${symbol.kind} in ${symbol.file}:${symbol.startLine}
@@ -369,11 +473,11 @@ function generateSymbolMarkdown(symbol: CodeSymbol, deps: CodeSymbol[], dependen
 - **Kind:** ${symbol.kind}
 - **Visibility:** ${symbol.visibility || "public"}
 - **Exported:** ${symbol.isExported ? "Yes" : "No"}
-${symbol.signature ? `- **Signature:** \`${symbol.signature}\`\n` : ''}
-${symbol.complexity ? `- **Complexity:** ${symbol.complexity}\n` : ''}
-${symbol.coverage !== undefined ? `- **Test Coverage:** ${symbol.coverage.toFixed(1)}%\n` : ''}
+${symbol.signature ? `- **Signature:** \`${symbol.signature}\`\n` : ""}
+${symbol.complexity ? `- **Complexity:** ${symbol.complexity}\n` : ""}
+${symbol.coverage !== undefined ? `- **Test Coverage:** ${symbol.coverage.toFixed(1)}%\n` : ""}
 
-${symbol.doc_ref ? `## Documentation\n\nSee [${symbol.doc_ref}](../docs/${symbol.doc_ref})\n` : ''}
+${symbol.doc_ref ? `## Documentation\n\nSee [${symbol.doc_ref}](../docs/${symbol.doc_ref})\n` : ""}
 
 ## Source Code
 
@@ -381,29 +485,35 @@ ${symbol.doc_ref ? `## Documentation\n\nSee [${symbol.doc_ref}](../docs/${symbol
 ${sourceCode}
 \`\`\`
 
-${deps.length > 0 ? `## Dependencies\n\n${deps.map(d => `- [${d.name}](${d.id}.md)`).join('\n')}\n` : ''}
+${deps.length > 0 ? `## Dependencies\n\n${deps.map((d) => `- [${d.name}](${d.id}.md)`).join("\n")}\n` : ""}
 
-${dependents.length > 0 ? `## Used By\n\n${dependents.map(d => `- [${d.name}](${d.id}.md)`).join('\n')}\n` : ''}
+${dependents.length > 0 ? `## Used By\n\n${dependents.map((d) => `- [${d.name}](${d.id}.md)`).join("\n")}\n` : ""}
 `;
 }
 ```
 
-### 3. Smart Diagrams (`smartDiagrams.ts`)
+### 4. Smart Diagrams (`smartDiagrams.ts`)
 
 Geração automática de diagramas contextuais.
 
 **Function:**
+
 ```typescript
 function generateSmartDiagrams(
   symbol: CodeSymbol,
   allSymbols: CodeSymbol[],
-  allRels: SymbolRelationship[]
-): { class?: string; sequence?: string; flow?: string }
+  allRels: SymbolRelationship[],
+): { class?: string; sequence?: string; flow?: string };
 ```
 
 **Class Diagram (auto):**
+
 ```typescript
-function autoGenerateClassDiagram(symbol: CodeSymbol, allSymbols: CodeSymbol[], allRels: SymbolRelationship[]): string | undefined {
+function autoGenerateClassDiagram(
+  symbol: CodeSymbol,
+  allSymbols: CodeSymbol[],
+  allRels: SymbolRelationship[],
+): string | undefined {
   if (symbol.kind !== "class" && symbol.kind !== "interface") {
     return undefined;
   }
@@ -420,75 +530,80 @@ function autoGenerateClassDiagram(symbol: CodeSymbol, allSymbols: CodeSymbol[], 
     }
   }
 
-  const relatedSymbols = allSymbols.filter(s => relatedIds.has(s.id));
+  const relatedSymbols = allSymbols.filter((s) => relatedIds.has(s.id));
 
   return generateMermaid(
-    { symbols: relatedSymbols.map(s => s.name), type: "classDiagram" },
+    { symbols: relatedSymbols.map((s) => s.name), type: "classDiagram" },
     allSymbols,
-    allRels
+    allRels,
   );
 }
 ```
 
-### 4. Search Index (`search.json`)
+### 5. Search Index (`search.json`)
 
 ```typescript
 function generateSearchIndex(symbols: CodeSymbol[], outDir: string) {
-  const index = symbols.map(s => ({
+  const index = symbols.map((s) => ({
     id: s.id,
     name: s.name,
     kind: s.kind,
     file: s.file,
     signature: s.signature,
-    url: `symbols/${s.id}.html`
+    url: `symbols/${s.id}.html`,
   }));
 
-  fs.writeFileSync(
-    path.join(outDir, "search.json"),
-    JSON.stringify(index, null, 2)
-  );
+  fs.writeFileSync(path.join(outDir, "search.json"), JSON.stringify(index, null, 2));
 }
 ```
 
 **Client-side Search:**
+
 ```javascript
 // assets/search.js
 async function initSearch() {
-  const response = await fetch('/search.json');
+  const response = await fetch("/search.json");
   const index = await response.json();
 
-  const searchInput = document.getElementById('search');
-  const results = document.getElementById('results');
+  const searchInput = document.getElementById("search");
+  const results = document.getElementById("results");
 
-  searchInput.addEventListener('input', (e) => {
+  searchInput.addEventListener("input", (e) => {
     const query = e.target.value.toLowerCase();
 
     if (!query) {
-      results.innerHTML = '';
+      results.innerHTML = "";
       return;
     }
 
-    const matches = index.filter(item =>
-      item.name.toLowerCase().includes(query) ||
-      item.signature?.toLowerCase().includes(query)
-    ).slice(0, 10);
+    const matches = index
+      .filter(
+        (item) =>
+          item.name.toLowerCase().includes(query) || item.signature?.toLowerCase().includes(query),
+      )
+      .slice(0, 10);
 
-    results.innerHTML = matches.map(m => `
+    results.innerHTML = matches
+      .map(
+        (m) => `
       <a href="${m.url}" class="result-item">
         <strong>${m.name}</strong>
         <span class="badge badge-${m.kind}">${m.kind}</span>
         <div class="result-meta">${m.file}</div>
       </a>
-    `).join('');
+    `,
+      )
+      .join("");
   });
 }
 ```
 
-### 5. Templates (`templates/`)
+### 6. Templates (`templates/`)
 
 Componentes reutilizáveis.
 
 **Layout Base:**
+
 ```typescript
 // templates/layout.ts
 export function layout(title: string, content: string, activePage?: string): string {
@@ -516,11 +631,11 @@ function header(activePage?: string): string {
   <div class="container">
     <h1 class="logo">docs-kit</h1>
     <nav>
-      <a href="/index.html" ${activePage === 'home' ? 'class="active"' : ''}>Home</a>
-      <a href="/symbols/index.html" ${activePage === 'symbols' ? 'class="active"' : ''}>Symbols</a>
-      <a href="/files/index.html" ${activePage === 'files' ? 'class="active"' : ''}>Files</a>
-      <a href="/docs.html" ${activePage === 'docs' ? 'class="active"' : ''}>Docs</a>
-      <a href="/governance.html" ${activePage === 'governance' ? 'class="active"' : ''}>Governance</a>
+      <a href="/index.html" ${activePage === "home" ? 'class="active"' : ""}>Home</a>
+      <a href="/symbols/index.html" ${activePage === "symbols" ? 'class="active"' : ""}>Symbols</a>
+      <a href="/files/index.html" ${activePage === "files" ? 'class="active"' : ""}>Files</a>
+      <a href="/docs.html" ${activePage === "docs" ? 'class="active"' : ""}>Docs</a>
+      <a href="/governance.html" ${activePage === "governance" ? 'class="active"' : ""}>Governance</a>
     </nav>
     <div class="search-box">
       <input type="text" id="search" placeholder="Search symbols...">
@@ -546,6 +661,7 @@ function footer(): string {
 ## Progressive Enhancement
 
 **Features:**
+
 - Static HTML (works without JS)
 - Client-side search (enhanced UX)
 - Syntax highlighting (highlight.js)
@@ -554,12 +670,14 @@ function footer(): string {
 ## Performance
 
 **Optimizations:**
+
 - Parallel file writes
 - Pre-computed relationships
 - Minimal asset size (~50KB total)
 - No external dependencies at runtime
 
 **Benchmarks:**
+
 - 10,000 symbols → ~30s generation
 - Site size: ~10MB for 10k symbols
 

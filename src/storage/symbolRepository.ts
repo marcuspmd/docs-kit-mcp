@@ -49,6 +49,8 @@ export interface SymbolRow {
   signature: string | null;
   explanation: string | null;
   explanation_hash: string | null;
+  security: string | null;
+  change_velocity: string | null;
 }
 
 function parseJsonArray(value: string | null): string[] | undefined {
@@ -96,6 +98,8 @@ export function rowToSymbol(row: SymbolRow): CodeSymbol {
     signature: row.signature ?? undefined,
     explanation: row.explanation ?? undefined,
     explanationHash: row.explanation_hash ?? undefined,
+    security: row.security ? JSON.parse(row.security) : undefined,
+    changeVelocity: row.change_velocity ? JSON.parse(row.change_velocity) : undefined,
   };
 }
 
@@ -106,13 +110,15 @@ export function createSymbolRepository(db: Database.Database): SymbolRepository 
       visibility, exported, language, doc_ref, summary, doc_comment, tags, domain, bounded_context,
       sym_extends, sym_implements, uses_traits, sym_references, referenced_by, layer, metrics,
       pattern, violations, deprecated, since, stability, generated, source,
-      last_modified, signature, explanation, explanation_hash
+      last_modified, signature, explanation, explanation_hash,
+      security, change_velocity
     ) VALUES (
       @id, @name, @qualified_name, @kind, @file, @start_line, @end_line, @parent,
       @visibility, @exported, @language, @doc_ref, @summary, @doc_comment, @tags, @domain, @bounded_context,
       @sym_extends, @sym_implements, @uses_traits, @sym_references, @referenced_by, @layer, @metrics,
       @pattern, @violations, @deprecated, @since, @stability, @generated, @source,
-      @last_modified, @signature, @explanation, @explanation_hash
+      @last_modified, @signature, @explanation, @explanation_hash,
+      @security, @change_velocity
     )
   `);
 
@@ -165,6 +171,8 @@ export function createSymbolRepository(db: Database.Database): SymbolRepository 
         signature: symbol.signature ?? null,
         explanation: symbol.explanation ?? null,
         explanation_hash: symbol.explanationHash ?? null,
+        security: toJson(symbol.security),
+        change_velocity: toJson(symbol.changeVelocity),
       });
     },
 

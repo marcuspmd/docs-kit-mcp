@@ -4,7 +4,14 @@ import Parser from "tree-sitter";
 import TypeScript from "tree-sitter-typescript";
 import type { ChangeImpact, CodeSymbol } from "../indexer/symbol.types.js";
 import { indexFile } from "../indexer/indexer.js";
-import { getGitDiff, type FileDiff, type DiffHunk } from "./gitDiff.js";
+import {
+  buildStructuredDiff,
+  getGitDiff,
+  getGitMergeBase,
+  type FileDiff,
+  type DiffHunk,
+  type GitDiffRange,
+} from "./gitDiff.js";
 import { diffSymbols, type AstChange } from "./astDiff.js";
 
 const execFileAsync = promisify(execFile);
@@ -13,18 +20,34 @@ export interface AnalyzeOptions {
   repoPath: string;
   base: string;
   head?: string;
+  range?: GitDiffRange;
 }
 
 export interface AnalyzeDeps {
   getFileDiffs: (options: AnalyzeOptions) => Promise<FileDiff[]>;
   getFileAtRef: (repoPath: string, filePath: string, ref: string) => Promise<string | null>;
   indexSource: (filePath: string, source: string) => CodeSymbol[];
+  getMergeBase?: (options: AnalyzeOptions) => Promise<string>;
 }
 
 export function isSymbolImpacted(symbol: CodeSymbol, hunks: DiffHunk[]): boolean {
-  return hunks.some(
-    (h) => h.newStart <= symbol.endLine && h.newStart + h.newLines >= symbol.startLine,
-  );
+  return isSymbolImpactedOnSide(symbol, hunks, "new");
+}
+
+function hunkEnd(start: number, lines: number): number {
+  return start + Math.max(lines, 1) - 1;
+}
+
+function isSymbolImpactedOnSide(
+  symbol: CodeSymbol,
+  hunks: DiffHunk[],
+  side: "old" | "new",
+): boolean {
+  return hunks.some((hunk) => {
+    const start = side === "old" ? hunk.oldStart : hunk.newStart;
+    const lines = side === "old" ? hunk.oldLines : hunk.newLines;
+    return start <= symbol.endLine && hunkEnd(start, lines) >= symbol.startLine;
+  });
 }
 
 export function requiresDocUpdate(change: AstChange): boolean {
@@ -36,10 +59,21 @@ export function requiresDocUpdate(change: AstChange): boolean {
 }
 
 export function extractRelevantDiff(fileDiff: FileDiff, symbol: CodeSymbol): string {
-  return fileDiff.hunks
-    .filter((h) => h.newStart <= symbol.endLine && h.newStart + h.newLines >= symbol.startLine)
+  return extractRelevantHunks(fileDiff, symbol, "new")
     .map((h) => h.content)
     .join("\n");
+}
+
+function extractRelevantHunks(
+  fileDiff: FileDiff,
+  symbol: CodeSymbol,
+  side: "old" | "new",
+): DiffHunk[] {
+  return fileDiff.hunks.filter((hunk) => {
+    const start = side === "old" ? hunk.oldStart : hunk.newStart;
+    const lines = side === "old" ? hunk.oldLines : hunk.newLines;
+    return start <= symbol.endLine && hunkEnd(start, lines) >= symbol.startLine;
+  });
 }
 
 async function defaultGetFileAtRef(
@@ -69,22 +103,30 @@ export function createDefaultDeps(): AnalyzeDeps {
     getFileDiffs: getGitDiff,
     getFileAtRef: defaultGetFileAtRef,
     indexSource: defaultIndexSource(),
+    getMergeBase: getGitMergeBase,
   };
+}
+
+async function resolveBaseRef(options: AnalyzeOptions, deps: AnalyzeDeps): Promise<string> {
+  if ((options.range ?? "direct") !== "merge-base") return options.base;
+  return deps.getMergeBase ? deps.getMergeBase(options) : options.base;
 }
 
 export async function analyzeChanges(
   options: AnalyzeOptions,
   deps?: AnalyzeDeps,
 ): Promise<ChangeImpact[]> {
-  const { getFileDiffs, getFileAtRef, indexSource } = deps ?? createDefaultDeps();
+  const actualDeps = deps ?? createDefaultDeps();
+  const { getFileDiffs, getFileAtRef, indexSource } = actualDeps;
   const diffs = await getFileDiffs(options);
   const impacts: ChangeImpact[] = [];
   const head = options.head ?? "HEAD";
+  const baseRef = await resolveBaseRef(options, actualDeps);
 
   for (const fileDiff of diffs) {
     const oldSource =
       fileDiff.status !== "added"
-        ? await getFileAtRef(options.repoPath, fileDiff.oldPath, options.base)
+        ? await getFileAtRef(options.repoPath, fileDiff.oldPath, baseRef)
         : null;
     const newSource =
       fileDiff.status !== "deleted"
@@ -96,18 +138,22 @@ export async function analyzeChanges(
     const astChanges = diffSymbols(oldSymbols, newSymbols);
 
     for (const change of astChanges) {
+      const diffSide = change.changeType === "removed" ? "old" : "new";
       if (
         change.changeType !== "added" &&
         change.changeType !== "removed" &&
-        !isSymbolImpacted(change.symbol, fileDiff.hunks)
+        !isSymbolImpactedOnSide(change.symbol, fileDiff.hunks, diffSide)
       ) {
         continue;
       }
 
+      const relevantHunks = extractRelevantHunks(fileDiff, change.symbol, diffSide);
+
       impacts.push({
         symbol: change.symbol,
         changeType: change.changeType as ChangeImpact["changeType"],
-        diff: extractRelevantDiff(fileDiff, change.symbol),
+        diff: relevantHunks.map((hunk) => hunk.content).join("\n"),
+        structuredDiff: buildStructuredDiff(relevantHunks),
         docUpdateRequired: requiresDocUpdate(change),
       });
     }

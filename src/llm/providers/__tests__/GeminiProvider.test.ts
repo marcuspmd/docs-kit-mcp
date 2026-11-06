@@ -88,4 +88,13 @@ describe("GeminiProvider", () => {
 
     expect(result).toHaveLength(2);
   });
+
+  it("should estimate tokens as ceil(length / 4)", async () => {
+    const { GeminiProvider } = await import("../GeminiProvider.js");
+    const config = createTestConfig({ provider: "gemini", model: "gemini-pro", apiKey: "key" });
+    const provider = new GeminiProvider(config);
+    expect(provider.estimateTokens("")).toBe(0);
+    expect(provider.estimateTokens("1234")).toBe(1);
+    expect(provider.estimateTokens("12345")).toBe(2);
+  });
 });

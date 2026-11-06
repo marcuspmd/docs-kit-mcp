@@ -7,6 +7,7 @@ export {
   type SymbolRow,
 } from "./symbolRepository.js";
 export { createFileHashRepository, type FileHashRepository } from "./fileHashRepository.js";
+export { createPrReviewRepository, type PrReviewRepository } from "./prReviewRepository.js";
 export {
   createRelationshipRepository,
   relationshipRowsToSymbolRelationships,
@@ -16,8 +17,14 @@ export {
 export {
   replaceAllArchViolations,
   replaceAllPatterns,
-  replaceAllReaperFindings,
+  upsertReaperFindings,
+  getAllFindings,
+  updateFindingStatus,
+  getFindingHistory,
   type ArchViolationRow,
   type PatternRowForInsert,
+  type ReaperFindingInput,
   type ReaperFindingRow,
+  type ReaperHistoryRow,
+  type FindingStatus,
 } from "./reportRepositories.js";

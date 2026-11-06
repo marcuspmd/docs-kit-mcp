@@ -15,7 +15,7 @@ symbols:
 
 ## Visão Geral
 
-O MCP Server (`src/server.ts` e `src/server/index.ts`) implementa o [Model Context Protocol](https://modelcontextprotocol.io/) para permitir que LLMs e agentes de IA interajam com o docs-kit. Ele expõe 18 tools registradas que encapsulam toda a funcionalidade do sistema.
+O MCP Server (`src/server.ts` e `src/server/index.ts`) implementa o [Model Context Protocol](https://modelcontextprotocol.io/) para permitir que LLMs e agentes de IA interajam com o docs-kit. Ele expõe 21 tools registradas que encapsulam toda a funcionalidade do sistema.
 
 **Ponto de entrada:** `src/server.ts` chama `startServer()` de `src/server/index.ts`
 
@@ -26,7 +26,7 @@ McpServer (SDK)
   ↓
 StdioServerTransport (comunicação)
   ↓
-ToolRegistry (18 tools registradas)
+ToolRegistry (21 tools registradas)
   ↓
 Core Services (symbolRepo, registry, graph, llm, etc.)
 ```
@@ -64,6 +64,7 @@ const llm = createLlmProvider(config);
 Atualiza documentação para símbolos afetados por mudanças no git.
 
 **Input Schema:**
+
 ```typescript
 {
   base: string = "main",     // Branch base
@@ -77,12 +78,14 @@ Atualiza documentação para símbolos afetados por mudanças no git.
 Lista de atualizações aplicadas ou "No doc updates needed."
 
 **Fluxo:**
+
 1. Rebuild registry
 2. Analisa mudanças (git diff → AST diff)
 3. Aplica atualizações via DocUpdater
 4. Retorna summary
 
 **Exemplo:**
+
 ```json
 {
   "name": "generateDocs",
@@ -101,6 +104,7 @@ Explica um símbolo combinando análise de código e docs existentes.
 **Registrada em:** [src/server/tools/explainSymbol.tool.ts](src/server/tools/explainSymbol.tool.ts) via `registerExplainSymbolTool()`
 
 **Input Schema:**
+
 ```typescript
 {
   symbol: string,           // Symbol name
@@ -112,6 +116,7 @@ Explica um símbolo combinando análise de código e docs existentes.
 Prompt formatado com contexto completo para LLM (código + docs + relacionamentos).
 
 **Fluxo:**
+
 1. Localiza símbolo no symbolRepo
 2. Busca relacionamentos no graph
 3. Carrega documentação do registry
@@ -119,6 +124,7 @@ Prompt formatado com contexto completo para LLM (código + docs + relacionamento
 5. Formata prompt com `buildExplainSymbolContext()`
 
 **Exemplo:**
+
 ```json
 {
   "name": "explainSymbol",
@@ -133,6 +139,7 @@ Prompt formatado com contexto completo para LLM (código + docs + relacionamento
 Gera diagrama Mermaid para símbolos especificados.
 
 **Input Schema:**
+
 ```typescript
 {
   symbols: string,  // Comma-separated names
@@ -144,6 +151,7 @@ Gera diagrama Mermaid para símbolos especificados.
 Bloco de código Mermaid formatado.
 
 **Exemplo:**
+
 ```json
 {
   "name": "generateMermaid",
@@ -161,6 +169,7 @@ Escaneia arquivo TypeScript e gera documentação para símbolos não documentad
 **Registrada em:** [src/server/tools/scanFile.tool.ts](src/server/tools/scanFile.tool.ts) via `registerScanFileTool()`
 
 **Input Schema:**
+
 ```typescript
 {
   filePath: string,                        // File to scan
@@ -173,6 +182,7 @@ Escaneia arquivo TypeScript e gera documentação para símbolos não documentad
 Lista de símbolos para os quais docs foram criadas.
 
 **Fluxo:**
+
 1. Parse file com Tree-sitter
 2. Extrai símbolos
 3. Verifica registry para símbolos não documentados
@@ -183,6 +193,7 @@ Lista de símbolos para os quais docs foram criadas.
 Analisa o raio de impacto de mudanças em um símbolo.
 
 **Input Schema:**
+
 ```typescript
 {
   symbol: string,       // Symbol name
@@ -194,6 +205,7 @@ Analisa o raio de impacto de mudanças em um símbolo.
 Prompt formatado com símbolos impactados (dependências diretas e transitivas).
 
 **Fluxo:**
+
 1. Localiza símbolo
 2. Usa `graph.getImpactRadius()` para traversal
 3. Busca símbolos impactados
@@ -207,6 +219,7 @@ Detecta design patterns e violations (SOLID, etc.).
 Relatório formatado com patterns, confidence, e violations.
 
 **Fluxo:**
+
 1. Carrega todos os símbolos e relacionamentos
 2. Executa `patternAnalyzer.analyze()`
 3. Formata resultado em markdown
@@ -219,6 +232,7 @@ Simula event flows e listeners (diagrama Mermaid).
 Diagrama Mermaid em formato sequenceDiagram.
 
 **Fluxo:**
+
 1. Analisa símbolos de eventos/listeners
 2. Monta flows com `eventFlowAnalyzer.analyze()`
 3. Converte para Mermaid com `formatEventFlowsAsMermaid()`
@@ -228,6 +242,7 @@ Diagrama Mermaid em formato sequenceDiagram.
 Gera learning path usando RAG no código e docs.
 
 **Input Schema:**
+
 ```typescript
 {
   topic: string,            // Topic to learn
@@ -239,6 +254,7 @@ Gera learning path usando RAG no código e docs.
 Learning path ranqueado por relevância (top 10 chunks).
 
 **Fluxo:**
+
 1. Index docs se necessário
 2. Busca semântica: `ragIndex.search(topic, 10)`
 3. Formata resultados com scores
@@ -248,6 +264,7 @@ Learning path ranqueado por relevância (top 10 chunks).
 Q&A conversacional sobre código + docs.
 
 **Input Schema:**
+
 ```typescript
 {
   question: string,         // User question
@@ -259,6 +276,7 @@ Q&A conversacional sobre código + docs.
 Resposta gerada pelo LLM baseada em contexto RAG.
 
 **Fluxo:**
+
 1. Busca contexto relevante via RAG
 2. Monta prompt com contexto + pergunta
 3. Chama `llm.chat()` para gerar resposta
@@ -268,9 +286,10 @@ Resposta gerada pelo LLM baseada em contexto RAG.
 Escaneia dead code, orphan docs, e broken links.
 
 **Input Schema:**
+
 ```typescript
 {
-  docsDir: string = "docs"
+  docsDir: string = "docs";
 }
 ```
 
@@ -278,6 +297,7 @@ Escaneia dead code, orphan docs, e broken links.
 Relatório de findings do Reaper (dead_code, orphan_doc, broken_link).
 
 **Fluxo:**
+
 1. Rebuild registry
 2. Carrega símbolos, mappings, e graph
 3. Executa `reaper.scan()`
@@ -288,9 +308,10 @@ Relatório de findings do Reaper (dead_code, orphan_doc, broken_link).
 Gera matriz de rastreabilidade (tickets → símbolos → testes → docs).
 
 **Input Schema:**
+
 ```typescript
 {
-  docsDir: string = "docs"
+  docsDir: string = "docs";
 }
 ```
 
@@ -298,6 +319,7 @@ Gera matriz de rastreabilidade (tickets → símbolos → testes → docs).
 Relatório formatado por ticket ID.
 
 **Fluxo:**
+
 1. Extrai referências de commits/comments via `contextMapper.extractRefs()`
 2. Constrói RTM via `contextMapper.buildRTM()`
 3. Formata resultado
@@ -307,6 +329,7 @@ Relatório formatado por ticket ID.
 Descreve símbolo em linguagem de negócio (para product/compliance).
 
 **Input Schema:**
+
 ```typescript
 {
   symbol: string,           // Symbol name
@@ -318,6 +341,7 @@ Descreve símbolo em linguagem de negócio (para product/compliance).
 Descrição em termos de negócio (regras, condições, outcomes).
 
 **Fluxo:**
+
 1. Localiza símbolo
 2. Extrai source code
 3. Busca documentação existente
@@ -328,6 +352,7 @@ Descrição em termos de negócio (regras, condições, outcomes).
 Valida code examples na documentação contra código real.
 
 **Input Schema:**
+
 ```typescript
 {
   docsDir: string = "docs",  // Docs dir
@@ -339,6 +364,7 @@ Valida code examples na documentação contra código real.
 Relatório de validação (✅ PASS / ❌ FAIL por exemplo).
 
 **Fluxo:**
+
 1. Escaneia docs extraindo code blocks
 2. Valida sintaxe/existência via validators
 3. Retorna `ValidationResult[]`
@@ -348,6 +374,7 @@ Relatório de validação (✅ PASS / ❌ FAIL por exemplo).
 Code review abrangente combinando múltiplas análises.
 
 **Input Schema:**
+
 ```typescript
 {
   docsDir: string = "docs",
@@ -359,6 +386,7 @@ Code review abrangente combinando múltiplas análises.
 Relatório completo com arch violations, dead code, patterns, doc drift, e code examples.
 
 **Fluxo:**
+
 1. Executa arch-guard
 2. Executa reaper (dead code)
 3. Detecta patterns
@@ -370,9 +398,10 @@ Relatório completo com arch violations, dead code, patterns, doc drift, e code 
 Gera relatório de status do projeto.
 
 **Input Schema:**
+
 ```typescript
 {
-  docsDir: string = "docs"
+  docsDir: string = "docs";
 }
 ```
 
@@ -380,6 +409,7 @@ Gera relatório de status do projeto.
 Relatório formatado com métricas de documentação, patterns, violations, coverage.
 
 **Fluxo:**
+
 1. Coleta métricas de múltiplas fontes
 2. Formata via `formatProjectStatus()`
 
@@ -388,6 +418,7 @@ Relatório formatado com métricas de documentação, patterns, violations, cove
 Obtém contexto abrangente para um símbolo ou arquivo.
 
 **Input Schema:**
+
 ```typescript
 {
   symbol?: string,          // Symbol name
@@ -400,11 +431,106 @@ Obtém contexto abrangente para um símbolo ou arquivo.
 Contexto completo: código + docs + relacionamentos + dependências.
 
 **Fluxo:**
+
 1. Localiza símbolo/file
 2. Carrega código fonte
 3. Busca relacionamentos
 4. Carrega docs
 5. Formata com `buildRelevantContext()`
+
+### 17. `updateSymbolExplanation`
+
+Atualiza o cache de explicação de um símbolo depois que um agente gera a resposta final a partir de `explainSymbol`.
+
+**Input Schema:**
+
+```typescript
+{
+  symbol: string,
+  explanation: string
+}
+```
+
+**Fluxo:**
+
+1. Localiza o símbolo pelo nome
+2. Gera hash da explicação contra o trecho de código atual
+3. Persiste `explanation` e `explanationHash` no repositório de símbolos
+
+### 18. `searchSymbols`
+
+Busca símbolos indexados por nome parcial, kind ou camada arquitetural.
+
+**Input Schema:**
+
+```typescript
+{
+  query?: string,
+  kind?: SymbolKind,
+  layer?: Layer,
+  limit: number = 20
+}
+```
+
+**Output:**
+Lista compacta com nome, kind, arquivo, linha inicial e resumo quando disponível.
+
+### 19. `getFileOutline`
+
+Retorna um outline compacto dos símbolos indexados em um arquivo, sem incluir código fonte.
+
+**Input Schema:**
+
+```typescript
+{
+  file: string;
+}
+```
+
+**Output:**
+Linhas no formato `Lstart-end [kind] name: signature // summary`, úteis para decidir qual símbolo consultar em seguida.
+
+### 20. `updateDeadCodeStatus`
+
+Atualiza o status de um finding do Reaper sem apagar o histórico.
+
+**Input Schema:**
+
+```typescript
+{
+  id: string,
+  status: "active" | "false_positive" | "ignored",
+  notes?: string
+}
+```
+
+**Uso típico:** marcar exports públicos, APIs de plugin ou entrypoints dinâmicos como `false_positive` ou `ignored` para reduzir ruído nos próximos scans.
+
+### 21. `getDeadCodeHistory`
+
+Consulta o histórico de auditoria dos findings do Reaper.
+
+**Input Schema:**
+
+```typescript
+{
+  findingId?: string
+}
+```
+
+**Output:**
+Linha do tempo de detecções por scan e mudanças manuais de status.
+
+## Mapa por Categoria
+
+| Categoria           | Tools                                                                                                                          |
+| ------------------- | ------------------------------------------------------------------------------------------------------------------------------ |
+| Documentação        | `generateDocs`, `scanFile`, `validateExamples`                                                                                 |
+| Símbolos e contexto | `explainSymbol`, `updateSymbolExplanation`, `describeInBusinessTerms`, `getRelevantContext`, `searchSymbols`, `getFileOutline` |
+| Análise             | `impactAnalysis`, `analyzePatterns`, `smartCodeReview`                                                                         |
+| Visualização        | `generateMermaid`, `generateEventFlow`                                                                                         |
+| Conhecimento        | `createOnboarding`, `askKnowledgeBase`                                                                                         |
+| Governança          | `scanForDeadCode`, `updateDeadCodeStatus`, `getDeadCodeHistory`, `buildTraceabilityMatrix`, `projectStatus`                    |
 
 ## Transport Layer
 
@@ -419,13 +545,15 @@ O servidor usa `StdioServerTransport` para comunicação via stdin/stdout. Isso 
 Todas as tools retornam estrutura consistente:
 
 **Success:**
+
 ```typescript
 {
-  content: [{ type: "text", text: "..." }]
+  content: [{ type: "text", text: "..." }];
 }
 ```
 
 **Error:**
+
 ```typescript
 {
   content: [{ type: "text", text: "Error: ..." }],
@@ -463,6 +591,7 @@ Todas as tools usam Zod schemas para validação:
 ```
 
 Isso garante:
+
 - Type safety
 - Default values
 - Descriptions para LLMs
@@ -470,12 +599,15 @@ Isso garante:
 ## Performance
 
 **Lazy loading:**
+
 - RAG index é populado on-demand (`if (ragIndex.chunkCount() === 0)`)
 
 **Connection pooling:**
+
 - Única instância de Database compartilhada
 
 **Caching:**
+
 - Registry rebuild usa cache interno
 
 ## Extensibilidade
@@ -488,22 +620,22 @@ server.registerTool(
   {
     description: "...",
     inputSchema: {
-      param: z.string().describe("...")
-    }
+      param: z.string().describe("..."),
+    },
   },
   async ({ param }) => {
     try {
       // Logic aqui
       return {
-        content: [{ type: "text", text: "..." }]
+        content: [{ type: "text", text: "..." }],
       };
     } catch (err) {
       return {
         content: [{ type: "text", text: `Error: ${err.message}` }],
-        isError: true
+        isError: true,
       };
     }
-  }
+  },
 );
 ```
 
@@ -553,6 +685,7 @@ await server.connect(transport);
 ## Shutdown
 
 O servidor roda indefinidamente até:
+
 - Process kill signal (SIGTERM/SIGINT)
 - Stdio connection closes
 - Unhandled error

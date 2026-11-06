@@ -38,6 +38,9 @@ export default {
     "**/target/**",
     "**/.git/**",
     "**/coverage/**",
+    "**/docs-site/**",
+    "**/docs-site-v2/**",
+    "**/docs-output/**",
     "**/*.min.js",
     "**/*.bundle.js",
     "**/*.map",
@@ -81,10 +84,7 @@ export default {
         // rules: ["php:layer_boundary", "php:naming_class", "php:max_complexity"],
 
         // Glob patterns for files to ignore (violations in these files won't be reported)
-        ignorePaths: [
-          "**/legacy/**",
-          "**/vendor/**",
-        ],
+        ignorePaths: ["**/legacy/**", "**/vendor/**"],
 
         // Override specific rule configurations
         overrideRules: [
@@ -105,17 +105,12 @@ export default {
         ],
 
         // Rule codes to exclude (these won't be applied even if in whitelist)
-        excludeRules: [
-          "php:missing_return_type_strict",
-        ],
+        excludeRules: ["php:missing_return_type_strict"],
       },
       {
         language: "typescript",
         // Apply all TypeScript rules (empty rules array = all)
-        ignorePaths: [
-          "**/*.test.ts",
-          "**/__tests__/**",
-        ],
+        ignorePaths: ["**/*.test.ts", "**/__tests__/**"],
       },
     ],
 
@@ -131,10 +126,7 @@ export default {
           const matches = fileContent.match(todoRegex);
           return matches ? matches.length : 0;
         },
-        ignorePaths: [
-          "**/LegacyCode/**",
-          "**/ThirdParty/**",
-        ],
+        ignorePaths: ["**/LegacyCode/**", "**/ThirdParty/**"],
       },
       {
         language: ["php"],
@@ -159,7 +151,7 @@ export default {
       module: "Main",
       symbols: ["createArchGuard", "ArchGuard", "ArchRule", "ArchViolation"],
       next: "docs/domain/projectStatus.md",
-      showOnMenu: true
+      showOnMenu: true,
     },
     {
       path: "docs/domain/projectStatus.md",
@@ -169,13 +161,12 @@ export default {
       module: "Main",
       symbols: ["generateProjectStatus", "ProjectStatusResult"],
       previous: "docs/domain/arch-guard-rules.md",
-      showOnMenu: true
+      showOnMenu: true,
     },
     {
       path: "./docs/examples/",
       autoDiscovery: true,
-      showOnMenu: true
-    }
+      showOnMenu: true,
+    },
   ],
-
 };

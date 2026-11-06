@@ -24,12 +24,12 @@ describe("PHP Max Lines Rules", () => {
       expect(rule.languages).toEqual(["php"]);
     });
 
-    it("should have default max lines of 50", () => {
+    it("should have default max lines of 120", () => {
       // Arrange & Act
       const rule = createMaxLinesRule();
 
       // Assert
-      expect(rule.defaultConfig.max).toBe(50);
+      expect(rule.defaultConfig.max).toBe(120);
     });
 
     it("should not specify kind (applies to functions and methods)", () => {
@@ -156,7 +156,7 @@ describe("PHP Max Lines Rules", () => {
 
       // Assert
       expect(functionRule.defaultConfig.max).toBeGreaterThan(0);
-      expect(functionRule.defaultConfig.max).toBeLessThan(100);
+      expect(functionRule.defaultConfig.max).toBeLessThan(121);
       expect(classRule.defaultConfig.max).toBeGreaterThan(100);
       expect(classRule.defaultConfig.max).toBeLessThan(500);
     });

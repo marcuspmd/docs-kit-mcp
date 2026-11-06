@@ -8,6 +8,8 @@ export interface KnowledgeGraph {
   getDependencies(symbolId: string): SymbolRelationship[];
   getImpactRadius(symbolId: string, maxDepth?: number): string[];
   rebuild(symbols: CodeSymbol[]): Promise<void>;
+  /** Returns arrays of symbol IDs that form circular dependency cycles. */
+  findCycles(): string[][];
 }
 
 export function createKnowledgeGraph(db: Database.Database): KnowledgeGraph {
@@ -22,6 +24,7 @@ export function createKnowledgeGraph(db: Database.Database): KnowledgeGraph {
     "SELECT source_id, target_id, type FROM relationships WHERE source_id = ?",
   );
   const clearStmt = db.prepare("DELETE FROM relationships");
+  const allRelsStmt = db.prepare("SELECT source_id, target_id FROM relationships");
 
   function toRel(row: { source_id: string; target_id: string; type: string }): SymbolRelationship {
     return { sourceId: row.source_id, targetId: row.target_id, type: row.type };
@@ -79,6 +82,45 @@ export function createKnowledgeGraph(db: Database.Database): KnowledgeGraph {
 
       visited.delete(symbolId);
       return [...visited];
+    },
+
+    findCycles() {
+      const rows = allRelsStmt.all() as Array<{ source_id: string; target_id: string }>;
+
+      const adj = new Map<string, string[]>();
+      for (const row of rows) {
+        if (!adj.has(row.source_id)) adj.set(row.source_id, []);
+        adj.get(row.source_id)!.push(row.target_id);
+      }
+
+      const color = new Map<string, "white" | "gray" | "black">();
+      for (const id of adj.keys()) color.set(id, "white");
+
+      const cycles: string[][] = [];
+
+      function dfs(nodeId: string, path: string[]): void {
+        color.set(nodeId, "gray");
+        path.push(nodeId);
+
+        for (const neighbor of adj.get(nodeId) ?? []) {
+          const state = color.get(neighbor);
+          if (state === "gray") {
+            const cycleStart = path.indexOf(neighbor);
+            if (cycleStart !== -1) cycles.push([...path.slice(cycleStart)]);
+          } else if (state === "white") {
+            dfs(neighbor, path);
+          }
+        }
+
+        color.set(nodeId, "black");
+        path.pop();
+      }
+
+      for (const nodeId of adj.keys()) {
+        if (color.get(nodeId) === "white") dfs(nodeId, []);
+      }
+
+      return cycles;
     },
 
     async rebuild(symbols) {

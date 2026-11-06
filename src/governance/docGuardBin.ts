@@ -2,16 +2,13 @@
 
 import "reflect-metadata";
 import { parseArgs } from "node:util";
-import { execFile } from "node:child_process";
-import { promisify } from "node:util";
 import { setupContainer, resolve } from "../di/container.js";
 import { DATABASE_TOKEN, DOC_REGISTRY_TOKEN } from "../di/tokens.js";
 import type Database from "better-sqlite3";
 import type { DocRegistry } from "../docs/docRegistry.js";
 import { runDocGuard, formatResult } from "./docGuardCli.js";
 import { analyzeChanges } from "../analyzer/changeAnalyzer.js";
-
-const execFileAsync = promisify(execFile);
+import { getGitChangedFiles } from "../analyzer/gitDiff.js";
 
 const { values } = parseArgs({
   options: {
@@ -22,20 +19,6 @@ const { values } = parseArgs({
     "docs-dir": { type: "string", default: "docs" },
   },
 });
-
-async function getChangedFiles(options: {
-  repoPath: string;
-  base: string;
-  head?: string;
-}): Promise<string[]> {
-  const head = options.head ?? "HEAD";
-  const { stdout } = await execFileAsync(
-    "git",
-    ["diff", "--name-only", `${options.base}...${head}`],
-    { cwd: options.repoPath },
-  );
-  return stdout.trim().split("\n").filter(Boolean);
-}
 
 await setupContainer({ dbPath: values["db-path"]! });
 
@@ -50,12 +33,13 @@ try {
       repoPath: process.cwd(),
       base: values.base!,
       head: values.head,
+      range: "merge-base",
       strict: values.strict,
     },
     {
       analyzeChanges,
       registry,
-      getChangedFiles,
+      getChangedFiles: (options) => getGitChangedFiles({ ...options, range: "merge-base" }),
     },
   );
 } finally {

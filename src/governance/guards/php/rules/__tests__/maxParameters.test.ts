@@ -29,7 +29,7 @@ describe("PHP Max Parameters Rules", () => {
       const rule = createMaxParametersRule();
 
       // Assert
-      expect(rule.defaultConfig.max).toBe(5);
+      expect(rule.defaultConfig.max).toBe(7);
     });
 
     it("should have warning severity", () => {
@@ -66,12 +66,12 @@ describe("PHP Max Parameters Rules", () => {
       expect(rule.languages).toEqual(["php"]);
     });
 
-    it("should have strict max parameters of 3", () => {
+    it("should have strict max parameters of 7", () => {
       // Arrange & Act
       const rule = createMaxParametersStrictRule();
 
       // Assert
-      expect(rule.defaultConfig.max).toBe(3);
+      expect(rule.defaultConfig.max).toBe(7);
     });
 
     it("should have error severity for strict mode", () => {
@@ -88,7 +88,7 @@ describe("PHP Max Parameters Rules", () => {
       const strictRule = createMaxParametersStrictRule();
 
       // Assert
-      expect(strictRule.defaultConfig.max as number).toBeLessThan(
+      expect(strictRule.defaultConfig.max as number).toBeLessThanOrEqual(
         regularRule.defaultConfig.max as number,
       );
     });
@@ -164,7 +164,7 @@ describe("PHP Max Parameters Rules", () => {
       expect(regularRule.defaultConfig.max).toBeGreaterThan(2);
       expect(regularRule.defaultConfig.max).toBeLessThan(10);
       expect(strictRule.defaultConfig.max).toBeGreaterThan(0);
-      expect(strictRule.defaultConfig.max).toBeLessThan(5);
+      expect(strictRule.defaultConfig.max).toBeLessThan(10);
     });
   });
 });
